@@ -1115,8 +1115,8 @@ function updateGlobal() {
 // caption with the unit right-aligned, the reading right-aligned at 26 px, a bar, and a setpoint box underneath:
 // Target (mbar) for pressure, Go to (%) for the valve. Only the box for the present mode is editable (tinted, blue
 // underline, chevron); the other is flat grey. The pressure bar is log 0.1 to 1000 mbar with decade lines and a
-// margin of half the "1000" label at each end; the valve bar is 0 to 100 % with lines at 0, 50, 100. Both bars show
-// the 10 min low-high band and a direction arrow. No default target: Start AUTO asks for one the first time.
+// margin of half the "1000" label at each end; the valve bar is 0 to 100 % with lines at 0, 50, 100. The bars show the
+// low-high band (pressure 10 min, valve 30 s, Ryan 12 Oct) and a direction arrow. No default target: Start AUTO asks for one the first time.
 const PBAR = 143, PPAD = 15;   // PPAD: half the width of "1000" at 12 px
 function barX(q) { return clamp(PPAD + (Math.log10(Math.max(q, 1e-3)) + 1) / 4 * (PBAR - 2 * PPAD), 0, PBAR); }
 function vbarX(p) { return clamp(p, 0, 100) * PBAR / 100; }
@@ -1199,7 +1199,7 @@ function buildCtrl() {
     set(V1.val, C.ref ? vp.toFixed(1) : C.mode === 'HOMING' ? 'Referencing' : '----');
     st(V1.val, { fontSize: C.mode === 'HOMING' ? '16px' : '26px' }); setc(V1.val, C.ref || C.mode === 'HOMING' ? COL.text : COL.idle);
     st(V1.fill, { width: C.ref ? vbarX(vp).toFixed(1) + 'px' : '0px' });
-    const rv = recent('pos', 600);
+    const rv = recent('pos', 30);
     tileBar(V1, vbarX, vp, C.ref ? rv.lo : null, rv.hi, M.moving ? M.dir : 0);
     tileField(V1, C.mode === 'MANUAL', C.mode === 'MANUAL' ? pctOf(M.moving ? M.target : C.manPos).toFixed(1) : auto ? 'auto' : '');
     // Status line
