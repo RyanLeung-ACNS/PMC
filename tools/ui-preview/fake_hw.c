@@ -112,6 +112,7 @@ const char *uncert_screen_text(bool *warn)
 
 /* Stepper 3: settings only, a move completes at once. */
 #include "stepper3.h"
+#include "limit.h"
 static int32_t m_pos;
 static uint32_t m_rate = 400, m_start = 200, m_accel = 3200;
 static stepper3_mode_t m_mode = STEPPER3_FULL;
@@ -126,8 +127,8 @@ bool stepper3_busy(void) { return false; }
 int32_t stepper3_position(void) { return m_pos; }
 void stepper3_zero(void) { m_pos = 0; }
 stepper3_stop_t stepper3_last_stop(void) { return m_stop; }
-bool stepper3_limit_open(void) { return false; }
-bool stepper3_limit_fitted(void) { return false; }
+bool stepper3_limit_open(void) { return limit_state() != LIMIT_CLOSED; }
+bool stepper3_limit_fitted(void) { return true; }
 bool stepper3_set_rate(uint32_t v) { m_rate = v; return true; }
 bool stepper3_set_start(uint32_t v) { m_start = v; return true; }
 bool stepper3_set_accel(uint32_t v) { m_accel = v; return true; }
@@ -148,6 +149,5 @@ const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? 
 const char *stepper3_stop_name(stepper3_stop_t s) { return s == STEPPER3_STOP_DONE ? "done" : s == STEPPER3_STOP_CMD ? "stopped" : s == STEPPER3_STOP_LIMIT ? "LIMIT" : "none"; }
 
 /* Limit switch: closed, except in the trip scenario. */
-#include "limit.h"
 limit_state_t limit_state(void) { return st.boost_tripped ? LIMIT_OPEN : LIMIT_CLOSED; }
 const char *limit_text(void) { return limit_state() == LIMIT_OPEN ? "OPEN" : "closed"; }

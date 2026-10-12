@@ -321,8 +321,9 @@ static void refresh(void)
 
     for (int i = 0; i < 5; i++)
         set_checked(size_btn[i], i == size_sel);
-    for (int i = 0; i < 2; i++)
-        set_disabled(move_btns[i], busy);
+    // Close is refused while the limit stop reads open; Open always works.
+    set_disabled(move_btns[0], busy || stepper3_limit_open());
+    set_disabled(move_btns[1], busy);
     for (int i = 0; i < 3; i++) {
         set_checked(mode_btn[i], (int)stepper3_mode() == i);
         set_disabled(mode_btn[i], busy);
@@ -347,11 +348,16 @@ static void refresh(void)
     set_disabled(dir_btn, busy);
     set_disabled(hold_btn, busy);
 
-    // Limit switch, display only.
+    // Limit switch: the closing stop (PMC_LIMIT_STOP), or display only.
     limit_state_t lim = limit_state();
-    set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed. Display only, it does not stop the motor" :
-                          lim == LIMIT_OPEN ? "Limit switch OPEN: at the limit or wire broken. Display only" :
-                          "Limit switch not read yet");
+    if (!stepper3_limit_fitted())
+        set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed. Stop off, display only" :
+                              lim == LIMIT_OPEN ? "Limit switch OPEN. Stop off, display only" :
+                              "Limit switch not read yet");
+    else
+        set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed: closing allowed" :
+                              lim == LIMIT_OPEN ? "Limit switch OPEN: closing blocked (at limit or wire broken)" :
+                              "Limit switch not read yet: closing blocked");
     set_color(limit_label, lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
 }
 
@@ -444,7 +450,7 @@ void motor_screen_init(lv_obj_t *return_screen)
     make_button(sc, 80, 180, 60, 30, "Zero", zero_event, 0);
     make_button(sc, 144, 180, 76, 30, "Coils off", off_event, 0);
 
-    // Limit switch state; it is shown only and does not stop closing moves.
+    // Limit switch state and whether closing is allowed.
     limit_label = make_label(screen, "", COL_IDLE);
     lv_obj_set_style_text_font(limit_label, &lv_font_montserrat_12, 0);
     lv_obj_set_width(limit_label, 456);

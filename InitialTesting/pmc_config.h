@@ -19,7 +19,7 @@
 #define PMC_PM_DIAG       1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.3.28"
+#define PMC_FW_VERSION    "0.3.29"
 
 // 1 shows the +/- mbar uncertainty under the unit; UNC? works either way.
 #define PMC_SHOW_UNCERTAINTY 0
@@ -36,6 +36,9 @@
 #define PMC_LIMIT_OPEN_LEVEL 1
 // 1: MCU internal pull-up on the input (needed for the bare contact).
 #define PMC_LIMIT_PULLUP  1
+// 1: the limit switch is the closing stop: closing moves are refused, and
+// stopped mid-move, while it reads open. 0: its state is only displayed.
+#define PMC_LIMIT_STOP    1
 
 // Serial number of the Druck in use, shown on the Calibration tab.
 #define PMC_DRUCK_SERIAL  "5880156"

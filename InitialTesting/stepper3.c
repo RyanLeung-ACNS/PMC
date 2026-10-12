@@ -7,6 +7,7 @@
 #include "lvgl.h"   // lv_snprintf
 #include "link.h"
 #include "pmc_config.h"
+#include "limit.h"
 #include "stepper3.h"
 
 /* --------------------------------------------------------------------------
@@ -98,18 +99,19 @@ static uint32_t n_acc;                  // steps spent accelerating
 static char status_text[160];
 
 /* --------------------------------------------------------------------------
- * Limit switch (one NC dry contact at the closed end of travel)
- *
- * To fit: read DIGI IN IN1 here and set LIMIT_FITTED to 1. An open contact
- * (at the limit, or a broken wire) must return true.
+ * Limit switch (one NC dry contact at the closed end of travel), read by
+ * limit.c. Checked before a closing move starts and again before every
+ * closing step (in the step interrupt). Open, unknown or a broken wire all
+ * stop. Opening moves are never blocked, so the valve can always back off.
+ * PMC_LIMIT_STOP 0 turns the stop off (state displayed only).
  * ------------------------------------------------------------------------ */
-#define LIMIT_FITTED 0
+#define LIMIT_FITTED PMC_LIMIT_STOP
 
 bool stepper3_limit_fitted(void) { return LIMIT_FITTED; }
 
 bool stepper3_limit_open(void)
 {
-    return false;
+    return LIMIT_FITTED && limit_open_now();
 }
 
 /* --------------------------------------------------------------------------
@@ -334,7 +336,7 @@ const char *stepper3_status(void)
     lv_snprintf(status_text, sizeof status_text,
                 "S%d Stepper 3: %s, pos %ld, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
                 st, (long)position, stepper3_mode_name(mode), (unsigned long)rate_run,
-                !LIMIT_FITTED ? "stop not used (see LIM?)" : stepper3_limit_open() ? "OPEN" : "ok");
+                !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)" : stepper3_limit_open() ? "OPEN" : "ok");
     return status_text;
 }
 
@@ -469,7 +471,7 @@ static void show(void)
     link_printf("MOT hold %d, dir %d, order %d%d%d%d, coils %s, limit %s\r\n",
                 hold, reverse, order[0], order[1], order[2], order[3],
                 energised ? "on" : "off",
-                !LIMIT_FITTED ? "stop not used (see LIM?)" : stepper3_limit_open() ? "OPEN" : "closed (ok)");
+                !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)" : stepper3_limit_open() ? "OPEN" : "closed (ok)");
     link_printf("OK\r\n");
 }
 
