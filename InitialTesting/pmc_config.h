@@ -30,7 +30,7 @@
 
 // Valve limit switch (one NC dry contact to GND) on the empty socket S2:
 //   1: INT, PG1   2: PWM, PD13
-#define PMC_LIMIT_INPUT   1
+#define PMC_LIMIT_INPUT   2
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
 // 1 for the bare contact with the pull-up; 0 for an inverting interface.
 #define PMC_LIMIT_OPEN_LEVEL 1
