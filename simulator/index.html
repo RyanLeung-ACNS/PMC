@@ -1116,7 +1116,7 @@ function updateGlobal() {
 // Target (mbar) for pressure, Go to (%) for the valve. Only the box for the present mode is editable (tinted, blue
 // underline, chevron); the other is flat grey. The pressure bar is log 0.1 to 1000 mbar with decade lines and a
 // margin of half the "1000" label at each end; the valve bar is 0 to 100 % with lines at 0, 50, 100. The bars show the
-// low-high band (pressure 10 min, valve 30 s, Ryan 12 Oct) and a direction arrow. No default target: Start AUTO asks for one the first time.
+// low-high band over the last 30 s (Ryan, 12 Oct) and a direction arrow. No default target: Start AUTO asks for one the first time.
 const PBAR = 143, PPAD = 15;   // PPAD: half the width of "1000" at 12 px
 function barX(q) { return clamp(PPAD + (Math.log10(Math.max(q, 1e-3)) + 1) / 4 * (PBAR - 2 * PPAD), 0, PBAR); }
 function vbarX(p) { return clamp(p, 0, 100) * PBAR / 100; }
@@ -1190,7 +1190,7 @@ function buildCtrl() {
     const auto = C.mode === 'AUTO' || C.mode === 'PAUSED';
     // Pressure tile
     set(P1.val, fmtP(PV)); setc(P1.val, PV == null ? COL.fault : COL.text);
-    const rp = recent('pv', 600);
+    const rp = recent('pv', 30);
     tileBar(P1, barX, PV, rp.lo, rp.hi, PV != null && rp.then != null && Math.abs(PV - rp.then) > Math.max(0.01, 0.02 * PV) ? Math.sign(PV - rp.then) : 0);
     vis(P1.tgt, auto && C.spSet); if (C.spSet) st(P1.tgt, { left: (barX(C.SP) - 4).toFixed(1) + 'px' });
     tileField(P1, auto, C.spSet ? C.SP.toFixed(2) : '');
