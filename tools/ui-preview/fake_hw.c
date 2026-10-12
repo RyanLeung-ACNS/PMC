@@ -146,3 +146,8 @@ int8_t stepper3_direction(void) { return 0; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
 const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? "WAVE" : m == STEPPER3_FULL ? "FULL" : "HALF"; }
 const char *stepper3_stop_name(stepper3_stop_t s) { return s == STEPPER3_STOP_DONE ? "done" : s == STEPPER3_STOP_CMD ? "stopped" : s == STEPPER3_STOP_LIMIT ? "LIMIT" : "none"; }
+
+/* Limit switch: closed, except in the trip scenario. */
+#include "limit.h"
+limit_state_t limit_state(void) { return st.boost_tripped ? LIMIT_OPEN : LIMIT_CLOSED; }
+const char *limit_text(void) { return limit_state() == LIMIT_OPEN ? "OPEN" : "closed"; }

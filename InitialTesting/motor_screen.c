@@ -4,6 +4,7 @@
 #include "motor_screen.h"
 #include "stepper3.h"
 #include "link.h"
+#include "limit.h"
 
 /*
  * Motor screen, 480 x 272. Every MOT setting and move from the touchscreen;
@@ -36,6 +37,7 @@ static lv_obj_t *size_btn[5], *mode_btn[3];
 static lv_obj_t *rate_val, *start_val, *accel_val;
 static lv_obj_t *order_btn, *dir_btn, *hold_btn;
 static lv_obj_t *move_btns[2];
+static lv_obj_t *limit_label;
 static int size_sel = 2;
 
 static const int32_t step_sizes[5] = { 1, 10, 100, 1000, 10000 };
@@ -344,6 +346,13 @@ static void refresh(void)
     set_disabled(order_btn, busy);
     set_disabled(dir_btn, busy);
     set_disabled(hold_btn, busy);
+
+    // Limit switch, display only.
+    limit_state_t lim = limit_state();
+    set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed. Display only, it does not stop the motor" :
+                          lim == LIMIT_OPEN ? "Limit switch OPEN: at the limit or wire broken. Display only" :
+                          "Limit switch not read yet");
+    set_color(limit_label, lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
 }
 
 static void refresh_timer_cb(lv_timer_t *t)
@@ -435,12 +444,12 @@ void motor_screen_init(lv_obj_t *return_screen)
     make_button(sc, 80, 180, 60, 30, "Zero", zero_event, 0);
     make_button(sc, 144, 180, 76, 30, "Coils off", off_event, 0);
 
-    if (!stepper3_limit_fitted()) {
-        lv_obj_t *w = make_label(screen, "Limit switch not fitted: closing moves are not stopped",
-                                 COL_WARN);
-        lv_obj_set_style_text_font(w, &lv_font_montserrat_12, 0);
-        lv_obj_set_pos(w, 12, 256);
-    }
+    // Limit switch state; it is shown only and does not stop closing moves.
+    limit_label = make_label(screen, "", COL_IDLE);
+    lv_obj_set_style_text_font(limit_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_width(limit_label, 456);
+    lv_label_set_long_mode(limit_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(limit_label, 12, 256);
 
     refresh();
     lv_timer_create(refresh_timer_cb, 100, NULL);

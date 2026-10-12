@@ -23,6 +23,8 @@ add_executable(InitialTesting
     main_screen.h
     motor_screen.c
     motor_screen.h
+    limit.c
+    limit.h
     usb_serial.h
     usb_serial.c
     tinyusb_cdc_device.c

@@ -10,6 +10,7 @@
 #include "uncert.h"
 #include "pmc_config.h"
 #include "motor_screen.h"
+#include "limit.h"
 #include "fixed.h"
 
 lvgl_main_screen_ui_t lvgl_main_screen_ui;
@@ -35,7 +36,7 @@ lvgl_main_screen_ui_t lvgl_main_screen_ui;
 #define COL_IDLE     lv_color_make(150, 158, 166)
 #define COL_WARN     lv_color_make(214, 130, 0)
 
-static lv_obj_t *chip_pm, *chip_boost, *chip_usb;
+static lv_obj_t *chip_pm, *chip_boost, *chip_lim, *chip_usb;
 static lv_obj_t *clock_label;
 static lv_obj_t *pressure_label;
 static lv_obj_t *pressure_sub;
@@ -292,6 +293,10 @@ static void status_timer_cb(lv_timer_t *t)
     else
         set_chip(chip_boost, s->boost_pg ? "10 V OK" : "10 V OFF", s->boost_pg ? COL_OK : COL_FAULT);
     set_chip(chip_usb, link_chip_text(), link_chip_ok() ? COL_OK : COL_IDLE);
+    // Valve limit switch, display only (does not stop the motor).
+    limit_state_t lim = limit_state();
+    set_chip(chip_lim, lim == LIMIT_CLOSED ? "Limit OK" : lim == LIMIT_OPEN ? "Limit OPEN" : "Limit --",
+             lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
     set_text(clock_label, rtclock_screen_text());
     set_color(clock_label, rtclock_valid() ? lv_color_white() : COL_IDLE);
 
@@ -432,10 +437,13 @@ void init_main_screen()
     lv_obj_align(chips, LV_ALIGN_RIGHT_MID, 0, 0);
     chip_pm = make_label(chips, "PM", COL_IDLE);
     chip_boost = make_label(chips, "BOOST", COL_IDLE);
+    chip_lim = make_label(chips, "Limit --", COL_IDLE);
     chip_usb = make_label(chips, link_chip_text(), COL_IDLE);
-    lv_obj_set_width(chip_pm, 60);
-    lv_obj_set_width(chip_boost, 78);
-    lv_obj_set_width(chip_usb, 122);
+    lv_obj_set_width(chip_pm, 52);
+    lv_obj_set_width(chip_boost, 70);
+    lv_obj_set_width(chip_lim, 80);
+    lv_obj_set_width(chip_usb, 90);
+    lv_label_set_long_mode(chip_lim, LV_LABEL_LONG_CLIP);
     lv_label_set_long_mode(chip_usb, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(chip_usb, LV_TEXT_ALIGN_RIGHT, 0);
 

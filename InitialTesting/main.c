@@ -28,6 +28,7 @@
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
+#include "limit.h"
 #include "main_screen.h"
 
 /*
@@ -94,6 +95,7 @@ void application_init()
     // Click boards on the shield. Stepper coils off; the motor only moves
     // on a MOT MOVE command.
     clicks_init();
+    limit_init();
 
     // Initialize all available screens.
     init_screens();
@@ -155,8 +157,9 @@ int main(void)
         link_task();
         touch_poll();
         rtclock_poll();
+        limit_poll();
         if (link_getline(line, sizeof line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !stepper3_command(line) && !clicks_command(line) &&
+            !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

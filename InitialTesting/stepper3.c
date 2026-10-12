@@ -334,7 +334,7 @@ const char *stepper3_status(void)
     lv_snprintf(status_text, sizeof status_text,
                 "S%d Stepper 3: %s, pos %ld, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
                 st, (long)position, stepper3_mode_name(mode), (unsigned long)rate_run,
-                !LIMIT_FITTED ? "not fitted" : stepper3_limit_open() ? "OPEN" : "ok");
+                !LIMIT_FITTED ? "stop not used (see LIM?)" : stepper3_limit_open() ? "OPEN" : "ok");
     return status_text;
 }
 
@@ -469,7 +469,7 @@ static void show(void)
     link_printf("MOT hold %d, dir %d, order %d%d%d%d, coils %s, limit %s\r\n",
                 hold, reverse, order[0], order[1], order[2], order[3],
                 energised ? "on" : "off",
-                !LIMIT_FITTED ? "not fitted" : stepper3_limit_open() ? "OPEN" : "closed (ok)");
+                !LIMIT_FITTED ? "stop not used (see LIM?)" : stepper3_limit_open() ? "OPEN" : "closed (ok)");
     link_printf("OK\r\n");
 }
 

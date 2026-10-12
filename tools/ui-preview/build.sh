@@ -35,6 +35,9 @@ for s in ok nopm lowexc trip cal unsaved nodruck; do
   rm "$OUT/$s-chip.raw"
 done
 "$OUT/ui_preview" ok "$OUT/motor.raw" motor
+"$OUT/ui_preview" trip "$OUT/motor-trip.raw" motor
+python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"
+rm "$OUT/motor-trip.raw"
 python3 "$HERE/render.py" "$OUT/motor.raw" "$OUT/motor.png"
 rm "$OUT/motor.raw"
 echo "Wrote calibration and chip-reading previews for all six scenarios to $OUT"
