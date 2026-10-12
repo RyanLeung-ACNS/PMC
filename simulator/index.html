@@ -1124,7 +1124,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const c = mk(s, x, RY[0], 167, 160, 'card');
   mk(c, 12, 5, 90, null, 'cap', name);
   st(mk(c, 75, 5, 80, null, 'cap', unit), { textAlign: 'right' });
-  const val = st(mk(c, 12, 19, PBAR, 26, '', ''), { fontSize: '26px', lineHeight: '26px', textAlign: 'right' });
+  const val = st(mk(c, 12, 26, PBAR, 26, '', ''), { fontSize: '26px', lineHeight: '26px', textAlign: 'right' });
   const bar = st(mk(c, 12, 56, PBAR, 10, ''), { background: COL.bg });
   const fill = st(mk(bar, 0, 0, 0, 10, ''), { background: '#7B8794' });
   const ticks = [], labels = [];
