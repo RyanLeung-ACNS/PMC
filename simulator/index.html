@@ -1129,6 +1129,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const fill = st(mk(bar, 0, 0, 0, 10, ''), { background: '#7B8794' });
   const ticks = [], labels = [];
   const band = st(mk(bar, 0, 2, 0, 6, ''), { background: COL.grey, opacity: '0.35' });
+  const bandOn = st(mk(bar, 0, 2, 0, 6, ''), { background: '#C3CDD7' });   // part of the band over the valve fill: lighter grey (Ryan, 12 Oct)
   const arrow = st(mk(bar, 0, 0, 0, 0, ''), { borderTop: '5px solid transparent', borderBottom: '5px solid transparent' });   // drawn triangle, not a glyph
   const tgt = st(mk(bar, 0, 10, 0, 0, ''), { borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '6px solid ' + COL.text });
   const mark = st(mk(bar, 0, -3, 3, 16, ''), { background: COL.text });
@@ -1138,7 +1139,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const fv = mk(f, 0, 0, PBAR - 24, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px' });
   const chev = st(mk(f, PBAR - 21, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
   f.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); onTap(); updateUI(); });
-  return { c, val, bar, fill, ticks, labels, band, arrow, tgt, mark, f, fv, chev };
+  return { c, val, bar, fill, ticks, labels, band, bandOn, arrow, tgt, mark, f, fv, chev };
 }
 function tileTicks(T, xs, labs) {
   xs.forEach(x => st(mk(T.bar, Math.min(x, PBAR - 1), 0, 1, 10, ''), { background: '#A3AFBB' }));
@@ -1155,6 +1156,9 @@ function tileBar(T, X, now, lo, hi, dir) {
   if (now == null) return;
   st(T.mark, { left: (X(now) - 1).toFixed(1) + 'px' });
   if (lo != null) st(T.band, { left: X(lo).toFixed(1) + 'px', width: Math.max(0, X(hi) - X(lo)).toFixed(1) + 'px' });
+  const fw = parseFloat(T.fill.style.width) || 0, onHi = lo != null ? Math.min(X(hi), fw) : 0;
+  vis(T.bandOn, lo != null && onHi > X(lo));
+  if (lo != null && onHi > X(lo)) st(T.bandOn, { left: X(lo).toFixed(1) + 'px', width: (onHi - X(lo)).toFixed(1) + 'px' });
   if (dir) st(T.arrow, { left: clamp(X(now) + (dir > 0 ? 4 : -11), 0, PBAR - 7).toFixed(1) + 'px', borderLeft: dir > 0 ? '7px solid ' + COL.text : '0', borderRight: dir > 0 ? '0' : '7px solid ' + COL.text });
 }
 function recent(key, secs) {   // low, high and direction over the trend window (direction from the last 20 s)

@@ -31,7 +31,7 @@ The simulator models the proposed 480 x 272 controller interface, the motor, pre
 
 Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-home-final.png`):
 - Two tiles, Pressure and Valve, each with the unit right-aligned in the caption, the reading right-aligned at 26 px, a bar and a setpoint box. Actions stacked above STOP: mode button, Valve, Menu.
-- Pressure bar: log scale 0.1 to 1000 mbar with lines at each decade, labels 0.1, 10, 1000 centred on their lines, and a margin at each end of half the width of "1000". Valve bar: 0 to 100 % with lines at 0, 50 and 100. Both show the low-high band over the last 30 s and a direction arrow; the pressure bar marks the target in AUTO.
+- Pressure bar: log scale 0.1 to 1000 mbar with lines at each decade, labels 0.1, 10, 1000 centred on their lines, and a margin at each end of half the width of "1000". Valve bar: 0 to 100 % with lines at 0, 50 and 100. Both show the low-high band over the last 30 s (lighter grey where it lies over the valve fill) and a direction arrow; the pressure bar marks the target in AUTO.
 - Setpoint boxes: Target (mbar) and Go to (%). Only the box for the present mode is editable (tinted, blue underline, chevron); the other is flat grey and reads "auto" or the last target.
 - No default target. The first Start AUTO opens the keypad and starts AUTO on Set; after that Start AUTO confirms the remembered target or offers New target. Serial and toAuto refuse AUTO with no target set.
 - Nothing is called flow: the pressure is the operator's chosen value for that cryostat.
