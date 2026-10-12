@@ -1128,8 +1128,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const bar = st(mk(c, 12, 56, PBAR, 10, ''), { background: COL.bg });
   const fill = st(mk(bar, 0, 0, 0, 10, ''), { background: '#7B8794' });
   const ticks = [], labels = [];
-  // band drawn as an outline so it shows over the valve fill as well as the empty track (Ryan, 12 Oct)
-  const band = st(mk(bar, 0, -2, 0, 14, ''), { border: '2px solid ' + COL.text, borderRadius: '2px', boxSizing: 'border-box' });
+  const band = st(mk(bar, 0, 2, 0, 6, ''), { background: COL.grey, opacity: '0.35' });
   const arrow = st(mk(bar, 0, 0, 0, 0, ''), { borderTop: '5px solid transparent', borderBottom: '5px solid transparent' });   // drawn triangle, not a glyph
   const tgt = st(mk(bar, 0, 10, 0, 0, ''), { borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '6px solid ' + COL.text });
   const mark = st(mk(bar, 0, -3, 3, 16, ''), { background: COL.text });
@@ -1155,7 +1154,7 @@ function tileBar(T, X, now, lo, hi, dir) {
   vis(T.mark, now != null); vis(T.band, lo != null); vis(T.arrow, !!dir && now != null);
   if (now == null) return;
   st(T.mark, { left: (X(now) - 1).toFixed(1) + 'px' });
-  if (lo != null) st(T.band, { left: (X(lo) - 2).toFixed(1) + 'px', width: Math.max(4, X(hi) - X(lo) + 4).toFixed(1) + 'px' });
+  if (lo != null) st(T.band, { left: X(lo).toFixed(1) + 'px', width: Math.max(0, X(hi) - X(lo)).toFixed(1) + 'px' });
   if (dir) st(T.arrow, { left: clamp(X(now) + (dir > 0 ? 4 : -11), 0, PBAR - 7).toFixed(1) + 'px', borderLeft: dir > 0 ? '7px solid ' + COL.text : '0', borderRight: dir > 0 ? '0' : '7px solid ' + COL.text });
 }
 function recent(key, secs) {   // low, high and direction over the trend window (direction from the last 20 s)
