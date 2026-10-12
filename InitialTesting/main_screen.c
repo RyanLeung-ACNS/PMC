@@ -271,6 +271,19 @@ static void print_changed_lines(void)
     }
 }
 
+/*
+ * Valve limit switch chip, display only (does not stop the motor). Its own
+ * 50 ms timer: the 1 s status timer made a change take up to a second to
+ * show. Unchanged state redraws nothing.
+ */
+static void limit_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    limit_state_t lim = limit_state();
+    set_chip(chip_lim, lim == LIMIT_CLOSED ? "Limit OK" : lim == LIMIT_OPEN ? "Limit OPEN" : "Limit --",
+             lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
+}
+
 /**
  * @brief Every second: re-read the boards, refresh the screen, and print any
  * changed status line to COM3.
@@ -293,10 +306,6 @@ static void status_timer_cb(lv_timer_t *t)
     else
         set_chip(chip_boost, s->boost_pg ? "10 V OK" : "10 V OFF", s->boost_pg ? COL_OK : COL_FAULT);
     set_chip(chip_usb, link_chip_text(), link_chip_ok() ? COL_OK : COL_IDLE);
-    // Valve limit switch, display only (does not stop the motor).
-    limit_state_t lim = limit_state();
-    set_chip(chip_lim, lim == LIMIT_CLOSED ? "Limit OK" : lim == LIMIT_OPEN ? "Limit OPEN" : "Limit --",
-             lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
     set_text(clock_label, rtclock_screen_text());
     set_color(clock_label, rtclock_valid() ? lv_color_white() : COL_IDLE);
 
@@ -519,6 +528,7 @@ void init_main_screen()
     val_pg = make_field(detail_raw, 236, 36, "Boost 10 supply");
 
     lv_timer_create(status_timer_cb, 1000, NULL);
+    lv_timer_create(limit_timer_cb, 50, NULL);
     motor_screen_init(scr);
 }
 
