@@ -8,7 +8,6 @@
 
 #define DRUCK_ACC_MMBAR   414      // 0.04 % of 1034.214 mbar (15 psia FS)
 #define INA_OFFSET_NV     1000     // INA228 shunt offset, 1 uV max
-#define REF_P_DEFAULT     1013250  // assumed reference when none was stored
 #define NOISE_N           10
 
 static int32_t hist[NOISE_N];
@@ -16,10 +15,9 @@ static int hist_n, hist_i;
 
 typedef struct {
     bool ok;            // a figure can be given
-    bool assumed;       // reference pressure or uncertainty assumed
     const char *why;    // when !ok
-    int32_t druck, ref, offset, noise, total;   // 0.001 mbar
-    int32_t ref_unc, ref_p;
+    int32_t druck, vac, air, offset, noise, total;   // 0.001 mbar
+    int32_t vac_unc, vac_p, air_unc, air_p;
 } terms_t;
 
 static terms_t last;
@@ -32,20 +30,20 @@ static void compute(const clicks_state_t *s, terms_t *t)
     memset(t, 0, sizeof *t);
     if (!s->reading_ok) { t->why = "no reading"; return; }
     if (cal_is_default()) { t->why = "not calibrated"; return; }
-    if (!cal_atm_applied()) { t->why = "no CAL ATM"; return; }
+    int32_t r_vac, r_air;
+    if (!cal_bench(&r_vac, &t->vac_p, &r_air, &t->air_p)) { t->why = "no bench cal"; return; }
 
     t->ok = true;
     t->druck = DRUCK_ACC_MMBAR;
 
-    // Gain-type: the reference fixes the gain at ref_p, so its uncertainty
-    // scales with distance from the table's zero-signal pressure p0.
-    int64_t p0 = cal_pressure_mmbar(0);
-    t->ref_unc = cal_atm_unc_mmbar();
-    t->ref_p = cal_atm_ref_mmbar();
-    if (t->ref_unc <= 0) { t->ref_unc = CAL_ATM_UNC_DEFAULT; t->assumed = true; }
-    if (t->ref_p <= 0) { t->ref_p = REF_P_DEFAULT; t->assumed = true; }
-    if (t->ref_p > p0)
-        t->ref = abs32((int64_t)t->ref_unc * (s->p_mmbar - p0) / (t->ref_p - p0));
+    // The vacuum point's pressure error shifts every reading (offset-type,
+    // kept at full size). The air point's sets the gain, so it scales with
+    // distance from the vacuum point: full size at the air point.
+    t->vac_unc = cal_vac_unc_mmbar();
+    t->air_unc = cal_air_unc_mmbar();
+    t->vac = t->vac_unc;
+    if (t->air_p > t->vac_p)
+        t->air = abs32((int64_t)t->air_unc * (s->p_mmbar - t->vac_p) / (t->air_p - t->vac_p));
 
     // Offset-type: 1 uV of signal as a ratio, through the local table slope.
     if (s->bus_mv > 0) {
@@ -61,7 +59,8 @@ static void compute(const clicks_state_t *s, terms_t *t)
         t->noise = 2 * (int32_t)isqrt64((uint64_t)(sq / (hist_n - 1)));
     }
 
-    uint64_t ss = (uint64_t)((int64_t)t->druck * t->druck) + (uint64_t)((int64_t)t->ref * t->ref) +
+    uint64_t ss = (uint64_t)((int64_t)t->druck * t->druck) + (uint64_t)((int64_t)t->vac * t->vac) +
+                  (uint64_t)((int64_t)t->air * t->air) +
                   (uint64_t)((int64_t)t->offset * t->offset) + (uint64_t)((int64_t)t->noise * t->noise);
     t->total = (int32_t)isqrt64(ss);
 }
@@ -89,7 +88,7 @@ const char *uncert_screen_text(bool *warn)
         lv_snprintf(t, sizeof t, "+/- ? (%s)", last.why);
         return t;
     }
-    *warn = last.assumed;
+    *warn = false;
     fixed_fmt(v, sizeof v, fixed_round(last.total, 1), 2);
     lv_snprintf(t, sizeof t, "+/- %s mbar", v);
     return t;
@@ -110,16 +109,19 @@ bool uncert_command(const char *line)
         return true;
     }
     char b[96], p[16], u[16];
-    fixed_fmt(p, sizeof p, last.ref_p, 3);
-    fixed_fmt(u, sizeof u, last.ref_unc, 3);
     term("total (RSS)", last.total, "about 95 %");
     term("druck", last.druck, "datasheet, 0.04 % FS");
-    lv_snprintf(b, sizeof b, "CAL ATM reference +/-%s at %s mbar%s, scaled to this pressure",
-                u, p, last.assumed ? " (ASSUMED, give it: CAL ATM <mbar> <unc>)" : "");
-    term("atm_ref", last.ref, b);
-    term("ina228_offset", last.offset, "datasheet, 1 uV");
+    fixed_fmt(p, sizeof p, last.vac_p, 3);
+    fixed_fmt(u, sizeof u, last.vac_unc, 3);
+    lv_snprintf(b, sizeof b, "CAL VAC point +/-%s at %s mbar, every reading", u, p);
+    term("vac_ref", last.vac, b);
+    fixed_fmt(p, sizeof p, last.air_p, 3);
+    fixed_fmt(u, sizeof u, last.air_unc, 3);
+    lv_snprintf(b, sizeof b, "CAL AIR point +/-%s at %s mbar, scaled to this pressure", u, p);
+    term("air_ref", last.air, b);
+    term("ina228_offset", last.offset, "datasheet, 1 uV (bound; the vacuum point takes most out)");
     term("noise", last.noise, "2 sd of the last 10 readings");
-    link_printf("UNC not included: INA228 gain (taken out by CAL ATM), Druck thermal effects, "
-                "drift of the input-loading correction (RDIFF typical only)\r\nOK\r\n");
+    link_printf("UNC not included: INA228 gain and input loading (inside the bench cal), "
+                "Druck thermal effects, drift of either since the cal\r\nOK\r\n");
     return true;
 }

@@ -6,7 +6,8 @@
 #include "extflash.h"
 #include "cal.h"
 #include "fixed.h"
-#include "clicks.h"   // live ratio for CAL ATM
+#include "pmc_config.h"   // PMC_DRUCK_SERIAL
+#include "clicks.h"   // live ratio for CAL VAC / CAL AIR
 
 /* --------------------------------------------------------------------------
  * Stored record. Little-endian, fixed layout, CRC32 (IEEE) over everything
@@ -14,7 +15,7 @@
  * ------------------------------------------------------------------------ */
 #define CAL_FLASH_ADDR  0x7FF000UL
 #define CAL_MAGIC       0x4C414350UL  // "PCAL"
-#define CAL_VERSION     3   // 2 adds atm_ppm, 3 the ATM reference; 1 and 2 still load
+#define CAL_VERSION     4   // 4: bench two-point; 1 to 3 (CAL ATM era) are not loaded
 
 typedef struct {
     uint32_t magic;
@@ -23,15 +24,11 @@ typedef struct {
     char id[CAL_ID_LEN];
     int32_t r_ppb[CAL_MAX_POINTS];     // ratio, ppb, strictly ascending
     int32_t p_mmbar[CAL_MAX_POINTS];   // pressure, 0.001 mbar
-    int32_t atm_ppm;   // product of CAL ATM factors applied to r_ppb, 1000000 = none, 0 = unknown
-    int32_t atm_ref_mmbar;   // pressure given to the last CAL ATM, 0 = unknown
-    int32_t atm_unc_mmbar;   // its uncertainty, 0 = unknown
+    int32_t kind;            // CAL_KIND_TABLE or CAL_KIND_BENCH
+    int32_t vac_unc_mmbar;   // bench: uncertainty of the vacuum point's pressure
+    int32_t air_unc_mmbar;   // bench: uncertainty of the air point's pressure
     uint32_t crc;
 } cal_rec_t;
-
-// Older layouts: as above, cut short where the CRC then sat.
-#define CAL_V1_CRC_OFFSET  offsetof(cal_rec_t, atm_ppm)
-#define CAL_V2_CRC_OFFSET  offsetof(cal_rec_t, atm_ref_mmbar)
 
 // Nominal: 0 mV and 100 mV at 10 V = 0 and 10 mV/V over 0-15 psia.
 static const cal_rec_t cal_default = {
@@ -39,7 +36,7 @@ static const cal_rec_t cal_default = {
     .id = "nominal",
     .r_ppb = { 0, 10000000 },
     .p_mmbar = { 0, 1034214 },
-    .atm_ppm = 1000000,
+    .kind = CAL_KIND_TABLE,
 };
 
 static cal_rec_t active;
@@ -47,6 +44,26 @@ static cal_rec_t staging;
 static bool active_is_default = true;
 static bool active_saved;          // active matches what is in flash
 static bool flash_ok;
+static uint32_t old_version;       // version of a stored record not loaded, 0 = none
+
+/*
+ * Bench two-point capture. Each point is the mean of CAPTURE_N readings
+ * (one a second) of the live ratio, taken through the INA228 as it is
+ * wired, so the input loading and INA228 gain and offset are in the table.
+ */
+#define CAPTURE_N   10
+static struct {
+    bool have_vac, have_air;
+    int32_t r_vac, p_vac, u_vac;      // ppb, 0.001 mbar
+    int32_t r_air, p_air, u_air;
+} bench;
+static struct {
+    int what;                          // 0 idle, 1 vacuum, 2 air
+    int32_t p, u;
+    int n;
+    int64_t sum, sq;                   // ppb, ppb^2 about the first reading
+    int32_t first;
+} cap;
 
 static uint32_t crc32(const void *data, size_t len)
 {
@@ -90,33 +107,22 @@ void cal_init(void)
         return;
 
     extflash_read(CAL_FLASH_ADDR, &r, sizeof r);
-    bool good = false;
-    if (rec_check(&r) == NULL) {
-        if (r.version == 1) {
-            // CRC sits where atm_ppm is now. A "+atm" table's factor is not known.
-            uint32_t crc;
-            memcpy(&crc, (const uint8_t *)&r + CAL_V1_CRC_OFFSET, sizeof crc);
-            good = crc == crc32(&r, CAL_V1_CRC_OFFSET);
-            r.id[CAL_ID_LEN - 1] = '\0';
-            size_t n = strlen(r.id);
-            r.atm_ppm = (n >= 4 && strcmp(r.id + n - 4, "+atm") == 0) ? 0 : 1000000;
-            r.atm_ref_mmbar = r.atm_unc_mmbar = 0;
-            r.version = CAL_VERSION;
-        } else if (r.version == 2) {
-            uint32_t crc;
-            memcpy(&crc, (const uint8_t *)&r + CAL_V2_CRC_OFFSET, sizeof crc);
-            good = crc == crc32(&r, CAL_V2_CRC_OFFSET);
-            r.atm_ref_mmbar = r.atm_unc_mmbar = 0;
-            r.version = CAL_VERSION;
-        } else {
-            good = r.crc == rec_crc(&r);
-        }
+    if (r.magic == CAL_MAGIC && r.version >= 1 && r.version < CAL_VERSION) {
+        // CAL ATM era (cert table scaled at one point). Not loaded: redo the
+        // bench cal. CAL? reports it until a new table is saved or erased.
+        old_version = r.version;
+        return;
     }
-    if (good) {
+    if (rec_check(&r) == NULL && r.crc == rec_crc(&r)) {
         r.id[CAL_ID_LEN - 1] = '\0';
         active = r;
         active_is_default = false;
         active_saved = true;
+        if (r.kind == CAL_KIND_BENCH) {
+            bench.have_vac = bench.have_air = true;
+            bench.r_vac = r.r_ppb[0]; bench.p_vac = r.p_mmbar[0]; bench.u_vac = r.vac_unc_mmbar;
+            bench.r_air = r.r_ppb[1]; bench.p_air = r.p_mmbar[1]; bench.u_air = r.air_unc_mmbar;
+        }
     }
 }
 
@@ -134,22 +140,6 @@ int64_t cal_pressure_mmbar(int64_t r)
     return p0 + (r - r0) * (p1 - p0) / (r1 - r0);
 }
 
-// Inverse of cal_pressure_mmbar: ratio in ppb for a pressure in 0.001 mbar.
-static int64_t ratio_for_pressure(int64_t p)
-{
-    const cal_rec_t *c = &active;
-    uint32_t i = 0;
-
-    while (i + 2 < c->npts && p > c->p_mmbar[i + 1])
-        i++;
-
-    int64_t r0 = c->r_ppb[i], r1 = c->r_ppb[i + 1];
-    int64_t p0 = c->p_mmbar[i], p1 = c->p_mmbar[i + 1];
-    if (p1 == p0)
-        return 0;
-    return r0 + (p - p0) * (r1 - r0) / (p1 - p0);
-}
-
 bool cal_is_default(void)
 {
     return active_is_default;
@@ -165,35 +155,20 @@ bool cal_saved(void)
     return active_saved;
 }
 
-bool cal_atm_applied(void)
+uint32_t cal_old_version(void) { return old_version; }
+
+bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
 {
-    size_t n = strlen(active.id);
-    return active.atm_ppm != 1000000 || (n >= 4 && strcmp(active.id + n - 4, "+atm") == 0);
+    if (active_is_default || active.kind != CAL_KIND_BENCH)
+        return false;
+    *r_vac = active.r_ppb[0]; *p_vac = active.p_mmbar[0];
+    *r_air = active.r_ppb[1]; *p_air = active.p_mmbar[1];
+    return true;
 }
 
-int32_t cal_atm_ppm(void)
-{
-    return active.atm_ppm;
-}
-
-int32_t cal_atm_ref_mmbar(void) { return active.atm_ref_mmbar; }
-int32_t cal_atm_unc_mmbar(void) { return active.atm_unc_mmbar; }
-
-// Table ratio with any ATM factor taken back out (the cert value).
-static int64_t unscaled(int32_t r)
-{
-    return active.atm_ppm > 0 ? (int64_t)r * 1000000 / active.atm_ppm : r;
-}
-
-int32_t cal_zero_ppb(void)
-{
-    return (int32_t)unscaled(active.r_ppb[0]);
-}
-
-int32_t cal_span_ppb(void)
-{
-    return (int32_t)(unscaled(active.r_ppb[active.npts - 1]) - unscaled(active.r_ppb[0]));
-}
+int32_t cal_vac_unc_mmbar(void) { return active.vac_unc_mmbar; }
+int32_t cal_air_unc_mmbar(void) { return active.air_unc_mmbar; }
+int cal_capture_left(void) { return cap.what ? CAPTURE_N - cap.n : 0; }
 
 /* --------------------------------------------------------------------------
  * Commands
@@ -234,17 +209,20 @@ static void show(void)
     link_printf("CAL source=%s id=%s points=%lu flash=%s\r\n",
                       active_is_default ? "default" : active_saved ? "flash" : "ram", active.id,
                       (unsigned long)active.npts, flash_ok ? "ok" : "missing");
-    if (active.atm_ppm > 0) {
-        fixed_fmt(r, sizeof r, active.atm_ppm, 6);
-        link_printf("CAL ATM factor %s\r\n", r);
-    } else {
-        link_printf("CAL ATM factor unknown (saved by older firmware)\r\n");
-    }
-    if (active.atm_ref_mmbar > 0) {
+    if (old_version)
+        link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo CAL VAC and CAL AIR\r\n",
+                    (unsigned long)old_version);
+    if (!active_is_default && active.kind == CAL_KIND_BENCH) {
         char u[20];
-        fixed_fmt(p, sizeof p, active.atm_ref_mmbar, 3);
-        fixed_fmt(u, sizeof u, active.atm_unc_mmbar, 3);
-        link_printf("CAL ATM reference %s +/- %s mbar\r\n", p, u);
+        fixed_fmt(p, sizeof p, active.p_mmbar[0], 3);
+        fixed_fmt(u, sizeof u, active.vac_unc_mmbar, 3);
+        link_printf("CAL bench vacuum point %s +/- %s mbar\r\n", p, u);
+        fixed_fmt(p, sizeof p, active.p_mmbar[1], 3);
+        fixed_fmt(u, sizeof u, active.air_unc_mmbar, 3);
+        link_printf("CAL bench air point %s +/- %s mbar\r\n", p, u);
+    } else if (bench.have_vac != bench.have_air) {
+        link_printf("CAL bench %s point captured, %s point still to do\r\n",
+                    bench.have_vac ? "vacuum" : "air", bench.have_vac ? "air" : "vacuum");
     }
     for (uint32_t i = 0; i < active.npts; i++) {
         fixed_fmt(r, sizeof r, active.r_ppb[i], 6);
@@ -273,70 +251,107 @@ static void save(void)
     }
     active_is_default = false;
     active_saved = true;
+    old_version = 0;
     link_printf("OK saved %s\r\n", active.id);
 }
 
 /*
- * CAL ATM <mbar>: the INA228 loads the Druck output (92 kohm differential
- * input against a few kohm source), which scales the whole signal down by a
- * fixed factor, zero and span alike. A cert table describes the unloaded
- * output, so this scales the table's ratios by measured / expected at one
- * known pressure (the room, from a barometer). Pressures are untouched.
+ * Bench two-point cal, through the INA228 as wired:
+ *   CAL VAC [mbar] [unc]   pump the sensor down; pressure taken as 0 unless
+ *                          given (0 to 50 mbar), unc default 0.010 mbar
+ *   CAL AIR <mbar> [unc]   vent to the room and give the room pressure
+ *                          (500 to 1100 mbar), unc default 1.0 mbar
+ * Each averages the live ratio over CAPTURE_N readings, then replies. Once
+ * both points are held the two-point table is applied (RAM only, then CAL
+ * SAVE). Either point can be redone alone; the other is kept.
  */
-static void atm(const char *s)
+static void capture_start(int what, const char *s)
 {
-    int64_t p;
-    char a[20], b[20];
+    int64_t p = 0, u = what == 1 ? CAL_VAC_UNC_DEFAULT : CAL_AIR_UNC_DEFAULT;
+    bool vac = what == 1;
 
-    int64_t unc = CAL_ATM_UNC_DEFAULT;
-    if (!parse_fixed(&s, 3, &p) || p < 500000 || p > 1100000) {
-        link_printf("ERR expected: CAL ATM <mbar> [uncertainty mbar], 500 to 1100\r\n");
+    while (*s == ' ') s++;
+    if ((*s || !vac) &&
+        (!parse_fixed(&s, 3, &p) || (vac ? p < 0 || p > 50000 : p < 500000 || p > 1100000))) {
+        link_printf(vac ? "ERR expected: CAL VAC [mbar 0 to 50] [uncertainty mbar]\r\n"
+                        : "ERR expected: CAL AIR <mbar 500 to 1100> [uncertainty mbar]\r\n");
         return;
     }
     while (*s == ' ') s++;
-    if (*s && (!parse_fixed(&s, 3, &unc) || unc <= 0 || unc > 50000)) {
+    if (*s && (!parse_fixed(&s, 3, &u) || u <= 0 || u > 50000)) {
         link_printf("ERR uncertainty: 0.001 to 50 mbar\r\n");
         return;
     }
-    const clicks_state_t *st = clicks_state();
-    if (!st->reading_ok) {
+    if (!clicks_state()->reading_ok) {
         link_printf("ERR no valid Druck reading\r\n");
         return;
     }
-    int64_t r_now = st->r_ppb;
-    int64_t r_exp = ratio_for_pressure(p);
-    if (r_exp <= 0 || r_now <= 0) {
-        link_printf("ERR ratio not positive, check CAL?\r\n");
+    memset(&cap, 0, sizeof cap);
+    cap.what = what;
+    cap.p = (int32_t)p;
+    cap.u = (int32_t)u;
+    link_printf("OK capturing %s point, %d readings, keep the pressure steady\r\n",
+                vac ? "vacuum" : "air", CAPTURE_N);
+}
+
+static void bench_apply(void)
+{
+    cal_rec_t r;
+    memset(&r, 0, sizeof r);
+    r.magic = CAL_MAGIC;
+    r.version = CAL_VERSION;
+    r.kind = CAL_KIND_BENCH;
+    r.npts = 2;
+    lv_snprintf(r.id, CAL_ID_LEN, "%s bench", PMC_DRUCK_SERIAL);
+    r.r_ppb[0] = bench.r_vac; r.p_mmbar[0] = bench.p_vac; r.vac_unc_mmbar = bench.u_vac;
+    r.r_ppb[1] = bench.r_air; r.p_mmbar[1] = bench.p_air; r.air_unc_mmbar = bench.u_air;
+    if (rec_check(&r) != NULL) {
+        link_printf("ERR air ratio not above vacuum ratio: check the pump-down and venting, redo both\r\n");
         return;
     }
-    int64_t k_ppm = r_now * 1000000 / r_exp;
-    if (k_ppm < 850000 || k_ppm > 1150000) {
-        fixed_fmt(a, sizeof a, k_ppm, 6);
-        link_printf("ERR factor %s is more than 15%% from 1, check CAL? and the pressure\r\n", a);
-        return;
-    }
-
-    cal_rec_t r = active;
-    for (uint32_t i = 0; i < r.npts; i++)
-        r.r_ppb[i] = (int32_t)((int64_t)r.r_ppb[i] * r_now / r_exp);
-    if (r.atm_ppm > 0)
-        r.atm_ppm = (int32_t)((int64_t)r.atm_ppm * r_now / r_exp);
-    r.atm_ref_mmbar = (int32_t)p;
-    r.atm_unc_mmbar = (int32_t)unc;
-    const char *why = rec_check(&r);
-    if (why) { link_printf("ERR %s\r\n", why); return; }
-    size_t n = strlen(r.id);
-    if (n + 4 < CAL_ID_LEN && (n < 4 || strcmp(r.id + n - 4, "+atm") != 0))
-        memcpy(r.id + n, "+atm", 5);
-
-    fixed_fmt(a, sizeof a, k_ppm, 6);
-    fixed_fmt(b, sizeof b, st->p_mmbar, 3);
     active = r;
     active_is_default = false;
     active_saved = false;
-    char u[20];
-    fixed_fmt(u, sizeof u, unc, 3);
-    link_printf("OK ratios x %s (was reading %s mbar), reference +/-%s mbar, not saved: CAL SAVE to keep\r\n", a, b, u);
+    char z[20], sp[20];
+    fixed_fmt(z, sizeof z, (int64_t)r.r_ppb[0] * 10, 6);
+    fixed_fmt(sp, sizeof sp, (int64_t)(r.r_ppb[1] - r.r_ppb[0]) * 10, 6);
+    link_printf("OK bench cal applied: zero %s mV, %s mV per (air - vacuum) at 10 V, not saved: CAL SAVE to keep\r\n",
+                z, sp);
+}
+
+void cal_update(const clicks_state_t *s)
+{
+    if (!cap.what || s->pm_diag)
+        return;
+    if (!s->reading_ok) {
+        link_printf("ERR capture stopped: Druck reading lost\r\n");
+        cap.what = 0;
+        return;
+    }
+    if (cap.n == 0)
+        cap.first = s->r_ppb;
+    int64_t d = (int64_t)s->r_ppb - cap.first;
+    cap.sum += d;
+    cap.sq += d * d;
+    if (++cap.n < CAPTURE_N)
+        return;
+
+    int64_t mean = cap.sum / CAPTURE_N;
+    int64_t var = (cap.sq - cap.sum * mean) / (CAPTURE_N - 1);
+    int32_t r = (int32_t)(cap.first + mean);
+    char a[20], b[20];
+    fixed_fmt(a, sizeof a, r, 6);
+    fixed_fmt(b, sizeof b, isqrt64((uint64_t)(var > 0 ? var : 0)), 6);
+    bool vac = cap.what == 1;
+    if (vac) { bench.have_vac = true; bench.r_vac = r; bench.p_vac = cap.p; bench.u_vac = cap.u; }
+    else     { bench.have_air = true; bench.r_air = r; bench.p_air = cap.p; bench.u_air = cap.u; }
+    cap.what = 0;
+    link_printf("OK %s point %s mV/V (sd %s mV/V over %d readings)\r\n",
+                vac ? "vacuum" : "air", a, b, CAPTURE_N);
+    if (bench.have_vac && bench.have_air)
+        bench_apply();
+    else
+        link_printf("OK now CAL %s\r\n", vac ? "AIR <mbar>" : "VAC");
 }
 
 static void erase(void)
@@ -346,6 +361,8 @@ static void erase(void)
     active = cal_default;
     active_is_default = true;
     active_saved = false;
+    old_version = 0;
+    memset(&bench, 0, sizeof bench);
     link_printf("OK erased, using nominal\r\n");
 }
 
@@ -363,8 +380,7 @@ bool cal_command(const char *line)
         memset(&staging, 0, sizeof staging);
         staging.magic = CAL_MAGIC;
         staging.version = CAL_VERSION;
-        staging.atm_ppm = 1000000;
-        staging.atm_ref_mmbar = staging.atm_unc_mmbar = 0;
+        staging.kind = CAL_KIND_TABLE;
         lv_strlcpy(staging.id, *id ? id : "unnamed", CAL_ID_LEN);
         link_printf("OK new %s\r\n", staging.id);
     } else if (strncmp(a, " PT ", 4) == 0) {
@@ -387,9 +403,12 @@ bool cal_command(const char *line)
         active = staging;
         active_is_default = false;
         active_saved = false;
+        memset(&bench, 0, sizeof bench);
         link_printf("OK applied %s (not saved)\r\n", active.id);
-    } else if (strncmp(a, " ATM ", 5) == 0) {
-        atm(a + 5);
+    } else if (strcmp(a, " VAC") == 0 || strncmp(a, " VAC ", 5) == 0) {
+        capture_start(1, a + 4);
+    } else if (strcmp(a, " AIR") == 0 || strncmp(a, " AIR ", 5) == 0) {
+        capture_start(2, a + 4);
     } else if (strcmp(a, " SAVE") == 0) {
         save();
     } else if (strcmp(a, " ERASE") == 0) {

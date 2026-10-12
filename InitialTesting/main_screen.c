@@ -45,7 +45,7 @@ static lv_font_t pressure_font;
 static lv_obj_t *detail_cal, *detail_raw, *tab_cal, *tab_raw;
 static lv_obj_t *val_signal, *val_exc, *val_die, *val_pg;
 static lv_obj_t *pressure_unc;
-static lv_obj_t *cal_table, *cal_zero, *cal_span, *cal_atm, *cal_store;
+static lv_obj_t *cal_table, *cal_vac, *cal_air, *cal_kind, *cal_store;
 
 #define STATUS_LINES 5
 static const char *last_line[STATUS_LINES];
@@ -296,6 +296,7 @@ static void status_timer_cb(lv_timer_t *t)
 
     const clicks_state_t *s = clicks_state();
     uncert_update(s);
+    cal_update(s);
     if (s->pm_found && data_on && !s->pm_diag)
         print_data_line(s);
 
@@ -361,38 +362,34 @@ static void status_timer_cb(lv_timer_t *t)
         set_color(val_pg, s->boost_pg ? COL_TEXT : COL_FAULT);
     }
 
-    // Calibration. Zero and span are shown as the cert gives them, mV at
-    // 10 V excitation, with the ATM correction taken back out. A table saved
-    // by firmware before 0.3.5 has no record of its ATM factor, so its zero
-    // and span still include it and are flagged.
+    // Calibration: the bench two-point (CAL VAC, CAL AIR), each point as
+    // its pressure and the ratio measured there.
     bool nominal = cal_is_default();
-    int32_t k = cal_atm_ppm();
-    bool k_unknown = cal_atm_applied() && k <= 0;
     set_text(cal_table, PMC_DRUCK_SERIAL);
-
-    lv_color_t zs_col = nominal || k_unknown ? COL_WARN : COL_TEXT;
-    char z[32], sp[32];
-    fmt_fixed2(z, sizeof z, (int64_t)cal_zero_ppb() * 10, 6, "mV");
-    fmt_fixed2(sp, sizeof sp, (int64_t)cal_span_ppb() * 10, 6, "mV");
-    const char *suffix = nominal ? " (nominal)" : k_unknown ? " incl. ATM" : "";
-    set_text_fmt(cal_zero, "%s%s", z, suffix);
-    set_text_fmt(cal_span, "%s%s", sp, suffix);
-    set_color(cal_zero, zs_col);
-    set_color(cal_span, zs_col);
-
-    if (!cal_atm_applied()) {
-        set_text(cal_atm, nominal ? "--" : "not applied (CAL ATM)");
-        set_color(cal_atm, nominal ? COL_MUTED : COL_WARN);
-    } else if (k_unknown) {
-        set_text(cal_atm, "unknown, redo cal");
-        set_color(cal_atm, COL_WARN);
+    int32_t rv, pv, ra, pa;
+    bool bench = cal_bench(&rv, &pv, &ra, &pa);
+    int left = cal_capture_left();
+    if (left) {
+        set_text_fmt(cal_kind, "capturing, %d s left", left);
+        set_color(cal_kind, COL_WARN);
+    } else if (cal_old_version()) {
+        set_text(cal_kind, "old cal not loaded, redo");
+        set_color(cal_kind, COL_WARN);
     } else {
-        // Gain as a factor and a percentage: 0.957300 shows x0.9573 (-4.27 %).
-        char f[16], c[16];
-        fixed_fmt(f, sizeof f, fixed_round(k, 2), 4);
-        fixed_fmt(c, sizeof c, fixed_round(LV_ABS(k - 1000000), 2), 2);   // %
-        set_text_fmt(cal_atm, "x%s (%s%s %%)", f, k < 1000000 ? "-" : "+", c);
-        set_color(cal_atm, COL_TEXT);
+        set_text(cal_kind, nominal ? "nominal, not calibrated" : bench ? "bench two-point" : "entered table");
+        set_color(cal_kind, bench ? COL_TEXT : COL_WARN);
+    }
+    if (bench) {
+        char p[24], r[24];
+        fmt_fixed2(p, sizeof p, pv, 3, "mbar");
+        fixed_fmt(r, sizeof r, fixed_round(rv, 2), 4);
+        set_text_fmt(cal_vac, "%s, %s mV/V", p, r);
+        fmt_fixed2(p, sizeof p, pa, 3, "mbar");
+        fixed_fmt(r, sizeof r, fixed_round(ra, 2), 4);
+        set_text_fmt(cal_air, "%s, %s mV/V", p, r);
+    } else {
+        set_text(cal_vac, "--");
+        set_text(cal_air, "--");
     }
 
     // Only a warning: nothing is shown once the table is saved. The button
@@ -517,9 +514,9 @@ void init_main_screen()
     detail_cal = make_detail_panel(details);
     lv_obj_add_flag(detail_cal, LV_OBJ_FLAG_HIDDEN);
     cal_table = make_field(detail_cal, 6, 0, "Druck serial number");
-    cal_atm = make_field(detail_cal, 236, 0, "Atmospheric correction");
-    cal_zero = make_field(detail_cal, 6, 36, "Certificate zero at 10 V");
-    cal_span = make_field(detail_cal, 236, 36, "Certificate span at 10 V");
+    cal_kind = make_field(detail_cal, 236, 0, "Calibration");
+    cal_vac = make_field(detail_cal, 6, 36, "Vacuum point (CAL VAC)");
+    cal_air = make_field(detail_cal, 236, 36, "Air point (CAL AIR)");
 
     detail_raw = make_detail_panel(details);
     val_signal = make_field(detail_raw, 6, 0, "INA228 signal (ratio)");

@@ -14,13 +14,13 @@
 static clicks_state_t st;
 static bool fake_wdt;
 static char value[24];
-static bool fake_saved, fake_atm;
+static bool fake_saved, fake_bench;
 
 void fake_hw_set_scenario(const char *name)
 {
     memset(&st, 0, sizeof st);
     fake_wdt = false;
-    fake_saved = fake_atm = false;
+    fake_saved = fake_bench = false;
     st.cal_nominal = true;
     st.boost_set_mv = 9999;
     st.pm_found = true;
@@ -43,7 +43,7 @@ void fake_hw_set_scenario(const char *name)
         strcpy(value, "----");
     } else if (!strcmp(name, "cal")) {
         st.cal_nominal = false;
-        fake_saved = fake_atm = true;
+        fake_saved = fake_bench = true;
         st.p_mmbar = 1013200;
         strcpy(value, "1013.20");
     } else if (!strcmp(name, "nodruck")) {
@@ -74,12 +74,20 @@ const char *clicks_druck_value(void) { return value; }
 bool clicks_druck_cal_nominal(void) { return st.cal_nominal; }
 const clicks_state_t *clicks_state(void) { return &st; }
 bool cal_is_default(void) { return st.cal_nominal; }
-const char *cal_id(void) { return fake_atm ? "5880156+atm" : "5880156"; }
-int32_t cal_atm_ppm(void) { return fake_atm ? 957300 : 1000000; }
-int32_t cal_zero_ppb(void) { return st.cal_nominal ? 0 : 133700; }
-int32_t cal_span_ppb(void) { return st.cal_nominal ? 10000000 : 10099600; }
+const char *cal_id(void) { return fake_bench ? "5880156 bench" : "5880156"; }
 bool cal_saved(void) { return fake_saved; }
-bool cal_atm_applied(void) { return fake_atm; }
+void cal_update(const clicks_state_t *s) { (void)s; }
+uint32_t cal_old_version(void) { return 0; }
+int cal_capture_left(void) { return 0; }
+int32_t cal_vac_unc_mmbar(void) { return 10; }
+int32_t cal_air_unc_mmbar(void) { return 1000; }
+bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
+{
+    if (!fake_bench) return false;
+    *r_vac = 127900; *p_vac = 0;
+    *r_air = 9798300; *p_air = 1013250;
+    return true;
+}
 int32_t clicks_boost10_set_mv(int32_t mv) { return st.boost_tripped ? -1 : mv; }
 
 void link_init(void) {}
