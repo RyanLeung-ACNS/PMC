@@ -14,7 +14,7 @@ module.exports = async (p, h) => {
   await check('valve-notref', go('valve'));
   await check('ctrl-referencing', 'C.faults.clear(); home(); for (let i = 0; i < 200; i++) simTick(); ' + go('ctrl'));
   await check('ref-referencing', go('ref'));
-  await check('ctrl-auto', 'bootHomed(); C.mode = "MANUAL"; M.pos = 33000; C.manPos = M.pos; C.SP = 5; toAuto(); ' + go('ctrl'));
+  await check('ctrl-auto', 'bootHomed(); C.mode = "MANUAL"; M.pos = 33000; C.manPos = M.pos; setSP(5); toAuto(); ' + go('ctrl'));
   await check('valve-auto', go('valve'));
   await check('ctrl-paused', 'C.mode = "PAUSED"; ' + go('ctrl'));
   await check('valve-paused', go('valve'));

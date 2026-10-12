@@ -10,8 +10,9 @@ module.exports = async (p, h) => {
   await tap('Reference valve'); await shot('wf1-2-ask'); await tap('Start reference'); await run(3); await shot('wf1-3-referencing');
   await run(400); o = await st(); ok(o.mode === 'MANUAL' && o.pos === 0, 'WF1 referenced, MANUAL at 0 %');
   await tap('Valve'); await tap('Enter position'); await keys('34'); await tap('Set'); await run(120); await tap('Back');
-  await tap('Set target'); await keys('5'); await shot('wf1-4-target'); await tap('Set');
-  await tap('Start AUTO'); await tap('Start AUTO'); await run(5); o = await st(); ok(o.mode === 'AUTO', 'WF1 AUTO started');
+  ok(await ev(() => !C.spSet), 'WF1 no default target');
+  await tap('Start AUTO'); await keys('5'); await shot('wf1-4-target'); await tap('Set');
+  await run(5); o = await st(); ok(o.mode === 'AUTO', 'WF1 first Start AUTO asks for the target and starts AUTO');
   await shot('wf1-5-regulating'); const s1 = await ev(() => { C.msg = null; return statusLine().text; });
   await run(600); const s2 = await ev(() => { C.msg = null; return statusLine().text; }); await shot('wf1-6-stable');
   ok(/Regulating|Within|Stable/.test(s1) && /Stable|Within/.test(s2), 'WF1 status "' + s1 + '" then "' + s2 + '"');
