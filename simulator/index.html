@@ -1202,6 +1202,9 @@ function vbarX(p) { return clamp(p, 0, 100) * PBAR / 100; }
 // valve moves line up; a tap on either opens Trend. The 30 s band and the direction arrow are removed (the sparkline
 // shows both). The pressure bar keeps the log scale for range context and adds the low-alarm zone (R5).
 const SPARK_WIN = 600;
+// Ryan (13 Oct): the Target and Go to boxes only as wide as "999.9" at 26 px (70 px) plus the chevron (98 px); right edge
+// stays on the bar's right end. A value above 999.9 drops to 16 px (S2).
+const SPW = 98;
 function homeTile(s, x, name, unit, fname, onTap) {
   const c = mk(s, x, RY[0], 167, 160, 'card');
   mk(c, 12, 4, 90, null, 'cap', name);
@@ -1217,9 +1220,9 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const ticks = [], labels = [];
   const mark = st(mk(bar, 0, -3, 3, 14, ''), { background: COL.text });
   st(mk(c, 12, 116, 40, 40, 'cap', fname), { lineHeight: '40px' });
-  const f = st(mk(c, 52, 116, 103, 40, ''), { borderRadius: '4px', fontSize: '26px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
-  const fv = mk(f, 0, 0, 103 - 20, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px', overflow: 'hidden' });
-  const chev = st(mk(f, 103 - 18, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
+  const f = st(mk(c, 155 - SPW, 116, SPW, 40, ''), { borderRadius: '4px', fontSize: '26px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
+  const fv = mk(f, 0, 0, SPW - 18, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px', overflow: 'hidden' });
+  const chev = st(mk(f, SPW - 16, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
   f.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); onTap(); updateUI(); });
   return { c, val, sp, bar, zone, fill, ticks, labels, mark, f, fv, chev };
 }
@@ -1229,8 +1232,8 @@ function tileTicks(T, xs, labs) {
 }
 function tileField(T, active, text) {
   set(T.fv, text); vis(T.chev, active);
-  st(T.fv, { width: (active ? 103 - 20 : 103 - 8) + 'px' });
-  fitTo(T.fv, [26, 16]); if (text === 'Not set') st(T.fv, { fontSize: '16px' });   // a word, not a value: 16 px
+  st(T.fv, { width: (active ? SPW - 18 : SPW - 8) + 'px' });
+  st(T.fv, { fontSize: (String(text).length <= 5 ? 26 : 16) + 'px' });   // up to 999.9, 100.0 and auto at 26 px; 1034.0 and 'Not set' at 16 px (measured fit)
   st(T.f, active ? { background: '#E9F0F6', borderBottom: '3px solid ' + COL.blue, borderRadius: '4px 4px 0 0', color: COL.text }
                  : { background: '#EEF2F6', borderBottom: '3px solid #EEF2F6', borderRadius: '4px', color: COL.idle });
 }
