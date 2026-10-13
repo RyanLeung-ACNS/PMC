@@ -33,10 +33,10 @@ module.exports = async (p, h) => {
   await ev(() => { C.mode = 'PAUSED'; updateUI(); }); await tap('Switch to MANUAL'); await tap('Switch to MANUAL'); o = await st(); ok(o.mode === 'MANUAL', 'WF3 paused -> MANUAL from the status line');
 
   // 4. Edit several commissioning pages -> review -> apply -> save -> restart
-  await run(5); await tap('Menu'); await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf4-1-comm');
+  await run(5); await tap('Menu'); await tap('Settings'); await shot('wf4-1-comm');
   await tap('Control tuning', true); await tap('Gain, %/mB', true); await keys('6'); await tap('Set'); await tap('Back');
   o = await st(); ok(o.cur === 'comm' && !o.ov, 'WF4 Back with a draft: no Apply/Discard question');
-  await tap('Pressure limits', true); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
+  await tap('Control tuning', true); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
   await tap('Valve setup', true); await tap('Drive'); await tap('Run speed, steps/s', true); await keys('500'); await tap('Set'); await shot('wf4-2-drive-draft'); await tap('Back');
   await tap('Review and save', true); await shot('wf4-3-config');
   await tap('Unapplied changes', true); const list = (await st()).ov; await shot('wf4-4-list');
@@ -48,7 +48,7 @@ module.exports = async (p, h) => {
   o = await ev(() => [P.Kp, P.band, MOT.run, SAVED.rev]); ok(o.join() === '6,0.2,500,2', 'WF4 kept after restart: ' + o.join(', '));
 
   // 5. Import revised calibration -> inspect identity/status -> apply and save
-  await ev(() => { bootHomed(); accEnter('test'); show('sensor', false, true); });
+  await ev(() => { bootHomed(); show('sensor', false, true); });
   await ev(() => { const q = JSON.parse(JSON.stringify(SENS.prof[0])); q.atm = 1.06; q.calId = 'Druck reissue CA-5880156'; q.calDate = '09 Oct 2026'; importCfg({ sens: { prof: [q] } }, 'PC tool'); });
   await shot('wf5-1-sensor-imported'); await tap('Calibration', true); o = await st(); await shot('wf5-2-detail');
   ok(/Druck reissue/.test(o.ov) && /Unapplied change/.test(o.ov), 'WF5 detail shows new identity, state Unapplied change'); await tap('Close');
@@ -67,28 +67,33 @@ module.exports = async (p, h) => {
   await ev(() => document.getElementById('b-druck').click()); await run(2); await tap('Reset fault'); o = await st(); ok(!o.faults.length && o.mode === 'MANUAL', 'WF6 reset after replug, MANUAL');
 
   // 7. Failed save, and commissioning timeout with pending edits
-  await ev(() => { accEnter('test'); show('tune', false, true); P.Kp = 7; document.getElementById('b-flash').click(); updateUI(); });
+  await ev(() => { show('tune', false, true); P.Kp = 7; document.getElementById('b-flash').click(); updateUI(); });
   const rev0 = (await st()).rev;
   await tap('Save settings'); await tap('Save settings'); o = await st(); await shot('wf7-1-save-failed');
   const why = await ev(() => C.refusal);
   ok(o.rev === rev0 && o.dirty && /Save failed/.test(o.foot + why), 'WF7 failed save reported, rev unchanged, still not saved: ' + JSON.stringify([o.rev, o.dirty, o.foot, why]));
   await ev(() => document.getElementById('b-flash').click());
   await tap('Integral time, min', true); await keys('0.4'); await tap('Set');
-  const before = await st();
-  await ev(() => { ACC.last = performance.now() - 11 * 60 * 1000; updateUI(); }); o = await st(); await shot('wf7-2-timeout');
-  ok(!o.acc && o.drafts.includes('P.Ti') && o.mode === before.mode && o.pos === before.pos, 'WF7 timeout: access closed, draft kept, mode and valve unchanged');
-  await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf7-3-reentry'); o = await st();
-  ok(o.drafts.includes('P.Ti') && /unapplied/.test(o.foot), 'WF7 draft offered for review after re-entry');
+  await tap('Apply changes'); const kp = await ev(() => P.Kp); await tap('Save settings'); await tap('Save settings');
+  await ev(() => { P.Kp = 3; updateUI(); }); await tap('Save settings'); await tap('Save settings'); o = await st();
+  await ev(() => show('cfg', false, true)); await tap('Revert', true); await shot('wf7-2-revert'); await tap('Apply changes'); o = await st();
+  const kpNow = await ev(() => P.Kp); ok(kpNow === kp && o.dirty, 'WF7 Revert loads the previous rev (gain ' + kp + '), applied, not saved');
   // 8. Live calibration: capture vacuum and air through the board, check New cal, apply and save
   await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('comm'); updateUI(); });
-  await tap('Live calibration', true); await shot('wf8-1-cal');
-  await tap('Capture vacuum'); await keys('0'); await tap('Set'); await run(1); await shot('wf8-2-capturing');
+  await tap('Pressure sensor', true); await tap('Live calibration', true); await shot('wf8-1-cal');
+  await tap('Capture vacuum'); await shot('wf8-2-vac-ask'); await tap('Capture'); await run(1); await shot('wf8-2-capturing');
   await run(30); o = await st(); ok(o.drafts.includes('S.prof'), 'WF8 vacuum point held as an unapplied change');
   await ev(() => { BENCH.air = 1013.4; }); await run(2);
-  await tap('Capture air'); await keys('<<<<<<1013.4'); await tap('Set'); await run(30); await shot('wf8-3-both');
+  await tap('Capture air'); await shot('wf8-3-air-keypad'); await keys('1013.4'); await tap('Set'); await run(30); await shot('wf8-3-both');
   let c = await ev(() => { const q = fv(PROF_FIELD)[sIdx()]; return { kind: calKind(q), nw: calP(C.mv, q), old: PV }; });
   ok(c.kind === 'two-point bench' && Math.abs(c.nw - 1013.4) < 0.3, 'WF8 two-point table reads ' + c.nw.toFixed(2) + ' mB at 1013.4 (in use ' + c.old.toFixed(1) + ')');
   await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF8 Apply uses the new calibration, not saved yet');
   await tap('Save settings'); await tap('Save settings'); o = await st(); ok(!o.dirty, 'WF8 Save settings writes it');
   await ev(() => { BENCH.plumb = 'line'; });
+
+  // 9. Add a sensor on the board, then remove it
+  await ev(() => show('sensor', false, true)); await tap('Add sensor'); await keys('12345678'); await tap('Set'); await shot('wf9-1-range'); await tap('30 psi');
+  o = await ev(() => SENS.prof.map(q => sensName(q))); ok(o.includes('30 psi, s/n 12345678'), 'WF9 added: ' + o.join(' | '));
+  await tap('Remove sensor'); await tap('30 psi, s/n 12345678'); await shot('wf9-2-remove-ask'); await tap('Remove');
+  o = await ev(() => SENS.prof.map(q => q.serial)); ok(!o.includes(12345678), 'WF9 removed');
 };

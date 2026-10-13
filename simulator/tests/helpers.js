@@ -11,7 +11,7 @@ module.exports = (p, out) => {
   }, [txt, prefix]); await p.waitForTimeout(40); };
   const keys = async str => { for (const ch of str) { if (ch === '<') await p.evaluate(() => { const b = [...document.querySelectorAll('#dev .b')].find(x => x.querySelector('[data-lv="LV_SYMBOL_BACKSPACE"]')); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); }); else await tap(ch); } };
   const run = async sec => p.evaluate(s => { const n = Math.round(s / DT); for (let i = 0; i < n; i++) { simTick(); runQuick(); } updateUI(); }, sec);
-  const st = () => p.evaluate(() => ({ cur: current, mode: C.mode, acc: ACC.on, drafts: [...DRAFT.keys()], dirty: cfgDirty(), rev: SAVED.rev, pv: PV == null ? null : +PV.toFixed(2), pos: +pctOf(M.pos).toFixed(1), moving: M.moving, target: M.target, faults: [...C.faults.keys()], foot: G.ftxt.textContent, badge: G.badge.textContent, ov: overlay ? overlay.textContent : '' }));
+  const st = () => p.evaluate(() => ({ cur: current, mode: C.mode, drafts: [...DRAFT.keys()], dirty: cfgDirty(), rev: SAVED.rev, pv: PV == null ? null : +PV.toFixed(2), pos: +pctOf(M.pos).toFixed(1), moving: M.moving, target: M.target, faults: [...C.faults.keys()], foot: G.ftxt.textContent, badge: G.badge.textContent, ov: overlay ? overlay.textContent : '' }));
   const doAudit = async label => { await p.evaluate(() => updateUI()); const r = await p.evaluate(`(${audit.toString()})()`); console.log((r.length ? 'AUDIT ' : 'AUDIT ok ') + label + (r.length ? ': ' + r.join(' | ') : '')); return r; };
   return { shot, tap, keys, run, st, audit: doAudit };
 };

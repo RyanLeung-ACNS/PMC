@@ -9,8 +9,8 @@ module.exports = async (p, h) => {
     return [...new Set(hits)]; });
   let r;
   // S10, S3: Target max 50; keypad refuses a second decimal; serial target rounded to 0.1
-  r = await ev(() => { keypadSP(); const info = overlay.textContent; closeOverlay(); return { max: P.spMax, info }; });
-  ok(r.max === 50 && /Allowed 0\.2 to 50/.test(r.info), 'S10 Target max 50, keypad shows the range: ' + r.info.slice(0, 60));
+  r = await ev(() => { keypadSP(); const info = overlay.textContent; closeOverlay(); return { max: pMax(), info }; });
+  ok(r.max === 1034 && /Allowed 0 to 1034/.test(r.info), 'S10 (Ryan 14 Oct: no limits) target 0 to the sensor range, keypad shows it: ' + r.info.slice(0, 60));
   r = await ev(() => { command('CTRL SP 15.05'); return C.SP; });
   ok(r === 15.1 || r === 15, 'S3 serial target rounded to 0.1 mbar: ' + r);
   // S1, S3, S4: AUTO, step, readings 1 dp, no green or amber
@@ -46,7 +46,7 @@ module.exports = async (p, h) => {
   r = await ev(() => /lastUI > 500/.test(frame.toString()));
   ok(r, 'S11 device values refresh at 2 Hz');
   // S16 to S21: Menu and lower pages
-  r = await ev(() => { accExit('test', true); bootHomed(); BENCH.druck = false; for (let i = 0; i < 300; i++) simTick(); show('menu'); updateUI();
+  r = await ev(() => { DRAFT.clear(); bootHomed(); BENCH.druck = false; for (let i = 0; i < 300; i++) simTick(); show('menu'); updateUI();
     const tiles = [...document.querySelectorAll('#dev .b')].filter(b => b.offsetParent);
     const al = tiles.find(b => /^Faults and log/.test(b.textContent));
     return { al: al.textContent, alm: al.classList.contains('tile-alm') && al.classList.contains('unack'), diag: tiles.some(b => b.textContent.trim() === 'Diagnostics') }; });

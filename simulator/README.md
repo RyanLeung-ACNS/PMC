@@ -56,6 +56,16 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Certificate zero, span and the cal factor are removed (inaccurate: the INA228 loads the Druck output). Pressure sensor keeps Sensor in use, the calibration detail (kind, points, state) and Import from PC. About this unit shows Cal type instead of Cal factor. Saved config key is now v6, so older saved settings are dropped.
 - Duplications removed from Engineer settings: the Diagnostics tile (Diagnostics is on the Menu without the PIN) and the Setup guide (it repeated the six tiles). Each tile now shows where it stands; Review and save shows no count because the status strip carries it.
 
+## Ryan's batch, 14 October 2026 (v57)
+- Pressure limits removed: the target is 0 to the sensor range, F-02 only above the range, no low alarm. Target band moved to Control tuning.
+- A reading a little below 0 (calibration drift) is shown as it is (for example -0.4), with no fault; the target can be 0.
+- No engineer mode: no PIN, no Lock, no idle lock, no ACCESS commands. Menu > Settings has four tiles (Pressure sensor, Valve setup, Control tuning, Review and save).
+- Review and save keeps the previous saved revision; Revert loads it as unapplied changes (Apply, then Save). Saved config key is now v7.
+- Date and time on the home header where the page title would be.
+- Console: HELP lists one command per line under its group; ? queries give one value or related group per line; a refused import lists one reason per line.
+- Pressure sensor page: Sensor in use and Add sensor; Calibration and Remove sensor; Live calibration and Import from PC. Sensors are named by range in psi (15 psi, s/n 5880156); Add sensor asks for the serial, then the range (5 to 100 psi), and starts uncalibrated.
+- Live calibration opens from Pressure sensor. Capture vacuum asks nothing (0 mB; Not 0 mB if a gauge reads more). Capture air asks for the barometer reading and shows what the sensor reads now beside the keypad.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:
