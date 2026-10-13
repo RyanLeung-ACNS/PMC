@@ -25,6 +25,10 @@ module.exports = async (p, h) => {
   await p.evaluate('C.faults.clear(); bootHomed();');
   // extreme valid values
   await check('ctrl-extreme', 'M.pos = P.POSMAX; C.manPos = M.pos; C.SP = 1034; C.spSet = true; PV = 1034.9; ' + go('ctrl'));
+  await check('ctrl-big-manual', 'C.mode = "MANUAL"; C.SP = 999.9; C.spSet = true; PV = 999.9; M.pos = P.POSMAX; C.manPos = M.pos; ' + go('ctrl'));
+  await check('ctrl-big-auto', 'C.mode = "AUTO"; C.SP = 999.9; PV = 1034.9; ' + go('ctrl'));
+  await check('ctrl-toast-ok', 'C.mode = "MANUAL"; refuse("Target is used in AUTO: Start AUTO asks for it"); ' + go('ctrl'));
+  await check('valve-toast-ok', 'refuse("Target is used in AUTO: Start AUTO asks for it"); ' + go('valve'));
   await check('ctrl-extreme-auto', 'C.mode = "AUTO"; C.SP = 1034; PV = 1034.9; ' + go('ctrl'));
   await check('valve-extreme', go('valve'));
   await check('diag-extreme', 'M.target = 99072; M.from = 0; M.t0 = 0; M.tEnd = 9999; ' + go('diag'));

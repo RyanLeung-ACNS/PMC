@@ -553,6 +553,7 @@ function ev(tag, text) {
   if (C.events.length > 200) C.events.shift();
   conLog('EVT,' + clock(t) + ',' + tag + ',' + text, 'evt');
 }
+const OK_W = 60;   // the OK that dismisses a status message: same narrow width on every screen
 function msg(text, kind) { C.msg = { text, kind: kind || 'warn', until: performance.now() + 5000 }; }
 function refuse(reason) { C.refusal = reason; msg(reason, 'warn'); return false; }
 function fmtP(v) { return v == null ? '----' : v.toFixed(2); }
@@ -1139,7 +1140,7 @@ function buildGlobal() {
   const fgo = st(mk(foot, 323, 0, 14, 48, '', ''), { lineHeight: '48px', color: '#7B8794' }); fgo.innerHTML = sym('RIGHT', 14);
   foot.addEventListener('pointerdown', e => { e.preventDefault(); if (C.faults.size) ackAll(); if (foot.dataset.go) show(foot.dataset.go); updateUI(); });   // S5: tap acknowledges
   // Ryan (13 Oct): a message in the strip has an OK button that dismisses it (it still clears itself after 5 s).
-  const fok = btn(foot, 263, 4, 76, 40, lab('OK'), () => { C.msg = null; });
+  const fok = btn(foot, 279, 4, OK_W, 40, lab('OK'), () => { C.msg = null; });
   // v52 (review 9 Oct): one header arrangement on every page, Back | title | mode, one baseline, normal colour. While
   // commissioning is open a small static open-lock mark sits at the right of the Back area (not a button); no countdown.
   const acc = st(mk(h, 97, 12, 16, 16, ''), { color: '#D5DDE5', pointerEvents: 'none', lineHeight: '0' }); acc.innerHTML = sym('UNLOCK', 16);
@@ -1175,7 +1176,7 @@ function updateGlobal() {
   let sl = null;
   if (!home && (mode === 'none' || (mode === 'note' && !text))) { sl = statusLine(); mode = 'note'; text = sl.text; go = ''; }
   vis(f, mode !== 'none');
-  set(G.ftxt, text); f.dataset.go = go; vis(G.fgo, !!go); vis(G.fok, mode === 'toast'); st(G.ftxt, { width: (mode === 'toast' ? 231 : 291) + 'px' });
+  set(G.ftxt, text); f.dataset.go = go; vis(G.fgo, !!go); vis(G.fok, mode === 'toast'); st(G.ftxt, { width: (mode === 'toast' ? 245 : 291) + 'px' });
   const warnT = (mode === 'toast' && C.msg.kind !== 'info') || (sl && sl.kind === 'warn');   // v32: 'info' notes stay plain
   // S4: fault black, warning dark grey, prompt light grey, info white (WP023 s8.1 p20, s9.2 p49, s9.8.1 p55)
   const kind = mode === 'fault' || (sl && sl.kind === 'fault') ? 'fault' : warnT ? 'warn' : sl && sl.kind === 'prompt' ? 'prompt' : 'info';
@@ -1322,7 +1323,8 @@ function buildCtrl() {
     setc(stxt, sl.kind === 'fault' || sl.kind === 'warn' ? '#FFFFFF' : sl.kind === 'prompt' ? '#000000' : COL.text);
     vis(sbtn, !!sl.btn); seth(sbtn, sl.btn === 'manual' ? lab('Switch to MANUAL') : sl.btn === 'ok' ? lab('OK') : lab('Reset fault', sl.count ? sl.count + ' faults' : ''));
     tog(sbtn, 'act', sl.btn !== 'ok');   // OK is a plain button; it only dismisses
-    st(stxt, { width: (sl.btn ? 203 : 303) + 'px' });
+    const okb = sl.btn === 'ok'; st(sbtn, { left: (okb ? 279 : 239) + 'px', width: (okb ? OK_W : 100) + 'px' });   // OK is one narrow size everywhere (Ryan, 13 Oct)
+    st(stxt, { width: (okb ? 243 : sl.btn ? 203 : 303) + 'px' });
     const ma = modeAction();
     seth(bMode, lab(ma[0], ma[1]));
     tog(bMode, 'act', C.mode === 'NOT HOMED'); tog(bMode, 'dis', C.mode === 'HOMING');   // review 3: red STOP is the only stop
