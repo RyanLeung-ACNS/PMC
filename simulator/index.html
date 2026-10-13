@@ -98,6 +98,20 @@ code{font-family:var(--mono);font-size:.9em}
 .dev .ro{background:#EEF2F6;border-radius:6px}
 .dev .ro .cap,.dev .fld .cap{font-size:12px;line-height:16px;color:#546374}
 .dev .b.dis small{color:#9AA4AE}
+/* WP023 proposal (S4, S5): status strip kinds and alarm annunciation. info = white; prompt = light grey, black text,
+   no icon; warn = dark grey 63, white text, white icon; fault = black, white text, red border and icon. An
+   unacknowledged fault blinks the border (not the text) between red and grey at 1 Hz (WP023 s9.2 p49, s8.2 p21). */
+.dev .k-prompt{background:#E0E0E0 !important;color:#000 !important;box-shadow:inset 0 0 0 1px #3F3F3F}
+.dev .k-warn{background:#3F3F3F !important;color:#fff !important;--symin:#3F3F3F}
+.dev .k-fault{background:#000 !important;color:#fff !important;box-shadow:inset 0 0 0 3px #D63031;--symin:#000}
+.dev .k-fault.unack{animation:almblink 1s steps(1) infinite}
+@keyframes almblink{0%{box-shadow:inset 0 0 0 3px #D63031}50%{box-shadow:inset 0 0 0 3px #7B8794}}
+.dev .hdr.alm,.dev .hdr .alm{box-shadow:inset 0 -4px 0 #D63031}
+.dev .hdr.alm.unack,.dev .hdr .alm.unack{animation:hdrblink 1s steps(1) infinite}
+@keyframes hdrblink{0%{box-shadow:inset 0 -4px 0 #D63031}50%{box-shadow:inset 0 -4px 0 #7B8794}}
+.dev .tile-alm{box-shadow:inset 0 0 0 3px #D63031}
+.dev .tile-alm.unack{animation:almblink 1s steps(1) infinite}
+.dev .b.tile-alm{box-shadow:inset 0 0 0 3px #D63031}
 .dev .flexrow{display:flex;gap:6px;align-items:center}
 .dev .flexrow span{padding:2px 7px;border-radius:3px;font-size:12px;line-height:14px}
 .dev .ov{left:0;top:0;width:480px;height:272px;background:rgba(40,50,60,.55)}
@@ -149,6 +163,9 @@ code{font-family:var(--mono);font-size:.9em}
 <button class="pbtn" id="reboot" title="Real startup: boots not referenced, loads the saved configuration">Reboot board (real start)</button>
 <button class="pbtn" id="quick">Quick setup</button>
 <button class="pbtn" id="native" title="Show the screen at its real 480 x 272 pixel size">1:1 size</button>
+<button class="pbtn" id="physical" title="WP023 proposal S12: show the screen at the panel's physical size (about 95 x 54 mm on a 96 dpi monitor; adjust to your monitor) for operator tests">Physical size</button>
+<button class="pbtn" id="mute" title="Mute the simulated buzzer">Mute buzzer</button>
+<span class="muted" id="buzz-ind">Buzzer: quiet</span>
 <span class="muted" id="simclock"></span>
 </div>
 <p class="muted" style="text-align:center;margin:6px 0 0;font-size:13px"><b>Demo starting condition:</b> page load starts already referenced at 0 % in MANUAL so the screens can be tried at once. The real controller boots not referenced: press <b>Reboot board (real start)</b> to see that.</p>
@@ -316,11 +333,11 @@ let t = 0;                             // simulated seconds since page load
 // sensor full scale was the setpoint ceiling and P_MIN was both the lowest setpoint and the F-02 threshold.
 const DEF_P = { Kp: 4, Ti: 0.25, Kd: 0, DB: 8, Ts: 1, Pmin: 0.2, POSMAX: 99072, KDIR: 1,
   fhome: 400, fcreep: 25, Nbackoff: 400, Nclear: 800, Noffset: 0, Tcheck: 30, Nresp: 5, dPmin: 0.05,
-  checkMin: 1000, Tconv: 1800, band: 0.1, leadMax: 3000, Tlag: 40, outMin: 14, stableT: 60, spMax: 1034, alarmLo: 0.2 };
+  checkMin: 1000, Tconv: 1800, band: 0.1, leadMax: 3000, Tlag: 40, outMin: 14, stableT: 60, spMax: 50, alarmLo: 0.2 };   // S10: Target max ships at 50 mbar (WP023 s8.15.8 p43); set per cryostat
 const RANGE = { Kp: [0.01, 100], Ti: [0, 100], Kd: [0, 100], DB: [0, 2000], Ts: [0.5, 10], Pmin: [0, 1034],
   POSMAX: [1000, 300000], fhome: [16, 1000], fcreep: [16, 1000], Nbackoff: [10, 5000],
   Nclear: [10, 10000], Noffset: [0, 5000], Tcheck: [1, 120], Nresp: [1, 50], dPmin: [0.001, 10],
-  checkMin: [0, 200000], Tconv: [10, 36000], band: [0.001, 10], leadMax: [0, 100000], Tlag: [0, 600], outMin: [0, 50], stableT: [5, 3600],
+  checkMin: [0, 200000], Tconv: [10, 36000], band: [0.1, 10], leadMax: [0, 100000], Tlag: [0, 600], outMin: [0, 50], stableT: [5, 3600],
   spMax: [0.1, 35000], alarmLo: [0, 1034] };
 const DEF_MOT = { run: 400, start: 200, accel: 3200, rev: 0 };
 // v49: calibration identity (calId, calDate) carried with the profile and shown to operators and commissioners.
@@ -538,7 +555,11 @@ function ev(tag, text) {
 }
 function msg(text, kind) { C.msg = { text, kind: kind || 'warn', until: performance.now() + 5000 }; }
 function refuse(reason) { C.refusal = reason; msg(reason, 'warn'); return false; }
-function fmtP(v) { return v == null ? '----' : v.toFixed(1); }   // 1 dp on screen (Ryan, 13 Oct)
+function fmtP(v) { return v == null ? '----' : v.toFixed(2); }
+// WP023 proposal S3 (s8.12 p28, s8.12.2 p29): operator screens show 0.1 mbar, the stated resolution; Sensor,
+// Diagnostics and the serial console keep 0.01 mbar.
+function fmtOp(v) { return v == null ? '----' : v.toFixed(1); }
+function fmtLim(v) { return String(+v.toFixed(2)); }
 function sgn(v) { return v > 0 ? 1 : v < 0 ? -1 : 0; }
 
 /* ======================================================================
@@ -623,10 +644,10 @@ function limitHit() {
 
 // Central permissive for manual, jog and auto moves.
 function requestMove(target, quiet) {
-  if (C.mode === 'HOMING') return quiet ? false : refuse('Zeroing in progress (IL-8)');
-  if (C.faults.size) return quiet ? false : refuse('Fault latched: reset the fault first (IL-9)');
+  if (C.mode === 'HOMING') return quiet ? false : refuse('Zeroing');
+  if (C.faults.size) return quiet ? false : refuse('Reset the fault first');
   if (C.ref) target = clamp(Math.round(target), 0, P.POSMAX);
-  if (!M.moving && target < M.pos && LIM.active) return quiet ? false : refuse('Closed limit active: closing blocked (IL-1)');
+  if (!M.moving && target < M.pos && LIM.active) return quiet ? false : refuse('At seat, cannot close');
   return startMove(target);
 }
 
@@ -638,17 +659,17 @@ function requestMove(target, quiet) {
 function homeStep() { return { 'clearance move': 'Moving off the switch', 'fast approach': 'Zeroing 1 of 3: closing to the switch', 'back-off': 'Zeroing 2 of 3: backing off', 'creep approach': 'Zeroing 3 of 3: slow approach' }[C.homeStage] || 'Zeroing'; }
 function homeAsk() {
   if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before zeroing');
-  if (C.faults.size) return refuse('Fault latched: reset the fault first (IL-9)');
+  if (C.faults.size) return refuse('Reset the fault first');
   const mins = Math.ceil(1.1 * P.POSMAX / P.fhome / 60);
-  confirmBox('Zero the valve? It closes until the limit switch opens, then sets 0 %. Up to ' + mins + ' min. The pressure will change.', 'Start zeroing', 'act', home);
+  confirmBox('Zero the valve? It closes to the seat to find 0 %, up to ' + mins + ' min.', 'Start zeroing', 'act', home);
 }
 function home() {
   if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before zeroing');
   if (C.mode === 'HOMING') return refuse('Already zeroing');
-  if (C.faults.size) return refuse('Fault latched: reset the fault first (IL-9)');
+  if (C.faults.size) return refuse('Reset the fault first');
   stopMotor();
   C.ref = false; C.mode = 'HOMING'; C.homeT0 = t;
-  ev('HOME', 'Homing started at count ' + fint(M.pos));
+  ev('REF', 'Zeroing started at count ' + fint(M.pos));
   if (LIM.active) {
     C.homeStage = 'clearance move';
     startMove(M.pos + P.Nclear, P.fhome, r => {
@@ -681,13 +702,13 @@ function homeCreep() {
       M.pos = P.Noffset; C.ref = true; C.mode = 'MANUAL'; C.homeStage = '';
       C.manPos = C.posCmd = C.lastSent = M.pos;
       C.lastHome = { t, dur: t - C.homeT0 };
-      ev('HOME', 'Homed in ' + (t - C.homeT0).toFixed(1) + ' s, position ' + P.Noffset);
-      msg('Valve zeroed. Closed @ 0 %.', 'info');
+      ev('REF', 'Zeroed in ' + (t - C.homeT0).toFixed(1) + ' s, position ' + P.Noffset);
+      msg('Zeroed', 'info');
     } else if (r === 'DONE') homeFault('F-07', 'Homing: switch not found on creep approach');
     else homeAbort(r);
   });
 }
-function homeAbort(r) { if (C.mode === 'HOMING') { C.mode = 'NOT HOMED'; C.homeStage = ''; ev('HOME', 'Homing aborted (' + r.toLowerCase() + ')'); } }
+function homeAbort(r) { if (C.mode === 'HOMING') { C.mode = 'NOT HOMED'; C.homeStage = ''; ev('REF', 'Zeroing aborted (' + r.toLowerCase() + ')'); } }
 function homeFault(tag, text) { C.mode = 'NOT HOMED'; C.homeStage = ''; raise(tag, text, { ref: true }); }
 
 /* ======================================================================
@@ -696,7 +717,7 @@ function homeFault(tag, text) { C.mode = 'NOT HOMED'; C.homeStage = ''; raise(ta
 function raise(tag, text, o) {
   o = o || {};
   if (C.faults.has(tag)) return;
-  C.faults.set(tag, { text, t });
+  C.faults.set(tag, { text, t, acked: false });   // WP023 proposal S5: new faults start unacknowledged
   ev(tag, text);
   stopMotor();
   homeAbort(tag);   // v50: also between referencing stages, when no move is running to carry the stop
@@ -707,11 +728,41 @@ function raise(tag, text, o) {
 // v48 (UI/UX review item 6): the action clears latches, so it is called Reset fault (was ACK). A latch clears only
 // when its reset condition holds. Reset never starts AUTO: the controller stays in MANUAL (or NOT REFERENCED).
 function faultCanReset(tag) { return !(tag === 'F-01' && !BENCH.druck) && !(tag === 'F-03' && !BENCH.exc); }
+// WP023 proposal S5 (s9 p48, s9.2 p49, s9.4 p53): acknowledging is separate from Reset fault. An unacknowledged fault
+// blinks the alarm borders and sounds the buzzer; a tap on the status strip acknowledges every fault (and opens the
+// detail as before). Acknowledging clears no latch. Reset fault is unchanged and still needs the cause gone.
+function unacked() { for (const f of C.faults.values()) if (!f.acked) return true; return false; }
+function ackAll() {
+  let n = 0; for (const [tag, f] of C.faults) if (!f.acked) { f.acked = true; n++; ev(tag, 'acknowledged by operator'); }
+  return n;
+}
+// Buzzer: the Mikromedia piezo (planned). Three 2.4 kHz bursts every 10 s while any fault is unacknowledged; the
+// browser plays it only after the first touch on the page. Bench mute below the screen.
+let audioCtx = null, lastBuzz = -1e9, buzzMute = false;
+function buzz() {
+  const now = performance.now();
+  const on = unacked();
+  const ind = document.getElementById('buzz-ind');
+  if (ind) ind.textContent = on ? (buzzMute ? 'Buzzer: sounding (muted on bench)' : 'Buzzer: sounding') : 'Buzzer: quiet';
+  if (!on || now - lastBuzz < 10000) return;
+  lastBuzz = now;
+  if (buzzMute) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();   // eval 6: a context made before the first touch starts suspended
+    for (let i = 0; i < 3; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = audioCtx.currentTime + i * 0.25;
+      o.frequency.value = 2400; g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.08, t0 + 0.03); g.gain.linearRampToValueAtTime(0, t0 + 0.15);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.16);
+    }
+  } catch (e) { }
+}
 function ack() {
   if (!C.faults.size) return refuse('No fault to reset');
+  ackAll();   // S5: Reset fault also acknowledges
   for (const tag of [...C.faults.keys()]) { if (faultCanReset(tag)) { C.faults.delete(tag); ev(tag, 'reset by operator'); } }
   if (C.faults.size) return refuse('Not reset, cause still present: ' + [...C.faults.keys()].join(', '));
-  msg('Fault reset. ' + (C.ref ? 'MANUAL, valve held. Start AUTO when ready.' : 'Valve not zeroed.'), 'info');
+  msg('Fault reset' + (C.ref ? '' : ', valve not zeroed'), 'info');
   return true;
 }
 // What happened, what the controller did, what to check, what allows reset (review item 6).
@@ -751,21 +802,21 @@ function operatorStop() {
 function kpSteps() { return P.Kp / 100 * P.POSMAX; }
 function toAuto() {
   if (C.mode === 'AUTO') return true;
-  if (!C.ref) return refuse('Auto refused: valve not zeroed (IL-2)');
-  if (C.mode === 'HOMING') return refuse('Auto refused: zeroing (IL-8)');
-  if (C.faults.size) return refuse('Auto refused: fault latched, reset it first (IL-9)');
-  if (!pvValid || PV == null) return refuse('Auto refused: pressure invalid (IL-3)');
-  if (!C.spSet) return refuse('Auto refused: no target set');
-  if (C.SP < P.Pmin || C.SP > pMax()) return refuse('Auto refused: target outside Target min to Target max (IL-4)');
-  if (PV < P.alarmLo || PV > sensFs()) return refuse('Auto refused: pressure ' + PV.toFixed(1) + ' below the low alarm or above the sensor range. Helium flow on? Open in manual first');
-  if (!P.KDIR) return refuse('Auto refused: K_DIR not set (IL-6)');
-  if (P.Kp == null || P.Ti == null) return refuse('Auto refused: Kp and Ti not set (Tuning)');
+  if (!C.ref) return refuse('Zero the valve first');
+  if (C.mode === 'HOMING') return refuse('Zeroing');
+  if (C.faults.size) return refuse('Reset the fault first');
+  if (!pvValid || PV == null) return refuse('No valid pressure');
+  if (!C.spSet) return refuse('Set a target first');
+  if (C.SP < P.Pmin || C.SP > pMax()) return refuse('Target outside limits');
+  if (PV < P.alarmLo || PV > sensFs()) return refuse('Pressure ' + fmtOp(PV) + ' mB outside limits. Open the valve in MANUAL first');
+  if (!P.KDIR) return refuse('Pressure response not set');
+  if (P.Kp == null || P.Ti == null) return refuse('Tuning not set');
   const e = P.KDIR * (C.SP - PV);
   const now = C.mode === 'PAUSED' ? C.posCmd : C.manPos;
   C.I = now - kpSteps() * e;                        // bumpless: first output equals the position in force
   C.posCmd = C.lastSent = now; C.prevPV = PV;
   C.winT = 0; C.winPos = C.posF; C.winPV = PV; C.noresp = 0; C.wrong = 0; C.convStart = t; C.f02Since = null;
-  ev('MODE', (C.mode === 'PAUSED' ? 'Auto resumed' : 'Auto') + ' @ SP ' + C.SP.toFixed(1) + ' mB, valve ' + pctOf(now).toFixed(1) + ' %');
+  ev('MODE', (C.mode === 'PAUSED' ? 'Auto resumed' : 'Auto') + ' @ target ' + fmtOp(C.SP) + ' mB, valve ' + pctOf(now).toFixed(1) + ' %');
   C.mode = 'AUTO';
   return true;
 }
@@ -786,12 +837,13 @@ function toManual() {
   return true;
 }
 function setSP(v) {
-  if (!(v >= P.Pmin && v <= pMax())) { ev('W-03', 'Setpoint ' + v + ' rejected, allowed ' + P.Pmin + ' to ' + pMax()); return refuse('W-03 Setpoint outside ' + P.Pmin.toFixed(1) + ' to ' + pMax().toFixed(1)); }
-  C.SP = v; C.spSet = true; C.convStart = t; C.inBandSince = null; ev('SP', 'Setpoint ' + v.toFixed(1) + ' mB');
+  v = Math.round(v * 10) / 10;   // S3 (eval 5): targets are 0.1 mbar everywhere, serial included, so home never rounds one
+  if (!(v >= P.Pmin && v <= pMax())) { ev('W-03', 'Setpoint ' + v + ' rejected, allowed ' + P.Pmin + ' to ' + pMax()); return refuse('W-03 Setpoint outside ' + P.Pmin.toFixed(2) + ' to ' + pMax().toFixed(2)); }
+  C.SP = v; C.spSet = true; C.convStart = t; C.inBandSince = null; ev('TARGET', 'Set to ' + fmtOp(v) + ' mB');
   return true;
 }
 function setManSteps(n) {
-  if (C.mode !== 'MANUAL') return refuse(C.mode === 'NOT HOMED' ? 'Valve not zeroed: zero it first (IL-2)' : 'Valve entry is for manual mode');
+  if (C.mode !== 'MANUAL') return refuse(C.mode === 'NOT HOMED' ? 'Zero the valve first' : 'MANUAL only');
   n = clamp(Math.round(n), 0, P.POSMAX);
   if (!requestMove(n)) return false;
   C.manPos = C.posCmd = C.lastSent = n;
@@ -799,7 +851,7 @@ function setManSteps(n) {
 }
 function jog(n) {
   if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Jog locked in auto');
-  if (C.mode === 'HOMING') return refuse('Movement locked while zeroing (IL-8)');
+  if (C.mode === 'HOMING') return refuse('Zeroing');
   let target = (M.moving ? M.target : M.pos) + n;
   if (C.ref) target = clamp(target, 0, P.POSMAX);
   if (!requestMove(target)) return false;
@@ -832,7 +884,7 @@ function ctrlTick() {
   if (C.mode !== 'AUTO' || PV == null) { C.inBandSince = null; return; }
   if (Math.abs(C.SP - PV) > P.band) C.inBandSince = null; else if (C.inBandSince == null) C.inBandSince = t;
   // F-02, armed in auto only (G7)
-  if (PV < P.alarmLo || PV > sensFs()) { if (C.f02Since === null) C.f02Since = t; if (t - C.f02Since >= 5) { raise('F-02', PV < P.alarmLo ? 'Pressure ' + PV.toFixed(1) + ' below the low alarm ' + P.alarmLo + ' mB, check helium flow and pump' : 'Pressure ' + PV.toFixed(1) + ' above the sensor range ' + sensFs() + ' mB'); return; } }
+  if (PV < P.alarmLo || PV > sensFs()) { if (C.f02Since === null) C.f02Since = t; if (t - C.f02Since >= 5) { raise('F-02', PV < P.alarmLo ? 'Pressure ' + PV.toFixed(2) + ' below the low alarm ' + P.alarmLo + ' mB, check helium supply and pump' : 'Pressure ' + PV.toFixed(2) + ' above the sensor range ' + sensFs() + ' mB'); return; } }
   else C.f02Since = null;
 
   const e = P.KDIR * (C.SP - PV);
@@ -911,14 +963,14 @@ function reboot() {
   ev('F-14', 'Power-up (event only)');
   // v48 (review item 8): a restart no longer invents a reference or moves the mechanism. The step count restarts
   // at 0 with the valve wherever it was, so the controller boots NOT REFERENCED (plan G3).
-  ev('HOME', 'Boot: valve not zeroed');
+  ev('REF', 'Boot: valve not zeroed');
 }
 function bootHomed() {                  // simulator convenience (Ryan, 8 Oct): start homed, valve closed on the switch
   LIM.simPos = 0; LIM.raw = true; LIM.active = true; LIM.clearSince = null;
   M.pos = P.Noffset; C.ref = true; C.mode = 'MANUAL'; C.homeStage = '';
   C.manPos = C.posCmd = C.lastSent = M.pos;
   C.lastHome = { t, dur: 0 };
-  ev('HOME', 'Demo starting condition (simulator only): zeroed at ' + M.pos);
+  ev('REF', 'Demo starting condition (simulator only): zeroed at ' + M.pos);
 }
 
 /* ======================================================================
@@ -992,24 +1044,41 @@ function holdBtn(par, x, y, w, h, label, ms, fn, cls) {   // acts only after a p
 const COL = { hdr: '#1F2933', text: '#1F2933', muted: '#546374', ok: '#2EA043', fault: '#D63031', warn: '#D68200', idle: '#969EA6', blue: '#2D5877', bg: '#E8EEF4', draft: '#6A4C93', grey: '#5B6B7B' };
 // v52 colour roles: blue = actions only; amber = warnings only; violet = unapplied change; green = good; red = fault;
 // grey = neutral (movement, inactive, applied but not saved).
+// WP023 proposal S4 (s8.1 p18-20): normal states carry no colour. COL.ok is now grey, so nothing normal shows green;
+// warnings and prompts use greys (stripKind); red is the alarm colour (and the STOP button, documented exception).
+COL.ok = '#7B8794'; COL.warn = '#3F3F3F';
+// Strip styling by kind: 'info' white, 'prompt' light grey/black, 'warn' dark grey/white, 'fault' black/white with a
+// red border that blinks while unacknowledged. box: the strip; mark: the dot/icon element.
+function stripKind(box, kind, mark, dotCol) {
+  ['k-prompt', 'k-warn', 'k-fault'].forEach(c => tog(box, c, c === 'k-' + kind));
+  tog(box, 'unack', kind === 'fault' && unacked());
+  if (box.style.background) box.style.background = '';
+  if (mark) {
+    if (kind === 'fault' || kind === 'warn') setMark(mark, kind, '');
+    else { setMark(mark, '', dotCol || COL.idle); vis(mark, kind !== 'prompt'); return; }
+    vis(mark, true);
+  }
+}
 // v51 (review item 5): icons only where LVGL has the glyph. Each maps to an LV_SYMBOL in the built-in Montserrat fonts,
 // or to a planned image asset (lock). Drawn here as SVG so the browser never substitutes a fallback font glyph.
 const SYM = {
   LEFT: ['LV_SYMBOL_LEFT', '<path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
   RIGHT: ['LV_SYMBOL_RIGHT', '<path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
   BACKSPACE: ['LV_SYMBOL_BACKSPACE', '<path d="M6 3h8v10H6L1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6l4 4M12 6l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'],
-  WARNING: ['LV_SYMBOL_WARNING', '<path d="M8 1.5L15 14H1z" fill="currentColor"/><path d="M8 6v4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="#fff"/>'],
+  WARNING: ['LV_SYMBOL_WARNING', '<path d="M8 1.5L15 14H1z" fill="currentColor"/><path d="M8 6v4" style="stroke:var(--symin,#fff)" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" style="fill:var(--symin,#fff)"/>'],
   UNLOCK: ['asset: lock_open_16 (image, not in LVGL fonts)', '<rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 5.8-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
   LOCK: ['asset: lock_16 (image, not in LVGL fonts)', '<rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.8"/>'] };
 // Status marker: a dot for normal states, the warning symbol (LV_SYMBOL_WARNING) for warnings and faults.
 function setMark(el, kind, dotCol) {
   const w = kind === 'warn' || kind === 'fault';
   if (el.dataset.k === kind + dotCol) return; el.dataset.k = kind + dotCol;
-  if (w) { st(el, { left: '7px', top: '16px', width: '16px', height: '16px', background: 'transparent', color: kind === 'fault' ? COL.fault : COL.warn }); el.innerHTML = sym('WARNING', 16); }
+  if (w) { st(el, { left: '7px', top: '16px', width: '16px', height: '16px', background: 'transparent', color: kind === 'fault' ? COL.fault : '#FFFFFF' }); el.innerHTML = sym('WARNING', 16); }
   else { st(el, { left: '12px', top: '20px', width: '8px', height: '8px', background: dotCol }); el.innerHTML = ''; }
 }
 function sym(n, px) { const z = px || 16; return '<i class="sym" data-lv="' + SYM[n][0] + '" style="display:inline-block;width:' + z + 'px;height:' + z + 'px;vertical-align:' + (-z * 0.15) + 'px;line-height:0"><svg viewBox="0 0 16 16" width="' + z + '" height="' + z + '">' + SYM[n][1] + '</svg></i>'; }
-const MODE_COL = { AUTO: '#2EA043', MANUAL: '#5B6B7B', 'NOT HOMED': '#D68200', HOMING: '#5B6B7B', PAUSED: '#D68200' };
+// WP023 proposal S4: the header dot is light grey in every normal mode (the mode word carries the state) and red only
+// with a latched fault. Shape, not colour, separates AUTO (filled) from the others (ring).
+const MODE_COL = { AUTO: '#C3CDD7', MANUAL: '#C3CDD7', 'NOT HOMED': '#C3CDD7', HOMING: '#C3CDD7', PAUSED: '#C3CDD7' };
 
 const TITLES = { menu: 'Menu', sensor: 'Pressure sensor', motor: 'Valve setup', tune: 'Control tuning', diag: 'Diagnostics', cfg: 'Review and save', faults: 'Faults and log', trend: 'Pressure trend', valve: 'Valve',
   ref: 'Zero valve', info: 'About this unit', comm: 'Engineer settings', limits: 'Pressure limits', guide: 'Setup guide' };
@@ -1068,7 +1137,7 @@ function buildGlobal() {
   const fdot = st(mk(foot, 12, 20, 8, 8, ''), { borderRadius: '4px' });
   const ftxt = st(mk(foot, 28, 0, 291, 48, '', ''), { fontSize: '12px', lineHeight: '16px', whiteSpace: 'normal', display: 'flex', alignItems: 'center', overflow: 'hidden' });
   const fgo = st(mk(foot, 323, 0, 14, 48, '', ''), { lineHeight: '48px', color: '#7B8794' }); fgo.innerHTML = sym('RIGHT', 14);
-  foot.addEventListener('pointerdown', e => { e.preventDefault(); if (foot.dataset.go) show(foot.dataset.go); });
+  foot.addEventListener('pointerdown', e => { e.preventDefault(); if (C.faults.size) ackAll(); if (foot.dataset.go) show(foot.dataset.go); updateUI(); });   // S5: tap acknowledges
   // Ryan (13 Oct): a message in the strip has an OK button that dismisses it (it still clears itself after 5 s).
   const fok = btn(foot, 263, 4, 76, 40, lab('OK'), () => { C.msg = null; });
   // v52 (review 9 Oct): one header arrangement on every page, Back | title | mode, one baseline, normal colour. While
@@ -1086,9 +1155,11 @@ function updateGlobal() {
   // v48: STOPPED while the operator stop is latched, FAULT while any other fault is latched (both mean AUTO is off).
   const fw = C.faults.has('F-12') ? 'STOPPED' : C.faults.size ? 'FAULT' : null;
   set(G.badge, fw || MODE_WORD[C.mode] || C.mode);
-  setbg(G.mdot, fw ? COL.fault : MODE_COL[C.mode]);
-  // A latched fault stays visible over keypads and dialogs: red rule under the header.
-  [G.h, G.back].forEach(e => st(e, { boxShadow: C.faults.size ? 'inset 0 -4px 0 ' + COL.fault : 'none' }));
+  setbg(G.mdot, fw ? COL.fault : C.mode === 'AUTO' ? MODE_COL.AUTO : 'transparent');
+  st(G.mdot, { boxShadow: fw || C.mode === 'AUTO' ? 'none' : 'inset 0 0 0 2px ' + MODE_COL[C.mode] });   // S4: ring = not AUTO
+  // A latched fault stays visible over keypads and dialogs: red rule under the header, blinking while unacknowledged (S5).
+  const ua = unacked();
+  [G.h, G.back].forEach(e => { tog(e, 'alm', C.faults.size > 0); tog(e, 'unack', C.faults.size > 0 && ua); if (e.style.boxShadow) e.style.boxShadow = ''; });
   // footer: toast, else latched-fault bar, else the screen's own note
   const f = G.foot;
   const toastOn = C.msg && performance.now() < C.msg.until;
@@ -1096,7 +1167,7 @@ function updateGlobal() {
   let mode = 'none', text = '', go = '';
   if (home) mode = 'none';
   // v48 (review item 6): a latched fault outranks messages; a refusal still shows while it is fresh, then the fault returns.
-  else if (fl.length && current !== 'faults' && !(toastOn && C.msg.kind === 'warn' && !overlay)) { mode = 'fault'; text = (fl[0][0] === 'F-12' ? 'Stopped: valve not commanded closed.' : fl[0][0] + ' ' + faultShort(fl[0][0], fl[0][1]) + '.') + (fl.length > 1 ? ' ' + fl.length + ' faults.' : '') + ' Tap for Alarms.'; go = 'faults'; }
+  else if (fl.length && current !== 'faults' && !(toastOn && C.msg.kind === 'warn' && !overlay)) { mode = 'fault'; text = (fl[0][0] === 'F-12' ? 'Stopped. Valve held, not closed.' : fl[0][0] + ' ' + faultShort(fl[0][0], fl[0][1])) + (fl.length > 1 ? ' (+' + (fl.length - 1) + ')' : ''); go = 'faults'; }
   else if (toastOn && !overlay) { mode = 'toast'; text = C.msg.text; }
   else if (screens[current] && screens[current].foot) { mode = 'note'; text = screens[current].foot(); go = screens[current].footGo ? screens[current].footGo() : ''; }
   // Ryan (9 Oct): the status strip beside STOP stays on every screen. With nothing page-specific it shows the
@@ -1106,9 +1177,10 @@ function updateGlobal() {
   vis(f, mode !== 'none');
   set(G.ftxt, text); f.dataset.go = go; vis(G.fgo, !!go); vis(G.fok, mode === 'toast'); st(G.ftxt, { width: (mode === 'toast' ? 231 : 291) + 'px' });
   const warnT = (mode === 'toast' && C.msg.kind !== 'info') || (sl && sl.kind === 'warn');   // v32: 'info' notes stay plain
-  setbg(f, mode === 'fault' ? '#FDE8E8' : warnT ? '#FFF3DD' : '#FFFFFF');
-  setc(G.ftxt, mode === 'fault' ? '#B42324' : warnT ? '#9A5D00' : COL.text);
-  setMark(G.fdot, mode === 'fault' ? 'fault' : warnT ? 'warn' : '', (sl && (sl.dot || COL.idle)) || (mode === 'note' && screens[current].footCol) || COL.idle);
+  // S4: fault black, warning dark grey, prompt light grey, info white (WP023 s8.1 p20, s9.2 p49, s9.8.1 p55)
+  const kind = mode === 'fault' || (sl && sl.kind === 'fault') ? 'fault' : warnT ? 'warn' : sl && sl.kind === 'prompt' ? 'prompt' : 'info';
+  stripKind(f, kind, G.fdot, (sl && sl.dot) || (mode === 'note' && screens[current].footCol) || COL.idle);
+  setc(G.ftxt, kind === 'fault' || kind === 'warn' ? '#FFFFFF' : kind === 'prompt' ? '#000000' : COL.text);
   st(f, { cursor: go ? 'pointer' : 'default' });
 }
 
@@ -1122,55 +1194,85 @@ function updateGlobal() {
 const PBAR = 143, PPAD = 15;   // PPAD: half the width of "1000" at 12 px
 function barX(q) { return clamp(PPAD + (Math.log10(Math.max(q, 1e-3)) + 1) / 4 * (PBAR - 2 * PPAD), 0, PBAR); }
 function vbarX(p) { return clamp(p, 0, 100) * PBAR / 100; }
+// WP023 proposal S1, S2 (review R4, R5; WP023 s6.7 p16, s8.12.5 p31, s8.12.8 p33; iTC home "label left, boxed value
+// right" rows, references/itc-mercury-screens/04): each tile has caption + unit (y 4), the reading at 26 px (y 20), a
+// 10 min sparkline 143 x 32 (y 50, tap area 143 x 40), a slim 8 px bar (y 86) with end labels (y 96) and a setpoint
+// row (y 116): label left, editable field right (x 58-155, 40 px). Both sparklines share one time axis so pressure and
+// valve moves line up; a tap on either opens Trend. The 30 s band and the direction arrow are removed (the sparkline
+// shows both). The pressure bar keeps the log scale for range context and adds the low-alarm zone (R5).
+const SPARK_WIN = 600;
 function homeTile(s, x, name, unit, fname, onTap) {
   const c = mk(s, x, RY[0], 167, 160, 'card');
-  mk(c, 12, 5, 90, null, 'cap', name);
-  st(mk(c, 75, 5, 80, null, 'cap', unit), { textAlign: 'right' });
-  const val = st(mk(c, 12, 26, PBAR, 26, '', ''), { fontSize: '26px', lineHeight: '26px', textAlign: 'right' });
-  const bar = st(mk(c, 12, 56, PBAR, 10, ''), { background: COL.bg });
-  const fill = st(mk(bar, 0, 0, 0, 10, ''), { background: '#7B8794' });
+  mk(c, 12, 4, 90, null, 'cap', name);
+  st(mk(c, 75, 4, 80, null, 'cap', unit), { textAlign: 'right' });
+  const val = st(mk(c, 12, 20, PBAR, 28, '', ''), { fontSize: '26px', lineHeight: '28px', textAlign: 'right' });
+  const hit = st(mk(c, 12, 46, PBAR, 40, ''), { cursor: 'pointer' });
+  hit.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); show('trend'); });
+  const sp = document.createElement('canvas'); sp.width = PBAR * 2; sp.height = 64;
+  st(sp, { position: 'absolute', left: '0', top: '4px', width: PBAR + 'px', height: '32px' }); hit.appendChild(sp);
+  const bar = st(mk(c, 12, 86, PBAR, 8, ''), { background: COL.bg });
+  const fill = st(mk(bar, 0, 0, 0, 8, ''), { background: '#7B8794' });
+  const zone = st(mk(bar, 0, 0, 0, 8, ''), { background: '#A3AFBB' });   // over the fill, so the low-alarm zone always shows
   const ticks = [], labels = [];
-  const band = st(mk(bar, 0, 2, 0, 6, ''), { background: COL.grey, opacity: '0.35' });
-  const bandOn = st(mk(bar, 0, 2, 0, 6, ''), { background: '#C3CDD7' });   // part of the band over the valve fill: lighter grey (Ryan, 12 Oct)
-  const arrow = st(mk(bar, 0, 0, 0, 0, ''), { borderTop: '5px solid transparent', borderBottom: '5px solid transparent' });   // drawn triangle, not a glyph
-  const tgt = st(mk(bar, 0, 10, 0, 0, ''), { borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '6px solid ' + COL.text });
-  const mark = st(mk(bar, 0, -3, 3, 16, ''), { background: COL.text });
-  mk(c, 12, 95, 90, null, 'cap', fname);
-  st(mk(c, 75, 95, 80, null, 'cap', unit), { textAlign: 'right' });
-  const f = st(mk(c, 12, 110, PBAR, 40, ''), { borderRadius: '4px', fontSize: '26px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
-  const fv = mk(f, 0, 0, PBAR - 24, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px' });
-  const chev = st(mk(f, PBAR - 21, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
+  const mark = st(mk(bar, 0, -3, 3, 14, ''), { background: COL.text });
+  st(mk(c, 12, 116, 40, 40, 'cap', fname), { lineHeight: '40px' });
+  const f = st(mk(c, 52, 116, 103, 40, ''), { borderRadius: '4px', fontSize: '26px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
+  const fv = mk(f, 0, 0, 103 - 20, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px', overflow: 'hidden' });
+  const chev = st(mk(f, 103 - 18, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
   f.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); onTap(); updateUI(); });
-  return { c, val, bar, fill, ticks, labels, band, bandOn, arrow, tgt, mark, f, fv, chev };
+  return { c, val, sp, bar, zone, fill, ticks, labels, mark, f, fv, chev };
 }
 function tileTicks(T, xs, labs) {
-  xs.forEach(x => st(mk(T.bar, Math.min(x, PBAR - 1), 0, 1, 10, ''), { background: '#A3AFBB' }));
-  labs.forEach(([x, l, al]) => st(mk(T.c, 12 + x - (al === 'left' ? 0 : al === 'right' ? 40 : 20), 72, 40, null, 'cap', l), { textAlign: al || 'center' }));
+  xs.forEach(x => st(mk(T.bar, Math.min(x, PBAR - 1), 0, 1, 8, ''), { background: '#A3AFBB' }));
+  labs.forEach(([x, l, al]) => st(mk(T.c, 12 + x - (al === 'left' ? 0 : al === 'right' ? 40 : 20), 96, 40, null, 'cap', l), { textAlign: al || 'center' }));
 }
 function tileField(T, active, text) {
   set(T.fv, text); vis(T.chev, active);
-  st(T.fv, { width: (active ? PBAR - 24 : PBAR - 10) + 'px' });
+  st(T.fv, { width: (active ? 103 - 20 : 103 - 8) + 'px' });
+  fitTo(T.fv, [26, 16]); if (text === 'Not set') st(T.fv, { fontSize: '16px' });   // a word, not a value: 16 px
   st(T.f, active ? { background: '#E9F0F6', borderBottom: '3px solid ' + COL.blue, borderRadius: '4px 4px 0 0', color: COL.text }
                  : { background: '#EEF2F6', borderBottom: '3px solid #EEF2F6', borderRadius: '4px', color: COL.idle });
 }
-function tileBar(T, X, now, lo, hi, dir) {
-  vis(T.mark, now != null); vis(T.band, lo != null); vis(T.arrow, !!dir && now != null);
-  if (now == null) return;
-  st(T.mark, { left: (X(now) - 1).toFixed(1) + 'px' });
-  if (lo != null) st(T.band, { left: X(lo).toFixed(1) + 'px', width: Math.max(0, X(hi) - X(lo)).toFixed(1) + 'px' });
-  const fw = parseFloat(T.fill.style.width) || 0, onHi = lo != null ? Math.min(X(hi), fw) : 0;
-  vis(T.bandOn, lo != null && onHi > X(lo));
-  if (lo != null && onHi > X(lo)) st(T.bandOn, { left: X(lo).toFixed(1) + 'px', width: (onHi - X(lo)).toFixed(1) + 'px' });
-  if (dir) st(T.arrow, { left: clamp(X(now) + (dir > 0 ? 4 : -11), 0, PBAR - 7).toFixed(1) + 'px', borderLeft: dir > 0 ? '7px solid ' + COL.text : '0', borderRight: dir > 0 ? '0' : '7px solid ' + COL.text });
-}
-function recent(key, secs) {   // low, high and direction over the trend window (direction from the last 20 s)
-  let lo = null, hi = null, then = null;
-  for (let i = trend.length - 1; i >= 0 && trend[i].t >= t - secs; i--) {
-    const v = trend[i][key]; if (v == null) continue;
-    lo = lo == null ? v : Math.min(lo, v); hi = hi == null ? v : Math.max(hi, v);
-    if (trend[i].t >= t - 20) then = v;
+function tileMark(T, X, now) { vis(T.mark, now != null); if (now != null) st(T.mark, { left: (X(now) - 1).toFixed(1) + 'px' }); }
+// Sparkline: one pen, no axes, 10 min. Eval (13 Oct) item 1: the scale never clips. Pressure: linear, covering the
+// window's readings and targets, at least max(1 mbar, 10 x band) tall and centred on the present target in AUTO, so a
+// steady hold shows the band about 5 px tall and a target step or an approach shows its real size; log when the window
+// spans more than a decade (pump-down). The target is drawn as its own stepped history (dashed, AUTO spans only) with
+// the band as a light stripe around it. Valve: 0 to 100 % fixed.
+// LVGL: lv_chart, 120 points (one per 5 s), line series 2 px; the stepped target is horizontal and vertical segments,
+// which the SW renderer can dash.
+function drawSpark(cv, key, auto) {
+  const ctx = cv.getContext('2d'), W = cv.width / 2, H = cv.height / 2;
+  ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#F3F6F8'; ctx.fillRect(0, 0, W, H);
+  const pts = trend.filter(p => p.t >= t - SPARK_WIN && (Math.round(p.t) % 5 === 0 || p === trend[trend.length - 1]));
+  const xOf = tt => (1 - (t - tt) / SPARK_WIN) * (W - 3);
+  let yOf;
+  if (key === 'pos') yOf = v => H - 2 - clamp(v, 0, 100) / 100 * (H - 4);
+  else {
+    const vs = pts.map(p => p.pv).filter(v => v != null && v > 0);
+    pts.forEach(p => { if (p.auto) vs.push(p.sp); });
+    const useSP = auto && C.spSet;
+    if (useSP) vs.push(C.SP);
+    let lo = vs.length ? Math.min(...vs) : 0, hi = vs.length ? Math.max(...vs) : 1;
+    if (vs.length && hi / Math.max(lo, 1e-3) > 10) { const L0 = Math.log10(Math.max(lo, 1e-3)), L1 = Math.log10(hi); yOf = v => H - 2 - (Math.log10(Math.max(v, 1e-3)) - L0) / (L1 - L0) * (H - 4); }
+    else {
+      const minSpan = Math.max(1, 10 * P.band);
+      if (hi - lo < minSpan) { const c = useSP ? C.SP : (lo + hi) / 2; const h = Math.max(minSpan / 2, c - lo, hi - c); lo = c - h; hi = c + h; }
+      else { const pad = (hi - lo) * 0.08; lo -= pad; hi += pad; }
+      yOf = v => H - 2 - (v - lo) / (hi - lo) * (H - 4);
+    }
+    // stepped target history with its band, AUTO spans only
+    ctx.fillStyle = '#DCE3EA';
+    for (let i = 1; i < pts.length; i++) { const p = pts[i - 1]; if (!p.auto) continue; const y0 = yOf(p.sp + P.band), y1 = yOf(p.sp - P.band); ctx.fillRect(xOf(p.t), y0, xOf(pts[i].t) - xOf(p.t) + 0.5, Math.max(1, y1 - y0)); }
+    ctx.strokeStyle = '#3F3F3F'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.beginPath(); let pen = false;
+    pts.forEach((p, i) => { if (!p.auto) { pen = false; return; } const X = xOf(p.t), Y = Math.round(yOf(p.sp)) + 0.5; if (!pen) { ctx.moveTo(X, Y); pen = true; } else { ctx.lineTo(X, Math.round(yOf(pts[i - 1].sp)) + 0.5); ctx.lineTo(X, Y); } });
+    ctx.stroke(); ctx.setLineDash([]);
   }
-  return { lo, hi, then };
+  ctx.strokeStyle = key === 'pos' ? '#7B8794' : '#2D5877'; ctx.lineWidth = 1.5; ctx.beginPath(); let pen = false, last = null;
+  pts.forEach(p => { const v = p[key]; if (v == null) { pen = false; return; } const X = xOf(p.t), Y = yOf(v); if (pen) ctx.lineTo(X, Y); else { ctx.moveTo(X, Y); pen = true; } last = [X, Y]; });
+  ctx.stroke();
+  if (last) { ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(last[0], last[1], 2, 0, 7); ctx.fill(); }
 }
 function buildCtrl() {
   const s = newScreen('ctrl');
@@ -1181,39 +1283,43 @@ function buildCtrl() {
   tileTicks(P1, [0.1, 1, 10, 100, 1000].map(barX), [[barX(0.1), '0.1'], [barX(10), '10'], [barX(1000), '1000']]);
   const V1 = homeTile(s, 186, 'Valve', '%', 'Go to', () => canManual() ? keypadPct() : notManual());
   tileTicks(V1, [0, 50, 100].map(vbarX), [[0, '0', 'left'], [PBAR, '100', 'right']]);   // 0 and 100 flush with the bar ends (Ryan, 12 Oct)
-  vis(V1.tgt, false);
+  vis(V1.zone, false);
   const bMode = btn(s, 361, RY[0], 109, RH, '', modePress);   // Ryan (10 Oct): actions stacked above STOP
   navBtn(s, 361, RY[1], 109, RH, 'Valve', () => show('valve'));
   navBtn(s, 361, RY[2], 109, RH, 'Menu', () => show('menu'));
 
   const sb = mk(s, 10, RY[3], 343, RH, 'card'); st(sb, { cursor: 'pointer' });
-  sb.addEventListener('pointerdown', ev0 => { if (ev0.target === sb || ev0.target.parentNode === sb) { if (C.faults.size) { faultDetail(faultsByPriority()[0][0]); updateUI(); } } });
+  sb.addEventListener('pointerdown', ev0 => { if (ev0.target === sb || ev0.target.parentNode === sb) { if (C.faults.size) { ackAll(); faultDetail(faultsByPriority()[0][0]); updateUI(); } } });   // S5: tap acknowledges
   const dot = st(mk(sb, 12, 20, 8, 8, ''), { borderRadius: '4px' });
   const stxt = st(mk(sb, 28, 0, 303, 48, '', ''), { fontSize: '12px', lineHeight: '16px', whiteSpace: 'normal', display: 'flex', alignItems: 'center', overflow: 'hidden' });
-  const sbtn = btn(sb, 239, 4, 100, 40, '', () => C.faults.size ? ack() : C.mode === 'PAUSED' ? askManual() : (C.msg = null), 'act');
+  const sbtn = btn(sb, 239, 4, 100, 40, '', () => C.faults.size ? (ackAll(), ack()) : C.mode === 'PAUSED' ? askManual() : (C.msg = null), 'act');
 
   screens.ctrl.update = () => {
     const auto = C.mode === 'AUTO' || C.mode === 'PAUSED';
     // Pressure tile
-    set(P1.val, fmtP(PV)); setc(P1.val, PV == null ? COL.fault : COL.text);
+    set(P1.val, fmtOp(PV)); setc(P1.val, PV == null ? COL.fault : COL.text);
+    tileMark(P1, barX, PV);
     st(P1.fill, { width: PV != null ? barX(PV).toFixed(1) + 'px' : '0px' });   // filled like the valve bar (Ryan, 13 Oct: the bar did not read as working)
-    const rp = recent('pv', 30);
-    tileBar(P1, barX, PV, rp.lo, rp.hi, PV != null && rp.then != null && Math.abs(PV - rp.then) > Math.max(0.01, 0.02 * PV) ? Math.sign(PV - rp.then) : 0);
-    vis(P1.tgt, auto && C.spSet); if (C.spSet) st(P1.tgt, { left: (barX(C.SP) - 4).toFixed(1) + 'px' });
-    tileField(P1, auto, C.spSet ? C.SP.toFixed(1) : 'Not set');   // iTC idea (13 Oct): say so rather than leave the box blank
+    st(P1.zone, { width: barX(P.alarmLo).toFixed(1) + 'px', background: C.faults.has('F-02') ? COL.fault : '#A3AFBB' });
+    drawSpark(P1.sp, 'pv', auto);
+    tileField(P1, auto, C.spSet ? fmtOp(C.SP) : 'Not set');   // iTC idea (13 Oct): say so rather than leave the box blank
+    // S6: the tile that owns an active alarm gets the alarm border (WP023 s9.3.1 p50)
+    const pAlm = PV == null || ['F-01', 'F-02', 'F-03', 'F-15'].some(k => C.faults.has(k));
+    const vAlm = ['F-07', 'F-08', 'F-09', 'F-10', 'F-13', 'F-16', 'F-17'].some(k => C.faults.has(k));
+    tog(P1.c, 'tile-alm', pAlm); tog(V1.c, 'tile-alm', vAlm); tog(P1.c, 'unack', pAlm && unacked()); tog(V1.c, 'unack', vAlm && unacked());
     // Valve tile
     const vp = C.ref ? pctOf(M.pos) : null;
     set(V1.val, C.ref ? vp.toFixed(1) : C.mode === 'HOMING' ? 'Zeroing' : '----');
     st(V1.val, { fontSize: C.mode === 'HOMING' ? '16px' : '26px' }); setc(V1.val, C.ref || C.mode === 'HOMING' ? COL.text : COL.idle);
     st(V1.fill, { width: C.ref ? vbarX(vp).toFixed(1) + 'px' : '0px' });
-    const rv = recent('pos', 30);
-    tileBar(V1, vbarX, vp, C.ref ? rv.lo : null, rv.hi, M.moving ? M.dir : 0);
+    tileMark(V1, vbarX, vp);
+    drawSpark(V1.sp, 'pos', auto);
     tileField(V1, C.mode === 'MANUAL', C.mode === 'MANUAL' ? pctOf(M.moving ? M.target : C.manPos).toFixed(1) : auto ? 'auto' : '');
     // Status line
     const sl = statusLine();
-    set(stxt, sl.text); setc(stxt, sl.kind === 'fault' ? '#B42324' : sl.kind === 'warn' ? '#9A5D00' : COL.text);
-    setbg(sb, sl.kind === 'fault' ? '#FDE8E8' : sl.kind === 'warn' ? '#FFF3DD' : '#FFFFFF');
-    setMark(dot, sl.kind, sl.dot || COL.idle);
+    set(stxt, sl.text);
+    stripKind(sb, sl.kind === 'fault' ? 'fault' : sl.kind === 'warn' ? 'warn' : sl.kind === 'prompt' ? 'prompt' : 'info', dot, sl.dot || COL.idle);
+    setc(stxt, sl.kind === 'fault' || sl.kind === 'warn' ? '#FFFFFF' : sl.kind === 'prompt' ? '#000000' : COL.text);
     vis(sbtn, !!sl.btn); seth(sbtn, sl.btn === 'manual' ? lab('Switch to MANUAL') : sl.btn === 'ok' ? lab('OK') : lab('Reset fault', sl.count ? sl.count + ' faults' : ''));
     tog(sbtn, 'act', sl.btn !== 'ok');   // OK is a plain button; it only dismisses
     st(stxt, { width: (sl.btn ? 203 : 303) + 'px' });
@@ -1236,22 +1342,22 @@ function statusLine() {
   if (C.faults.size) {
     const fl = faultsByPriority(); const [tag, f] = fl[0];
     // v48: STOP says what it did and what it did not do.
-    if (tag === 'F-12') return { kind: 'fault', text: 'Stopped. AUTO off, valve motion stopped; valve not commanded closed.', btn: 1, count: fl.length > 1 ? fl.length : 0 };
-    return { kind: 'fault', text: tag + ' ' + faultShort(tag, f) + '. Tap for details.', btn: 1, count: fl.length > 1 ? fl.length : 0 };
+    if (tag === 'F-12') return { kind: 'fault', text: 'Stopped. Valve held, not closed.', btn: 1, count: fl.length > 1 ? fl.length : 0 };
+    return { kind: 'fault', text: tag + ' ' + faultShort(tag, f), btn: 1, count: fl.length > 1 ? fl.length : 0 };
   }
   if (C.msg && performance.now() < C.msg.until) return { kind: C.msg.kind, text: C.msg.text, btn: C.mode === 'PAUSED' ? 'manual' : 'ok' };   // the paused choice stays on screen
   switch (C.mode) {
-    case 'NOT HOMED': return { kind: 'warn', text: 'Valve position unknown. Zero the valve.' };
-    case 'HOMING': return { kind: 'info', dot: COL.grey, text: homeStep() + '. STOP cancels.' };
-    case 'MANUAL': return { kind: 'info', dot: COL.muted, text: M.moving ? 'Manual. Moving to ' + pctOf(M.target).toFixed(1) + ' %.' : 'Manual. Valve held @ ' + pctOf(M.pos).toFixed(1) + ' %.' };
+    case 'NOT HOMED': return { kind: 'prompt', text: 'Valve not zeroed' };   // S4: a prompt, not a warning (WP023 s9.8.1 p55)
+    case 'HOMING': return { kind: 'info', dot: COL.grey, text: homeStep() };
+    case 'MANUAL': return { kind: 'info', dot: COL.muted, text: M.moving ? 'Moving to ' + pctOf(M.target).toFixed(1) + ' %' : 'Valve held' };
     case 'AUTO': {
-      const r = regulation(), sp = C.SP.toFixed(1);
-      if (r === 'stable') return { kind: 'info', dot: COL.ok, text: 'Stable @ ' + sp + ' mB ±' + P.band.toFixed(1) + ' for ' + P.stableT + ' s.' };
-      if (r === 'band') return { kind: 'info', dot: COL.ok, text: 'Within target band, ' + sp + ' ±' + P.band.toFixed(1) + ' mB.' };
+      const r = regulation(), sp = fmtOp(C.SP);
+      if (r === 'stable') return { kind: 'info', dot: COL.ok, text: 'Stable @ ' + sp + ' mB ±' + fmtLim(P.band) };
+      if (r === 'band') return { kind: 'info', dot: COL.ok, text: 'In band, ' + sp + ' ±' + fmtLim(P.band) + ' mB' };
       // v51 (review 9 Oct): "Approaching" claimed progress that is not measured; outside the band it is Regulating.
-      return { kind: 'info', dot: COL.ok, text: 'Regulating to ' + sp + ' mB, outside the target band.' };
+      return { kind: 'info', dot: COL.ok, text: 'Regulating to ' + sp + ' mB' };
     }
-    case 'PAUSED': return { kind: 'warn', text: 'AUTO paused (W-02): no convergence, valve held.', btn: 'manual' };
+    case 'PAUSED': return { kind: 'warn', text: 'W-02 Not settling, valve held', btn: 'manual' };
   }
   return { kind: 'info', text: '' };
 }
@@ -1260,9 +1366,9 @@ function modePress() {
   if (C.mode === 'HOMING') return refuse('Zeroing: STOP to cancel');
   if (C.mode === 'MANUAL') {
     if (!C.spSet) return keypadStart();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
-    confirmBox('Start AUTO @ ' + C.SP.toFixed(1) + ' mB? Pressure now ' + fmtP(PV) + ' mB.', 'Start AUTO', 'act', toAuto, ['New target', keypadStart]);
+    confirmBox('Start AUTO @ ' + fmtOp(C.SP) + ' mB?', 'Start AUTO', 'act', toAuto, ['New target', keypadStart]);
   }
-  else if (C.mode === 'PAUSED') confirmBox('Resume AUTO @ ' + C.SP.toFixed(1) + ' mB, or switch to MANUAL?', 'Resume AUTO', 'act', toAuto, ['MANUAL', toManual]);
+  else if (C.mode === 'PAUSED') confirmBox('Resume AUTO @ ' + fmtOp(C.SP) + ' mB?', 'Resume AUTO', 'act', toAuto, ['MANUAL', toManual]);
   else askManual();
 }
 
@@ -1336,6 +1442,7 @@ function keypad(o) {
   function key(k) {
     if (entry.length >= 9) return;
     if (k === '.' && (o.dec === 0 || entry.includes('.'))) return;
+    if (o.dec != null && o.dec > 0 && entry.includes('.') && entry.split('.')[1].length >= o.dec) return;   // S3: 0.1 mbar entry
     entry += k; show1();
   }
   function commit() {
@@ -1348,17 +1455,17 @@ function keypad(o) {
     if (r && r.then) r.then();
   }
 }
-function spPanel() { const on = C.mode === 'AUTO' || C.mode === 'PAUSED'; return [['Now, mB', fmtP(PV)], ['Target', C.spSet ? C.SP.toFixed(1) : '----', on ? null : COL.idle]]; }   // v28: same rule as the home card
+function spPanel() { const on = C.mode === 'AUTO' || C.mode === 'PAUSED'; return [['Now, mB', fmtOp(PV)], ['Target', C.spSet ? fmtOp(C.SP) : '----', on ? null : COL.idle]]; }   // v28: same rule as the home card
 function keypadStart() {   // type a target; Set starts AUTO at it (no second confirmation)
-  keypad({ title: 'Target for AUTO, mB', panel: () => [['Now, mB', fmtP(PV)]], min: P.Pmin, max: pMax(), w03: true,
-    info: 'Allowed ' + P.Pmin.toFixed(1) + ' to ' + pMax().toFixed(1),
+  keypad({ title: 'Target for AUTO, mB', panel: () => [['Now, mB', fmtOp(PV)]], min: P.Pmin, max: pMax(), w03: true, dec: 1,
+    info: 'Allowed ' + fmtLim(P.Pmin) + ' to ' + fmtLim(pMax()),
     onSet: v => setSP(v) && toAuto() });
 }
 function keypadSP() {
-  keypad({ title: 'Target, mB', panel: spPanel, min: P.Pmin, max: pMax(), w03: true,
-    info: 'Allowed ' + P.Pmin.toFixed(1) + ' to ' + pMax().toFixed(1),
+  keypad({ title: 'Target, mB', panel: spPanel, min: P.Pmin, max: pMax(), w03: true, dec: 1,
+    info: 'Allowed ' + fmtLim(P.Pmin) + ' to ' + fmtLim(pMax()),
     onSet: v => {
-      if (Math.abs(v - C.SP) > SP_CONFIRM) return { then: () => confirmBox('Change the target from ' + C.SP.toFixed(1) + ' to ' + v.toFixed(1) + ' mB? That is ' + (v >= C.SP ? '+' : '-') + Math.abs(v - C.SP).toFixed(1) + ' mB.', 'Change target', 'act', () => setSP(v)) };
+      if (Math.abs(v - C.SP) > SP_CONFIRM) return { then: () => confirmBox('Change target ' + fmtOp(C.SP) + ' to ' + fmtOp(v) + ' mB?', 'Change target', 'act', () => setSP(v)) };
       return setSP(v);
     } });
 }
@@ -1413,11 +1520,12 @@ function textView(title, lines) {
 function canManual() { return C.mode === 'MANUAL'; }
 function manPct(v) { return setManSteps(v / 100 * P.POSMAX); }
 function notManual() { return refuse(C.mode === 'NOT HOMED' ? 'Zero the valve first' : C.faults.size ? 'Reset the fault first' : 'Switch to MANUAL first'); }
+const STEP_PCT = 5;   // Ryan 13 Oct: the step buttons move 5 % (were 1 %)
 function nudge(d) { if (!canManual()) return notManual(); return setManSteps(C.manPos + d / 100 * P.POSMAX); }
 function keypadPct() {
   if (!canManual()) return notManual();
-  keypad({ title: 'Requested position, %', panel: () => [['Valve position', C.ref ? pctOf(M.pos).toFixed(1) : '--']], min: 0, max: 100,
-    info: '0 closed, 100 fully open', onSet: v => manPct(v) });
+  keypad({ title: 'Go to, %', panel: () => [['Valve, %', C.ref ? pctOf(M.pos).toFixed(1) : '--']], min: 0, max: 100,
+    info: '0 closed, 100 open', onSet: v => manPct(v) });
 }
 // Hold-to-jog (Ryan, 9 Oct): moves toward closed or fully open while pressed, stops on release.
 // In LVGL: LV_EVENT_PRESSED starts, RELEASED or PRESS_LOST stops; the touch is polled every 5 ms.
@@ -1440,50 +1548,53 @@ function buildValve() {
   const s = newScreen('valve');
   // v51 (review 9 Oct):
   //   row 1  Pressure | Valve position | Requested position           (three equal cards, full words)
-  //   row 2  hold Close | -1 % | +1 % | hold Open                      (closed to open, left to right)
-  //   row 3  Enter position (MANUAL) or Switch to MANUAL (AUTO, paused) | Fully close | Fully open | Help
+  //   row 2  hold Close | -5 % | +5 % | hold Open                      (closed to open, left to right)
+  //   row 3  Go to (MANUAL) or Switch to MANUAL (AUTO, paused) | Fully close | Fully open | Help
   // Position is estimated from motor steps; the footer says so once.
-  const c3 = cols(3, 10, 470), c4 = cols(4, 10, 470);
+  // WP023 proposal S9 (R10; s6.8 p16, s8.15.1 p38): the jog row moves the valve, so its command buttons are 12 px
+  // apart (about 2.4 mm on the panel) instead of 8 px. Widths stay above 100 px.
+  const c3 = cols(3, 10, 470), c4 = [0, 1, 2, 3].map(i => [Math.round(10 + i * (460 + 12) / 4), Math.round((460 + 12) / 4) - 12]);
   const nowCard = (k, cap) => { const [x, w] = c3[k]; const c = mk(s, x, RY[0], w, RH, 'ro'); const strip = mk(c, 0, 6, 3, 36, ''); const cp = mk(c, 12, 5, null, null, 'cap', cap);
     return { c, v: st(mk(c, 12, 20, w - 24, 24, '', ''), { fontSize: '16px', lineHeight: '24px', textAlign: 'right' }), cp, strip, w }; };
+  // Ryan 13 Oct: less text. Units in the captions; the status strip carries the state (the "why" card is gone).
   const pr = nowCard(0, 'Pressure, mB');
-  const vp = nowCard(1, 'Valve position');
+  const vp = nowCard(1, 'Valve, %');
   const barBg = st(mk(vp.c, 12, 42, vp.w - 24, 3, ''), { background: COL.bg, borderRadius: '1px' });
   const barFill = st(mk(barBg, 0, 0, 0, 3, ''), { background: COL.grey, borderRadius: '1px' });
-  const rq = nowCard(2, 'Requested position');
-  const jc = jogBtn(s, c4[0][0], RY[1], c4[0][1], RH, lab('Hold to close'), -1);
-  const n1 = btn(s, c4[1][0], RY[1], c4[1][1], RH, lab('-1 %'), () => nudge(-1));
-  const n2 = btn(s, c4[2][0], RY[1], c4[2][1], RH, lab('+1 %'), () => nudge(1));
-  const jo = jogBtn(s, c4[3][0], RY[1], c4[3][1], RH, lab('Hold to open'), 1);
+  const rq = nowCard(2, 'Go to, %');
+  // Ryan 13 Oct: steps of 5 %. Close and Open move while held (Help says so).
+  const jc = jogBtn(s, c4[0][0], RY[1], c4[0][1], RH, lab('Close'), -1);
+  const n1 = btn(s, c4[1][0], RY[1], c4[1][1], RH, lab('-5 %'), () => nudge(-STEP_PCT));
+  const n2 = btn(s, c4[2][0], RY[1], c4[2][1], RH, lab('+5 %'), () => nudge(STEP_PCT));
+  const jo = jogBtn(s, c4[3][0], RY[1], c4[3][1], RH, lab('Open'), 1);
   const bAct = btn(s, 10, RY[2], 109, RH, '', () => isAuto() ? askManual() : keypadPct(), 'act');
-  // Ryan (13 Oct): the old what-the-valve-is-doing card repeated the status strip; the space holds the two end moves.
-  // One tap moves to an end of travel, so each asks first.
-  const full = (pct, word) => () => { if (!canManual()) return notManual(); confirmBox(word + ' the valve fully, to ' + pct + ' %? Valve now ' + pctOf(M.pos).toFixed(1) + ' %.', word + ' fully', 'act', () => manPct(pct)); };
-  const fc = btn(s, c4[1][0], RY[2], c4[1][1], RH, lab('Fully close', '0 %'), full(0, 'Close'));
-  const fo = btn(s, c4[2][0], RY[2], c4[2][1], RH, lab('Fully open', '100 %'), full(100, 'Open'));
+  // Ryan (13 Oct): the empty middle of row 3 holds the two end moves. One tap moves to an end of travel, so each asks first.
+  const full = (pct, word) => () => { if (!canManual()) return notManual(); confirmBox(word + ' fully, to ' + pct + ' %?', word + ' fully', 'act', () => manPct(pct)); };
+  const fc = btn(s, 127, RY[2], 109, RH, lab('Fully close'), full(0, 'Close'));
+  const fo = btn(s, 244, RY[2], 109, RH, lab('Fully open'), full(100, 'Open'));
   navBtn(s, 361, RY[2], 109, RH, 'Help', () => textView('Valve', [
-    'Valve position is estimated from motor steps counted since zeroing, 0 % closed to 100 % fully open. It is not a flow.',
-    'Hold to close and Hold to open move while pressed and stop on release. -1 % and +1 % step the requested position. Fully close and Fully open move to 0 % or 100 % after a confirm. Enter position moves to a typed value.',
-    'The valve moves by hand in MANUAL only. Leaving this page does not stop a move; STOP does.']));
+    'Position is counted in motor steps from the closed limit: 0 % closed, 100 % open.',
+    'Close and Open move while held. -5 % and +5 % step. Fully close and Fully open go to 0 % or 100 % after a confirm. Go to takes a typed value. MANUAL only; STOP stops.']));
   screens.valve.update = () => {
     const man = canManual(), auto = isAuto();
     if (C.ref) {
-      set(vp.v, pctOf(M.pos).toFixed(1) + ' %'); setc(vp.v, COL.text);
+      set(vp.v, pctOf(M.pos).toFixed(1)); setc(vp.v, COL.text);
       barFill.style.width = (clamp(pctOf(M.pos), 0, 100) * (vp.w - 24) / 100).toFixed(1) + 'px'; vis(barBg, true);
       const tgt = auto ? C.posCmd : (M.moving ? M.target : C.manPos);
-      set(rq.v, pctOf(tgt).toFixed(1) + ' %'); setc(rq.v, COL.text);
+      set(rq.v, pctOf(tgt).toFixed(1)); setc(rq.v, COL.text);
     } else {
       set(vp.v, '----'); setc(vp.v, COL.idle); vis(barBg, false); set(rq.v, '----'); setc(rq.v, COL.idle);
     }
-    set(pr.v, fmtP(PV)); setc(pr.v, PV == null ? COL.fault : COL.text);
-    setbg(pr.strip, PV == null ? COL.fault : COL.ok);
-    setbg(vp.strip, C.ref ? COL.ok : C.mode === 'HOMING' ? COL.grey : COL.warn); setbg(rq.strip, 'transparent');
+    set(pr.v, fmtOp(PV)); setc(pr.v, PV == null ? COL.fault : COL.text);
+    // S4: no colour edge for a valid reading; red edge only when the reading is lost (an alarm)
+    setbg(pr.strip, PV == null ? COL.fault : 'transparent');
+    setbg(vp.strip, 'transparent'); setbg(rq.strip, 'transparent');
     [jc, n1, n2, jo, fc, fo].forEach(b => tog(b, 'dis', !man));
-    seth(bAct, lab(auto ? 'Switch to MANUAL' : 'Enter position'));
+    seth(bAct, lab(auto ? 'Switch to MANUAL' : 'Go to'));
     tog(bAct, 'dis', !(man || (auto && !C.faults.size)));
   };
 }
-function askManual() { confirmBox('Switch to MANUAL? AUTO stops and the valve is held @ ' + pctOf(M.pos).toFixed(1) + ' %.', 'Switch to MANUAL', 'act', toManual); }
+function askManual() { confirmBox('Switch to MANUAL? Valve holds @ ' + pctOf(M.pos).toFixed(1) + ' %.', 'Switch to MANUAL', 'act', toManual); }
 
 /* ---- Menu ---------------------------------------------------------- */
 function buildMenu() {
@@ -1494,13 +1605,21 @@ function buildMenu() {
   // Commissioning needs the PIN.
   const c2 = cols(2, 10, 470);
   const tile = (c, r, label, fn) => navBtn(s, c2[c][0], RY[r], c2[c][1], RH, label, fn);
+  // WP023 proposal S16 to S18: the Alarms tile carries the alarm state (s9.3.1 p50); Diagnostics is read only and
+  // opens without the PIN (s3.1 p8, level 4 for troubleshooting); the footer keeps the process status (s6.7 p16).
   tile(0, 0, 'Pressure trend', () => show('trend'));
-  tile(1, 0, 'Faults and log', () => show('faults'));
+  const ba = tile(1, 0, 'Faults and log', () => show('faults'));
   tile(0, 1, 'Zero valve', () => show('ref'));
   tile(1, 1, 'About this unit', () => show('info'));
-  const bc = tile(0, 2, '', commTile);
-  screens.menu.update = () => seth(bc, navLab((ACC.on ? '' : sym('LOCK', 14) + ' ') + 'Engineer settings'));
-  screens.menu.foot = () => 'Link ' + (BENCH.link === 'eth' ? 'Ethernet 192.168.1.50' : 'USB') + '. Firmware ' + FW + '.';
+  tile(0, 2, 'Diagnostics', () => show('diag'));
+  const bc = tile(1, 2, '', commTile);
+  let lastA = null;
+  screens.menu.update = () => {
+    seth(bc, navLab((ACC.on ? '' : sym('LOCK', 14) + ' ') + 'Engineer settings'));
+    const n = C.faults.size, ua = unacked(), a = n + '|' + ua;
+    if (a !== lastA) { lastA = a; seth(ba, navLab('Faults and log', n ? plural(n, 'fault') : '')); }
+    tog(ba, 'tile-alm', n > 0); tog(ba, 'unack', n > 0 && ua);
+  };
 }
 // Read-only value (v52): flat panel, 12 px caption, one 16 px line. A value that does not fit is cut with "..." and a
 // grey chevron, and a tap opens it in full (LV_LABEL_LONG_DOT); the size never changes.
@@ -1525,10 +1644,10 @@ function buildRef() {
   const s = newScreen('ref');
   // v52: values and the action only; what referencing does is behind Help (side slot 1, as on settings pages).
   const stat = infoCard(s, 10, RY[0], 226, 'Zero');
-  const pos = infoCard(s, 244, RY[0], 109, 'Steps now');
+  // S19: operator units; step counts and the past-switch count stay on Diagnostics.
+  const pos = infoCard(s, 244, RY[0], 109, 'Valve, %');
   const last = infoCard(s, 10, RY[1], 226, 'Last zeroed');
-  const sw = infoCard(s, 244, RY[1], 109, 'Closed switch');
-  const over = infoCard(s, 10, RY[2], 109, 'Past switch');
+  const sw = infoCard(s, 244, RY[1], 109, 'Seat switch');
   navBtn(s, 361, RY[0], 109, RH, 'Help', () => textView('Zero valve', [
     'Finds the closed position: closes to the limit switch, backs off, approaches slowly and sets 0 %. Takes up to ' + Math.ceil(1.1 * P.POSMAX / P.fhome / 60) + ' min; the pressure will change.',
     'MANUAL only. STOP cancels; the valve is then not zeroed.', 'Position is counted in steps from the closed limit.']));
@@ -1537,10 +1656,9 @@ function buildRef() {
     const hm = C.mode === 'HOMING' ? (homeStep().match(/(\d of 3): (.*)/) || []) : [];
     set(stat.cp, hm[1] ? 'Zeroing, step ' + hm[1] : 'Zero');
     stat.set(C.mode === 'HOMING' ? (hm[2] ? hm[2][0].toUpperCase() + hm[2].slice(1) : 'Starting') : C.ref ? 'Zeroed' : 'Not zeroed', C.mode === 'HOMING' || C.ref ? COL.text : COL.warn);
-    pos.set(fint(M.pos));
-    sw.set(LIM.active ? 'Pressed' : 'Not pressed', LIM.active ? COL.warn : COL.text);
+    pos.set(C.ref || C.mode === 'HOMING' ? pctOf(M.pos).toFixed(1) : '--');
+    sw.set(LIM.active ? 'At seat' : 'Off seat');
     last.set(C.lastHome ? stamp(C.lastHome.t) : 'Not since power-on');
-    over.set(fint(LIM.over) + ' steps', LIM.over ? COL.fault : COL.text);
     tog(bh, 'dis', C.mode === 'AUTO' || C.mode === 'PAUSED' || C.mode === 'HOMING');
   };
   screens.ref.foot = () => C.mode === 'AUTO' || C.mode === 'PAUSED' ? 'AUTO on: zeroing needs MANUAL.' : C.mode === 'HOMING' ? 'Zeroing. STOP cancels.' : '';
@@ -1581,13 +1699,13 @@ function buildInfo() {
 // PIN 2468; a long press is the alternative if the workplace does not need a PIN). Closes on Exit or after 10 min
 // without a touch. The serial port shares the same session (ACCESS pin / ACCESS EXIT).
 const ACC = { on: false, last: 0, pin: '2468', idleMs: 10 * 60 * 1000 };
-const COMM_PAGES = ['comm', 'sensor', 'motor', 'tune', 'limits', 'diag', 'cfg', 'guide'];
+const COMM_PAGES = ['comm', 'sensor', 'motor', 'tune', 'limits', 'cfg', 'guide'];   // S18: Diagnostics is read only, no PIN
 function accTouch() { if (ACC.on) ACC.last = performance.now(); }
 function accLeft() { return Math.max(0, ACC.idleMs - (performance.now() - ACC.last)); }
 function accEnter(via) {
   ACC.on = true; ACC.last = performance.now(); ev('ACCESS', 'Engineer settings opened (' + via + ')');
   // v52: the timeout is explained once, here, instead of a countdown in the header.
-  msg('Engineer settings open. Locks after 10 min without a touch.' + (DRAFT.size ? ' ' + plural(DRAFT.size, 'unapplied change') + ' kept from before.' : ''), 'info');
+  msg('Engineer settings open, lock after 10 min idle.' + (DRAFT.size ? ' ' + plural(DRAFT.size, 'unapplied change') + ' kept from before.' : ''), 'info');
   return true;
 }
 // v51 (review 9 Oct): closing the session removes editing access only. It never changes the control mode or moves the
@@ -1937,7 +2055,7 @@ function buildDiag() {
   const sig = g(0, 0, 'Signal, mV/V'), sup = g(0, 1, 'Supply, V'), raw = g(0, 2, 'Before cal, mB');
   const pos = g(1, 0, 'Position, steps'), sw = g(1, 1, 'Closed switch'), over = g(1, 2, 'Past switch');
   const last = g(2, 0, 'Result'), dist = g(2, 1, 'Moved, steps'), took = g(2, 2, 'Took, s');
-  screens.diag.foot = () => 'Read only. Board 23.5 C. Link ' + (BENCH.link === 'eth' ? 'Ethernet' : 'USB') + '.';
+  screens.diag.foot = () => 'Read only. Board 23.5 \u00B0C. Link ' + (BENCH.link === 'eth' ? 'Ethernet' : 'USB') + '.';
   screens.diag.update = () => {
     const ok = BENCH.druck && BENCH.exc;
     sig.set(BENCH.druck ? (C.mv / 10).toFixed(4) : '0.0000', ok ? COL.text : COL.fault);
@@ -2042,9 +2160,9 @@ function buildFaults() {
   });
   let lastN = -1, lastF = null;
   screens.faults.update = () => {
-    const fk = faultsByPriority().map(([k, f]) => k + f.t).join('|');
+    const fk = faultsByPriority().map(([k, f]) => k + f.t + f.acked + faultCanReset(k)).join('|');   // S20: state shown per fault
     if (fk !== lastF) { lastF = fk; fl.innerHTML = ''; fl.scrollTop = 0; if (!C.faults.size) { const p = document.createElement('p'); p.textContent = 'No latched faults'; p.style.color = COL.muted; p.style.margin = '0'; fl.appendChild(p); } faultsByPriority().forEach(([k, f]) => { const p = document.createElement('p'); p.innerHTML = (k + '  ' + faultShort(k, f)).replace(/</g, '&lt;') + ' ' + sym('RIGHT', 12); p.style.color = COL.fault; p.style.margin = '0'; p.style.cursor = 'pointer'; p.addEventListener('pointerup', () => { faultDetail(k); updateUI(); }); p.style.whiteSpace = 'nowrap'; p.style.overflow = 'hidden'; p.style.textOverflow = 'ellipsis'; fl.appendChild(p);
-      const q = document.createElement('p'); q.textContent = stamp(f.t, true); st(q, { color: COL.muted, margin: '0', fontSize: '12px', lineHeight: '16px', paddingBottom: '4px' }); fl.appendChild(q); }); }   // v45 (Ryan): date with year and seconds under each fault
+      const q = document.createElement('p'); q.textContent = stamp(f.t, true) + '  ' + (!f.acked ? 'New' : faultCanReset(k) ? 'Cleared, reset' : 'Active'); st(q, { color: COL.muted, margin: '0', fontSize: '12px', lineHeight: '16px', paddingBottom: '4px' }); fl.appendChild(q); }); }   // v45 (Ryan): date with year and seconds under each fault
     seth(ba, lab('Reset fault', C.faults.size > 1 ? C.faults.size + ' faults' : ''));
     tog(ba, 'dis', !C.faults.size);
     if (C.evSeq !== lastN) {   // v48: by sequence number; the count stops changing once the 200-event history is full
@@ -2052,7 +2170,7 @@ function buildFaults() {
       const evs = C.events.slice().reverse();
       if (!evs.length) { const p = document.createElement('p'); p.textContent = 'None'; p.style.color = COL.muted; el.appendChild(p); }
       evs.forEach(e => { const p = document.createElement('p'); p.textContent = stamp(e.t, true) + '  ' + e.tag + '  ' + e.text; p.style.padding = '2px 0'; p.style.margin = '0'; p.style.borderTop = '1px solid ' + COL.bg;
-        p.style.color = /^F-/.test(e.tag) ? COL.fault : /^W-/.test(e.tag) ? '#9A5D00' : COL.text; el.appendChild(p); });
+        p.style.color = COL.text; el.appendChild(p); });   // S21: history in text colour; red is for active faults only (s9.8.1 p55)
       el.scrollTop = keep;
     }
   };
@@ -2070,7 +2188,9 @@ function buildTrend() {
   const wb = [[120, '2 min'], [600, '10 min'], [1800, '30 min']].map((w, i) => [side(s, i, lab(w[1]), () => { devWin = w[0]; }), w[0]]);
   screens.trend.update = () => {
     wb.forEach(([b, w]) => tog(b, 'on', devWin === w));
-    drawChart(devCanvas, devWin, { pv: '#2D5877', sp: '#B4561E', pos: '#2EA043', mech: '#969EA6', grid: '#E3E9EF', text: '#546374', band: 'rgba(46,160,67,0.09)', font: 'Montserrat, sans-serif', solid: true }, 2, true);
+    // S8 (R15; WP023 s8.12.7 p32, s6.3 p15): pens told apart by colour, width and dash; normal states in greys;
+    // legend words match home (Pressure, Target, Valve). AUTO spans shaded light grey.
+    drawChart(devCanvas, devWin, { pv: '#2D5877', sp: '#3F3F3F', pos: '#7B8794', mech: '#969EA6', grid: '#E3E9EF', text: '#546374', band: 'rgba(91,107,123,0.10)', font: 'Montserrat, sans-serif', solid: true, wp023: true }, 2, true);
   };
 }
 
@@ -2118,7 +2238,8 @@ function drawChart(cv, win, col, scale, compact) {
   // Device trend (col.solid): one 2 px width, no dashes. lv_chart shares one line style across series,
   // and the LVGL SW renderer dashes only horizontal and vertical lines.
   const line = (key, color, yf, dash, wdt) => {
-    ctx.strokeStyle = color; ctx.lineWidth = col.solid ? 2 : wdt; ctx.setLineDash(col.solid ? [] : dash); ctx.beginPath(); let pen = false;
+    const dsh = col.wp023 ? (key === 'sp' ? [5, 4] : []) : col.solid ? [] : dash;   // S8: the target is stepped, so dashable in LVGL
+    ctx.strokeStyle = color; ctx.lineWidth = col.wp023 ? (key === 'pos' ? 1.5 : 2) : col.solid ? 2 : wdt; ctx.setLineDash(dsh); ctx.beginPath(); let pen = false;
     pts.forEach(p => { const v = p[key]; if (v == null) { pen = false; return; } const x = xOf(p.t), y = yf(v); if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y); });
     ctx.stroke(); ctx.setLineDash([]);
   };
@@ -2132,7 +2253,8 @@ function drawChart(cv, win, col, scale, compact) {
   ctx.restore();
   if (compact) {   // legend above the plot, each word in its line's colour (review 3, finding 8)
     ctx.textAlign = 'left'; let x = L;
-    [['PV', col.pv], [' and ', col.text], ['SP', col.sp], [' mB, left.  ', col.text], ['Valve %', col.pos], [', right', col.text]].forEach(([w, c]) => { ctx.fillStyle = c; ctx.fillText(w, x, 14); x += ctx.measureText(w).width; });
+    (col.wp023 ? [['Pressure', col.pv], [', ', col.text], ['Target - -', col.sp], [' mB.  ', col.text], ['Valve %', col.pos], [' right', col.text]]
+      : [['PV', col.pv], [' and ', col.text], ['SP', col.sp], [' mB, left.  ', col.text], ['Valve %', col.pos], [', right', col.text]]).forEach(([w, c]) => { ctx.fillStyle = c; ctx.fillText(w, x, 14); x += ctx.measureText(w).width; });
   }
 }
 let benchWin = 600;
@@ -2246,7 +2368,12 @@ function setWin(v) { benchWin = v; document.querySelectorAll('[data-win]').forEa
 document.querySelectorAll('[data-win]').forEach(b => b.addEventListener('click', () => setWin(+b.dataset.win)));
 document.getElementById('pause').addEventListener('click', e => { paused = !paused; e.target.textContent = paused ? 'Run' : 'Pause'; e.target.classList.toggle('on', paused); });
 document.getElementById('b-flash').addEventListener('change', e => { SIM_FLASH_FAIL = e.target.checked; });
-document.getElementById('native').addEventListener('click', e => { nativeSize = !nativeSize; e.target.classList.toggle('on', nativeSize); fit(); });
+document.getElementById('native').addEventListener('click', e => { nativeSize = !nativeSize; physSize = false; e.target.classList.toggle('on', nativeSize); document.getElementById('physical').classList.remove('on'); fit(); });
+// S12: 4.3 in panel, 480 px over about 95.0 mm = 0.198 mm/px; a CSS px is 0.2646 mm, so the panel is 0.748 of 1:1.
+let physSize = false;
+document.getElementById('physical').addEventListener('click', e => { physSize = !physSize; nativeSize = false; e.target.classList.toggle('on', physSize); document.getElementById('native').classList.remove('on'); fit(); });
+document.addEventListener('pointerdown', () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); lastBuzz = -1e9; } catch (e) { } }, { once: true });
+document.getElementById('mute').addEventListener('click', e => { buzzMute = !buzzMute; e.target.classList.toggle('on', buzzMute); buzz(); });
 document.getElementById('reboot').addEventListener('click', () => { reboot(); show('ctrl'); });
 document.getElementById('quick').addEventListener('click', () => {
   setSpeed(20);
@@ -2397,7 +2524,7 @@ const clip = document.getElementById('devclip');
 let nativeSize = false;
 function fit() {
   const avail = Math.min(960, document.querySelector('.panel').clientWidth - 64);
-  const s = nativeSize ? 1 : clamp(avail / 480, 0.6, 2);
+  const s = nativeSize ? 1 : (typeof physSize !== 'undefined' && physSize) ? 0.748 : clamp(avail / 480, 0.6, 2);
   dev.style.transform = 'scale(' + s + ')';
   clip.style.width = (480 * s) + 'px'; clip.style.height = (272 * s) + 'px';
 }
@@ -2410,6 +2537,7 @@ function updateUI() {
   updateGlobal();
   if (screensKeypadNow && overlay) screensKeypadNow();
   document.getElementById('simclock').textContent = 'Board clock ' + clock(t);
+  buzz();
   flUpdate();
 }
 let lastReal = performance.now(), simAcc = 0;
@@ -2417,7 +2545,7 @@ function frame(now) {
   const dtR = Math.min(0.1, (now - lastReal) / 1000); lastReal = now;
   if (!paused) { simAcc += dtR * speed; let n = 0; while (simAcc >= DT && n < 6000) { simTick(); simAcc -= DT; n++; } if (n >= 6000) simAcc = 0; }
   runQuick();
-  if (now - lastUI > 100) { updateUI(); lastUI = now; }
+  if (now - lastUI > 500) { updateUI(); lastUI = now; }   // S11: device values refresh at 2 Hz (WP023 s10.1 p55); touches redraw at once
   if (now - lastBench > 500) { drawBench(); flDraw(); lastBench = now; }
   requestAnimationFrame(frame);
 }

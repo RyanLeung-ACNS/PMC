@@ -45,6 +45,11 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - A message in the status strip has an OK button that dismisses it.
 - Stage then Apply (liked in the iTC screens) was already how Engineer settings work: changes are drafts until Apply changes.
 
+## HMI style guide review ported, 13 October 2026 (v55)
+- All WP023 review changes S1 to S23 from the proposal copy (thread "Simulator review against HMI style guide", 9f7372e) are in, listed in `WP023-CHANGES.md`. HMI philosophy, style guide and operator test are `HMI-PHILOSOPHY.md`, `STYLE-GUIDE.md`, `OPERATOR-TEST.md`; the S-item checks are `tests/wp023.js`.
+- Reversals of earlier decisions taken with it (Ryan to veto): 30 s band and arrow replaced by a 10 min sparkline; home tile rearranged (sparkline, slimmer bar, label-left setpoint row); header dot grey (filled AUTO, ring otherwise); tap acknowledges a fault, separate from Reset fault; a target above 999.9 drops to 16 px. Pressure at 0.1 mbar was already v54.
+- Where the review and v54 clash, v54 holds (names, mB/@/±, Diagnostics layout, Fully close/open, filled pressure bar, Not set, OK button).
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:
@@ -52,6 +57,7 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
     node tests/run.js tests/workflows.js    # the seven review workflows
     node tests/run.js tests/regression.js   # earlier findings that must stay fixed, fixed header
     node tests/run.js tests/audit.js        # every screen, keypad, dialog and fault state
+    node tests/run.js tests/wp023.js        # the HMI style guide review items S1 to S23
 
 The audit flags clipped or cut text, text overlapping text or buttons, text outside its card, glyphs outside the LVGL font range, touch targets under 40 px and font sizes other than 12, 16, 26 and 40. It runs in Chromium with the Google Montserrat font: it does not prove rendering on the Mikromedia (LVGL glyph metrics, anti-aliasing, touch accuracy and readability on the panel still need checking there).
 
