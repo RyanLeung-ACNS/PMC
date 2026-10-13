@@ -48,6 +48,7 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 ## HMI style guide review ported, 13 October 2026 (v55)
 - All WP023 review changes S1 to S23 from the proposal copy (thread "Simulator review against HMI style guide", 9f7372e) are in, listed in `WP023-CHANGES.md`. HMI philosophy, style guide and operator test are `HMI-PHILOSOPHY.md`, `STYLE-GUIDE.md`, `OPERATOR-TEST.md`; the S-item checks are `tests/wp023.js`.
 - Reversals of earlier decisions taken with it (Ryan to veto): 30 s band and arrow replaced by a 10 min sparkline; home tile rearranged (sparkline, slimmer bar, label-left setpoint row); header dot grey (filled AUTO, ring otherwise); tap acknowledges a fault, separate from Reset fault; a target above 999.9 drops to 16 px. Pressure at 0.1 mbar was already v54.
+- Home Target and Go to boxes (Ryan, 13 Oct): one font size (26 px) always, 104 px wide (a little over 999.9 / 100.0 plus the chevron). Target max is capped at 999.9 so no target needs more. No target yet shows ---- (replaces Not set). The OK on status messages is one narrow 60 px button everywhere.
 - Where the review and v54 clash, v54 holds (names, mB/@/±, Diagnostics layout, Fully close/open, filled pressure bar, Not set, OK button).
 
 ## Tests
