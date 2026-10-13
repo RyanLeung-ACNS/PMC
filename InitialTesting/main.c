@@ -64,6 +64,48 @@ static bool perf_command(const char *line)
     return true;
 }
 
+// HELP (or ?): every command the link takes. Keep in step with README.md.
+static bool help_command(const char *line)
+{
+    static const char *const lines[] = {
+        "Commands (upper case, one per line, CR or LF ends a line):",
+        "  HELP or ?                  this list",
+        "  VER?                       firmware version and build time",
+        "  DATA ON | DATA OFF         once-a-second DATA lines and status lines on or off",
+        "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+        "  LIM?                       valve limit switch state",
+        "  UNC?                       pressure uncertainty budget",
+        "  TOUCH?                     touch controller counters",
+        "  PERF?                      main loop and display timing (resets the maxima)",
+#if PMC_PM_DIAG
+        "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
+#endif
+        "Calibration:",
+        "  CAL?                       active cal and bench points",
+        "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
+        "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+        "  CAL SAVE                   write the active cal to flash",
+        "  CAL ERASE                  erase the saved cal, use nominal",
+        "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
+        "Valve motor:",
+        "  MOT?                       position, settings, limit",
+        "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
+        "  MOT STOP | MOT OFF         stop / stop and de-energise",
+        "  MOT ZERO                   call this position 0",
+        "  MOT RATE <16-1000>         run rate, steps/s",
+        "  MOT START <16-1000>        start rate, steps/s",
+        "  MOT ACCEL <10-20000>       steps/s^2",
+        "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
+    };
+
+    if (strcmp(line, "HELP") != 0 && strcmp(line, "?") != 0)
+        return false;
+    for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++)
+        link_printf("%s\r\n", lines[i]);
+    link_printf("OK\r\n");
+    return true;
+}
+
 /**
  * @brief Initializes board peripherals for display, touch, and LVGL timing.
  */
@@ -158,7 +200,7 @@ int main(void)
         touch_poll();
         rtclock_poll();
         limit_poll();
-        if (link_getline(line, sizeof line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+        if (link_getline(line, sizeof line) && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
