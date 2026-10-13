@@ -34,11 +34,11 @@ module.exports = async (p, h) => {
 
   // 4. Edit several commissioning pages -> review -> apply -> save -> restart
   await run(5); await tap('Menu'); await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf4-1-comm');
-  await tap('Control tuning'); await tap('Gain, %/mB', true); await keys('6'); await tap('Set'); await tap('Back');
+  await tap('Control tuning', true); await tap('Gain, %/mB', true); await keys('6'); await tap('Set'); await tap('Back');
   o = await st(); ok(o.cur === 'comm' && !o.ov, 'WF4 Back with a draft: no Apply/Discard question');
-  await tap('Pressure limits'); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
-  await tap('Valve setup'); await tap('Drive'); await tap('Run speed, steps/s', true); await keys('500'); await tap('Set'); await shot('wf4-2-drive-draft'); await tap('Back');
-  await tap('Review and save'); await shot('wf4-3-config');
+  await tap('Pressure limits', true); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
+  await tap('Valve setup', true); await tap('Drive'); await tap('Run speed, steps/s', true); await keys('500'); await tap('Set'); await shot('wf4-2-drive-draft'); await tap('Back');
+  await tap('Review and save', true); await shot('wf4-3-config');
   await tap('Unapplied changes', true); const list = (await st()).ov; await shot('wf4-4-list');
   ok(/Gain/.test(list) && /Target band/.test(list) && /Run speed/.test(list), 'WF4 review lists all three by label and page'); await tap('Close');
   await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF4 applied together, not saved');
@@ -79,4 +79,16 @@ module.exports = async (p, h) => {
   ok(!o.acc && o.drafts.includes('P.Ti') && o.mode === before.mode && o.pos === before.pos, 'WF7 timeout: access closed, draft kept, mode and valve unchanged');
   await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf7-3-reentry'); o = await st();
   ok(o.drafts.includes('P.Ti') && /unapplied/.test(o.foot), 'WF7 draft offered for review after re-entry');
+  // 8. Live calibration: capture vacuum and air through the board, check New cal, apply and save
+  await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('comm'); updateUI(); });
+  await tap('Live calibration', true); await shot('wf8-1-cal');
+  await tap('Capture vacuum'); await keys('0'); await tap('Set'); await run(1); await shot('wf8-2-capturing');
+  await run(30); o = await st(); ok(o.drafts.includes('S.prof'), 'WF8 vacuum point held as an unapplied change');
+  await ev(() => { BENCH.air = 1013.4; }); await run(2);
+  await tap('Capture air'); await keys('<<<<<<1013.4'); await tap('Set'); await run(30); await shot('wf8-3-both');
+  let c = await ev(() => { const q = fv(PROF_FIELD)[sIdx()]; return { kind: calKind(q), nw: calP(C.mv, q), old: PV }; });
+  ok(c.kind === 'two-point bench' && Math.abs(c.nw - 1013.4) < 0.3, 'WF8 two-point table reads ' + c.nw.toFixed(2) + ' mB at 1013.4 (in use ' + c.old.toFixed(1) + ')');
+  await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF8 Apply uses the new calibration, not saved yet');
+  await tap('Save settings'); await tap('Save settings'); o = await st(); ok(!o.dirty, 'WF8 Save settings writes it');
+  await ev(() => { BENCH.plumb = 'line'; });
 };

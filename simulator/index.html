@@ -341,12 +341,16 @@ const RANGE = { Kp: [0.01, 100], Ti: [0, 100], Kd: [0, 100], DB: [0, 2000], Ts: 
   spMax: [0.1, 35000], alarmLo: [0, 1034] };
 const DEF_MOT = { run: 400, start: 200, accel: 3200, rev: 0 };
 // v49: calibration identity (calId, calDate) carried with the profile and shown to operators and commissioners.
-const BENCH_PROF = { model: 'UNIK 5000 PDCR50G1', fs: 1034, type: 'abs', serial: 5880156, exc: 10.0, zero: 0.05, span: 100.02, atm: 1.0512, atmDate: '08 Oct 2026', table: null, calId: 'Druck CA sheet', calDate: '07 Oct 2026' };
+// Ryan (13 Oct): calibration is the firmware 0.3.30 bench two-point (CAL VAC + CAL AIR), read live through the INA228 as
+// wired, so the input loading and the INA228 gain and offset are inside the table. No certificate zero/span or cal factor.
+// A calibration is a ratio (mV/V) to pressure table; bench: the two points and their uncertainties.
+const BENCH_PROF = { model: 'UNIK 5000 PDCR50G1', fs: 1034, type: 'abs', serial: 5880156, exc: 10.0, table: [[0.004756, 0], [9.323535, 1013.2]],
+  bench: { vac: { p: 0, unc: 0.01, r: 0.004756 }, air: { p: 1013.2, unc: 1.0, r: 9.323535 } }, calId: 'Bench two-point', calDate: '13 Oct 2026' };
 // Configuration model (review item 7): Edit -> Apply -> Save for restart.
 //   active (P, MOT, SENS) is what the controller uses now; SAVED is what serial flash holds and what a restart loads;
 //   DRAFT holds edits on the commissioning pages that are not applied yet.
 // One configuration has a name and a revision; each Save bumps the revision.
-const CFG_KEY = 'pmc-sim-config-v5';
+const CFG_KEY = 'pmc-sim-config-v6';   // v6: bench two-point calibration (zero, span and cal factor gone)
 function cfgCore() { return { P: Object.assign({}, P), MOT: Object.assign({}, MOT), sens: { active: SENS.active, prof: JSON.parse(JSON.stringify(SENS.prof)) } }; }
 function defaultCfg() { return { name: 'Bench CF-11', rev: 1, savedAt: 0, P: Object.assign({}, DEF_P), MOT: Object.assign({}, DEF_MOT), sens: { active: 0, prof: [Object.assign({}, BENCH_PROF)] } }; }
 let SAVED = defaultCfg();
@@ -391,13 +395,12 @@ function cfgDiffs() {
 function profDiff(a, b, skip) {
   const ft = (k, x, y) => skip === undefined ? k + ' ' + x + ' to ' + y : k + ': saved ' + x + ', in use ' + y;
   const out = [], name = q => 'Sensor s/n ' + q.serial;
-  const cal = q => q.table ? 'table ' + q.table.length + ' points' : 'zero ' + (+q.zero).toFixed(3) + ' mV, span ' + (+q.span).toFixed(3) + ' mV';
+  const cal = q => calKind(q);
   b.forEach(q => { const p = a.find(x => x.serial === q.serial);
     if (!p) { out.push(name(q) + ': added, ' + (q.calId || 'no calibration identity')); return; }
     const ch = [];
     if ((p.calId || '') + (p.calDate || '') !== (q.calId || '') + (q.calDate || '')) ch.push(ft('calibration', [p.calId, p.calDate].filter(Boolean).join(' '), [q.calId, q.calDate].filter(Boolean).join(' ')));
-    if (p.atm !== q.atm && q.serial !== skip) ch.push(ft('cal factor', (+p.atm).toFixed(4), (+q.atm).toFixed(4)));
-    if (q.serial !== skip && cal(p) !== cal(q) || JSON.stringify(p.table) !== JSON.stringify(q.table)) ch.push(ft('calibration values', cal(p), cal(q)));
+    if (cal(p) !== cal(q) || JSON.stringify(p.table) !== JSON.stringify(q.table)) ch.push(ft('calibration values', cal(p), cal(q)));
     if (ch.length) out.push(name(q) + ' ' + ch.join('; '));
     else if (!same(p, q) && q.serial !== skip) out.push(name(q) + ': profile details changed'); });
   a.forEach(p => { if (!b.some(x => x.serial === p.serial)) out.push(name(p) + ': removed'); });
@@ -863,16 +866,17 @@ function jog(n) {
 /* ======================================================================
  * Measurement, process, control step
  * ==================================================================== */
-// v47 (UI/UX review item 8): the reading goes through the calibration in use, so zero, span, factor and tables
-// change the pressure the controller uses. The bench Druck s/n 5880156 has certificate zero 0.05 mV and span
-// 100.02 mV at 10 V; the INA228 input loads its output by 1/1.0512 (8 Oct finding), which the cal factor undoes.
+// v47 (UI/UX review item 8): the reading goes through the calibration in use. The simulated Druck has zero 0.05 mV and
+// span 100.02 mV at 10 V, and the INA228 input loads its output by 1/1.0512 (8 Oct finding); a live two-point cal
+// takes all of that in. With no table the nominal 0 to 10 mV/V = 0 to full scale is used (cal_is_default).
 const TRUE_DRUCK = { zero: 0.05, span: 100.02, fs: 1034, load: 1 / 1.0512 };
 function druckMv(p) { return (TRUE_DRUCK.zero + p / TRUE_DRUCK.fs * (TRUE_DRUCK.span - TRUE_DRUCK.zero)) * TRUE_DRUCK.load; }   // mV at 10 V
-function calP(mv, q) { const m = mv * q.atm; return q.table ? interpX(q.table, m / 10) : q.fs * (m - q.zero) / (q.span - q.zero); }
+function calP(mv, q) { return q.table ? interpX(q.table, mv / 10) : q.fs * mv / 100; }
 function interpX(tab, x) { if (x <= tab[0][0]) return tab[0][1] + (x - tab[0][0]) * (tab[1][1] - tab[0][1]) / (tab[1][0] - tab[0][0]); for (let i = 1; i < tab.length; i++) if (x <= tab[i][0] || i === tab.length - 1) { const [a, ya] = tab[i - 1], [b, yb] = tab[i]; return ya + (yb - ya) * (x - a) / (b - a); } }
 function measure() {
   const pTrue = BENCH.plumb === 'line' ? FL.P + noise(0.01) : BENCH.air + noise(0.02);
   C.mv = druckMv(pTrue);
+  calCaptureTick();
   PVreal = calP(C.mv, SENS.prof[SENS.active]);
   if (!BENCH.druck) { pvValid = false; raise('F-01', 'No Druck signal'); }
   else if (!BENCH.exc) { pvValid = false; raise('F-03', 'Excitation outside 9.5 to 10.5 V'); }
@@ -1082,7 +1086,7 @@ function sym(n, px) { const z = px || 16; return '<i class="sym" data-lv="' + SY
 const MODE_COL = { AUTO: '#C3CDD7', MANUAL: '#C3CDD7', 'NOT HOMED': '#C3CDD7', HOMING: '#C3CDD7', PAUSED: '#C3CDD7' };
 
 const TITLES = { menu: 'Menu', sensor: 'Pressure sensor', motor: 'Valve setup', tune: 'Control tuning', diag: 'Diagnostics', cfg: 'Review and save', faults: 'Faults and log', trend: 'Pressure trend', valve: 'Valve',
-  ref: 'Zero valve', info: 'About this unit', comm: 'Engineer settings', limits: 'Pressure limits', guide: 'Setup guide' };
+  ref: 'Zero valve', info: 'About this unit', comm: 'Engineer settings', limits: 'Pressure limits', cal: 'Live calibration' };
 // Review item 1: "Home" meant both the main page and a physical move. The move is now "Reference valve".
 const MODE_WORD = { 'NOT HOMED': 'NOT ZEROED', HOMING: 'ZEROING', PAUSED: 'AUTO PAUSED', MANUAL: 'MANUAL', AUTO: 'AUTO' };
 function newScreen(name) {
@@ -1678,7 +1682,7 @@ function buildInfo() {
   // v52: one 16 px line per value, so the date gets a wide card; the target range is on the Set target keypad.
   const sen = infoCard(s, 10, RY[0], 226, 'Sensor');
   const rng = infoCard(s, 244, RY[0], 109, 'Range, mB');
-  const cal = infoCard(s, 361, RY[0], 109, 'Cal factor');
+  const cal = infoCard(s, 361, RY[0], 109, 'Cal type');
   const calD = infoCard(s, 10, RY[1], 226, 'Calibration');
   const calT = infoCard(s, 244, RY[1], 226, 'Calibration date');
   const cfg = infoCard(s, 10, RY[2], 226, 'Configuration');
@@ -1688,8 +1692,8 @@ function buildInfo() {
     const q = SENS.prof[SENS.active], cs = calState(q), dirty = cfgDirty();
     sen.set('Druck s/n ' + q.serial);
     rng.set('0 to ' + q.fs);
-    cal.set(q.atm.toFixed(4));
-    calD.set(q.calId || (q.table ? q.table.length + '-point table' : 'Certificate'));
+    cal.set(calKind(q) === 'nominal' ? 'Nominal' : q.bench ? 'Bench' : 'Table');
+    calD.set(q.calId || (q.table ? q.table.length + '-point table' : 'Nominal 0 to 10 mV/V'));
     calT.set(q.calDate || 'None');
     calS.set(cs === 'Saved' ? 'Saved' : 'Not saved');
     cfg.set(cfgLabel());
@@ -1704,7 +1708,7 @@ function buildInfo() {
 // PIN 2468; a long press is the alternative if the workplace does not need a PIN). Closes on Exit or after 10 min
 // without a touch. The serial port shares the same session (ACCESS pin / ACCESS EXIT).
 const ACC = { on: false, last: 0, pin: '2468', idleMs: 10 * 60 * 1000 };
-const COMM_PAGES = ['comm', 'sensor', 'motor', 'tune', 'limits', 'cfg', 'guide'];   // S18: Diagnostics is read only, no PIN
+const COMM_PAGES = ['comm', 'sensor', 'cal', 'motor', 'tune', 'limits', 'cfg'];   // S18: Diagnostics is read only, no PIN
 function accTouch() { if (ACC.on) ACC.last = performance.now(); }
 function accLeft() { return Math.max(0, ACC.idleMs - (performance.now() - ACC.last)); }
 function accEnter(via) {
@@ -1759,9 +1763,7 @@ function fmtF(f, v) { return f.fmt ? f.fmt(v) : v == null ? 'not set' : (f.dec =
 function fieldRange(f) { return f.id === 'P.POSMAX' ? RANGE.POSMAX : typeof f.min === 'number' ? [f.min, f.max] : null; }
 function profProblem(q) {
   if (!q || !(q.fs > 0)) return 'no full scale';
-  if (!(q.atm >= 0.5 && q.atm <= 2)) return 'cal factor ' + q.atm + ' outside 0.5 to 2';
   if (q.table) { if (q.table.length < 2 || q.table.length > 32) return 'table needs 2 to 32 points'; for (let i = 1; i < q.table.length; i++) if (!(q.table[i][0] > q.table[i - 1][0] && q.table[i][1] > q.table[i - 1][1])) return 'table not increasing at point ' + (i + 1); }
-  else if (!(q.zero >= -5 && q.zero <= 5 && q.span >= 50 && q.span <= 150)) return 'zero or span out of range';
   return null;
 }
 function cfgProblem(fs) {
@@ -1825,12 +1827,6 @@ const M_FIELD = (key, cap, unit, dec, min, max, info) => fld('motor', { id: 'MOT
 fld('sensor', { id: 'S.active', cap: 'Sensor in use', kind: 'choice', info: 'Profile used for the pressure reading; profiles and tables come from the PC', get: () => SENS.active, saved: () => SAVED.sens.active, fmt: v => SENS.prof[v] ? 's/n ' + SENS.prof[v].serial + ', 0 to ' + SENS.prof[v].fs : '?',
   fromCfg: o => { const q = o.sens && o.sens.prof && o.sens.prof[o.sens.active]; const i = q ? SENS.prof.findIndex(x => x.serial === q.serial) : -1; return i < 0 ? undefined : i; },
   check: () => manualOnly(), apply: v => { SENS.active = v; return true; } });
-const S_FIELD = (key, cap, unit, dec, min, max, info) => fld('sensor', { id: 'S.' + key, cap, unit, dec, min, max, info, cal: true,
-  get: () => SENS.prof[sIdx()][key], saved: () => savedProf(SENS.prof[sIdx()])[key],
-  check: () => isAuto() ? 'switch to MANUAL first (the pressure reading changes)' : null, apply: v => { SENS.prof[sIdx()][key] = v; return true; } });
-S_FIELD('zero', 'Zero', 'mV', 3, -5, 5, 'Certificate zero at 10 V');
-S_FIELD('span', 'Span', 'mV', 3, 50, 150, 'Certificate span at 10 V (full scale)');
-S_FIELD('atm', 'Cal factor', '', 4, 0.5, 2, 'Multiplies the Druck signal');
 // The profile list itself (no card): lets Restore saved remove profiles added since the last save.
 const PROF_FIELD = fld('sensor', { id: 'S.prof', cap: 'Sensor profiles', hidden: true, diffText: (a, b, skip) => profDiff(a, b, skip), get: () => SENS.prof, saved: () => SAVED.sens.prof, fmt: v => v.map(q => 's/n ' + q.serial).join(', '), diffKey: v => v.map(q => q.serial),
   check: () => manualOnly(), apply: v => { const keep = SENS.prof[SENS.active].serial; SENS.prof = JSON.parse(JSON.stringify(v)); SENS.active = Math.max(0, SENS.prof.findIndex(q => q.serial === keep)); return true; } });
@@ -1869,7 +1865,6 @@ function fullTravelEdit(f) {
 }
 function editField(f) {
   if (!needAcc()) return;
-  if (f.cal && SENS.prof[sIdx()].table && f.id !== 'S.atm') return refuse('This sensor uses an imported table: zero and span are not used');
   if (f.edit) return f.edit(f);
   if (f.kind === 'choice') return profileList(f);
   if (f.kind === 'toggle') { const cur = fv(f), nv = f.id === 'P.KDIR' ? (cur === 1 ? -1 : 1) : (cur ? 0 : 1); return confirmBox(f.ask ? f.ask(nv) : 'Set ' + f.cap.toLowerCase() + ' to ' + fmtF(f, nv) + '? Unapplied until Apply changes.', 'Change', 'act', () => setDraft(f, nv)); }
@@ -1882,10 +1877,9 @@ function fieldCard(par, f, x, y, w) {
   const edge = mk(e.c, 0, 6, 3, 36, '');
   const u = () => {
     const d = DRAFT.has(f.id), v = fv(f), applied = f.saved() !== undefined && !same(f.get(), f.saved());
-    const off = f.cal && SENS.prof[sIdx()].table && f.id !== 'S.atm';
-    set(e.v, off ? 'table' : fmtF(f, v));
+    set(e.v, fmtF(f, v));
     if (f.short && !fits(e.v)) set(e.v, f.short(v));   // measured, not counted (review item 4)
-    setc(e.v, !ACC.on || off ? COL.muted : d ? COL.draft : COL.text);
+    setc(e.v, !ACC.on ? COL.muted : d ? COL.draft : COL.text);
     setbg(edge, d ? COL.draft : applied ? COL.grey : 'transparent');
   };
   u.el = e.c;
@@ -1929,30 +1923,20 @@ function fieldHelp(ids, notes) { return (notes || []).concat(ids.map(id => { con
 /* ---- Commissioning pages ----------------------------------------------- */
 function buildComm() {
   const s = newScreen('comm');
-  // v52 (review 9 Oct): six equal task buttons on the content grid; Setup guide and Exit in the side column.
+  // v56 (Ryan 13 Oct): Diagnostics is on the Menu without the PIN, so its tile went; Live calibration took its place.
+  // The Setup guide repeated these tiles, so it went too and each tile shows where it stands.
   // No countdown: the idle lock is explained once on entry and announced when it happens.
   const c2 = cols(2);
-  const tile = (c, r, label, go) => navBtn(s, c2[c][0], RY[r], c2[c][1], RH, label, () => show(go));
-  tile(0, 0, 'Pressure sensor', 'sensor'); tile(1, 0, 'Valve setup', 'motor');
-  tile(0, 1, 'Pressure limits', 'limits'); tile(1, 1, 'Control tuning', 'tune');
-  tile(0, 2, 'Diagnostics', 'diag'); tile(1, 2, 'Review and save', 'cfg');
-  navBtn(s, 361, RY[0], 109, RH, 'Setup guide', () => show('guide'));
-  btn(s, 361, RY[1], 109, RH, lab('Lock settings'), commExit);
-  cfgStatus('comm');
-}
-// Optional setup order for a new installation. Each step opens its page and shows where it stands; nothing is forced.
-function buildGuide() {
-  const s = newScreen('guide');
-  const c2 = cols(2);
-  const steps = [['Pressure sensor', 'sensor', () => 's/n ' + SENS.prof[SENS.active].serial],
+  const tiles = [['Pressure sensor', 'sensor', () => 's/n ' + SENS.prof[SENS.active].serial],
+    ['Live calibration', 'cal', () => CAP.pt ? 'Capturing' : DRAFT.has('S.prof') ? 'Not applied' : calKind(SENS.prof[SENS.active]) === 'nominal' ? 'Not done' : SENS.prof[SENS.active].calDate || 'Done'],
     ['Valve setup', 'motor', () => (P.POSMAX / FLP.spt).toFixed(2) + ' turns'],
-    ['Zero valve', 'ref', () => C.ref ? 'Zeroed' : C.mode === 'HOMING' ? 'Running' : 'Not done'],
     ['Pressure limits', 'limits', () => P.Pmin.toFixed(1) + ' to ' + pMax().toFixed(0) + ' mB'],
     ['Control tuning', 'tune', () => 'Gain ' + P.Kp.toFixed(2)],
-    ['Save settings', 'cfg', () => DRAFT.size || cfgDirty() ? plural(DRAFT.size + (cfgDirty() ? cfgDiffs().ns.length : 0), 'change') : 'All saved']];
-  const bs = steps.map((st0, i) => navBtn(s, c2[i % 2][0], RY[Math.floor(i / 2)], c2[i % 2][1], RH, '', () => show(st0[1])));
-  cfgStatus('guide');
-  screens.guide.update = () => bs.forEach((b, i) => seth(b, navLab(steps[i][0], steps[i][2]())));
+    ['Review and save', 'cfg', () => '']];   // its counts are in the status strip
+  const bs = tiles.map((t0, i) => navBtn(s, c2[i % 2][0], RY[Math.floor(i / 2)], c2[i % 2][1], RH, '', () => show(t0[1])));
+  btn(s, 361, RY[0], 109, RH, lab('Lock settings'), commExit);
+  cfgStatus('comm');
+  screens.comm.update = () => bs.forEach((b, i) => seth(b, navLab(tiles[i][0], tiles[i][2]())));
 }
 function profileList(f) {
   closeOverlay();
@@ -1964,7 +1948,7 @@ function profileList(f) {
     const sel = k === fv(f);
     const it = st(mk(box, 0, i * ih, 343, ih, '', label), { fontSize: '16px', lineHeight: ih + 'px', paddingLeft: '12px', cursor: 'pointer', borderTop: i ? '1px solid ' + COL.bg : 'none',
       background: sel ? '#3E4C59' : '#FFFFFF', color: sel ? '#FFFFFF' : COL.text });
-    it.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); closeOverlay(); setDraft(f, k); ['S.zero', 'S.span', 'S.atm'].forEach(x => DRAFT.delete(x)); updateUI(); });
+    it.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); closeOverlay(); setDraft(f, k); updateUI(); });
   });
 }
 function pMax() { return Math.min(P.spMax, SENS.prof[SENS.active].fs); }
@@ -1972,32 +1956,94 @@ function sensFs() { return SENS.prof[SENS.active].fs; }
 function profName(q) { return 'Druck ' + q.fs + ' mB ' + q.type + (q.serial ? ', s/n ' + q.serial : ''); }
 function buildSensor() {
   const s = newScreen('sensor');
-  // Sensor in use (drop-down, unapplied until Apply changes), certificate zero and span, cal factor, Enter known
-  // pressure. v51 (review 9 Oct): profiles and calibration tables come from the PC; the page says so and where an
-  // import can be reviewed. Calibration identity and its saved state are shown apart (detail view), so neither hides
-  // the other.
+  // Sensor in use (drop-down, unapplied until Apply changes), its calibration (detail view) and Import from PC.
+  // v56 (Ryan 13 Oct): certificate zero and span and the cal factor removed (inaccurate: the INA228 loads the Druck
+  // output); the calibration is the live two-point on Live calibration, or a table imported from the PC.
   const F = id => FIELDS.sensor.find(f => f.id === id);
-  // v52: Sensor in use already names the range, so the Range card went; the calibration identity gets a wider field.
-  const u = [fieldCard(s, F('S.active'), 10, RY[0], 226), fieldCard(s, F('S.zero'), 10, RY[1], 109), fieldCard(s, F('S.span'), 127, RY[1], 109), fieldCard(s, F('S.atm'), 244, RY[1], 109)];
-  const src = editCard(s, 10, RY[2], 226, RH, 'Calibration', () => calDetail());
-  btn(s, 244, RY[2], 109, RH, lab('Import from PC'), () => textView('Import from PC', [
+  const u = [fieldCard(s, F('S.active'), 10, RY[0], 226)];
+  const src = editCard(s, 10, RY[1], 226, RH, 'Calibration', () => calDetail());
+  btn(s, 244, RY[1], 109, RH, lab('Import from PC'), () => textView('Import from PC', [
     'Profiles and calibration tables are made on the PC and sent over USB or Ethernet with engineer settings open (bench panel: Laptop configuration tool).',
     'Nothing changes on import: a revised calibration arrives as an unapplied change; a new sensor is added to Sensor in use but not selected.',
     'Review on Configuration, then Apply changes. Tables are not edited on this screen.']));
-  btn(s, 244, RY[0], 109, RH, lab('Set cal factor'), () => {
-    if (!needAcc()) return;
-    if (!(BENCH.druck && BENCH.exc)) return refuse('No Druck signal');
-    const q = SENS.prof[sIdx()], raw = calP(C.mv, Object.assign({}, q, { atm: 1 }));
-    keypad({ title: 'Known pressure, mB', now: calP(C.mv, Object.assign({}, q, { atm: fv(F('S.atm')) })).toFixed(1), min: 1, max: q.fs, info: 'From a reference gauge',
-      onSet: v => { setDraft(F('S.atm'), +(v / raw).toFixed(5)); msg('Cal factor ' + (v / raw).toFixed(4) + ' unapplied. Apply changes to use it.', 'info'); return true; } });
-  });
-  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active', 'S.zero', 'S.span', 'S.atm'], ['Set cal factor: type the pressure a reference gauge reads; the cal factor is set so the reading matches.']));
+  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active'], ['Calibration: tap for its identity, date, points and state. Make a new one on Engineer settings > Live calibration, or import a table from the PC.']));
   screens.sensor.update = () => {
     u.forEach(f => f()); sideU();
     const q = fv(PROF_FIELD)[sIdx()] || SENS.prof[sIdx()];
-    const ct = q.calId || (q.table ? 'Table' : 'Certificate');
+    const ct = q.calId || (q.table ? 'Table' : 'Nominal');
     if (src.v.textContent !== ct) { set(src.v, ct); if (fits(src.v)) delete src.v.dataset.trunc; else src.v.dataset.trunc = 'detail'; }   // long: "...", full text in the detail view
     setc(src.v, DRAFT.has('S.prof') ? COL.draft : COL.text);
+  };
+}
+// Calibration kind, as CAL? names it.
+function calKind(q) { return !q.table ? 'nominal' : q.bench ? 'two-point bench' : q.table.length + '-point table'; }
+function ptText(b) { return b ? b.p.toFixed(1) + ' @ ' + b.r.toFixed(4) : 'Not held'; }   // mB @ mV/V
+
+/* ---- Live calibration (firmware 0.3.30 CAL VAC / CAL AIR) ------------- */
+// Each point averages the live ratio over 10 readings through the INA228 as wired. Once both points are held the
+// two-point table is an unapplied change to the sensor in use; either point can be redone alone. Apply changes uses
+// it, Save settings writes it to flash (CAL SAVE).
+const CAP = { pt: null, p: 0, unc: 0, n: 0, sum: 0, need: 10 };
+function calCapture(pt, p) {
+  if (!needAcc()) return false;
+  if (CAP.pt) return refuse('A capture is running');
+  if (!(BENCH.druck && BENCH.exc)) return refuse('No Druck signal');
+  const r = C.mv / 10;
+  if (pt === 'vac' && r > 0.5) return refuse('Signal ' + r.toFixed(3) + ' mV/V is not a vacuum: pump down first');
+  if (pt === 'air' && r < 4) return refuse('Signal ' + r.toFixed(3) + ' mV/V is not air: vent first');
+  Object.assign(CAP, { pt, p, unc: pt === 'vac' ? 0.01 : 1.0, n: 0, sum: 0 });
+  ev('CAL', (pt === 'vac' ? 'Vacuum' : 'Air') + ' point capture started at ' + p.toFixed(1) + ' mB');
+  return true;
+}
+function calCaptureTick() {
+  if (!CAP.pt) return;
+  if (!(BENCH.druck && BENCH.exc)) { CAP.pt = null; ev('CAL', 'Capture stopped: no Druck signal'); refuse('Capture stopped: no Druck signal'); return; }
+  CAP.sum += C.mv / 10; if (++CAP.n < CAP.need) return;
+  const pt = CAP.pt, b = { p: CAP.p, unc: CAP.unc, r: +(CAP.sum / CAP.n).toFixed(6) }; CAP.pt = null;
+  const list = JSON.parse(JSON.stringify(fv(PROF_FIELD))), q = list[sIdx()];
+  q.bench = Object.assign({}, q.bench, { [pt]: b });
+  const name = pt === 'vac' ? 'Vacuum' : 'Air';
+  if (q.bench.vac && q.bench.air) {
+    if (q.bench.air.r <= q.bench.vac.r) { ev('CAL', name + ' point refused: air signal not above vacuum'); refuse('Air signal is not above vacuum: redo the points'); return; }
+    q.table = [[q.bench.vac.r, q.bench.vac.p], [q.bench.air.r, q.bench.air.p]];
+    q.calId = 'Bench two-point'; q.calDate = stamp(t).slice(0, 11);
+  }
+  setDraft(PROF_FIELD, list);
+  ev('CAL', name + ' point ' + ptText(b) + (q.table && q.bench.vac && q.bench.air ? ', two-point table unapplied' : ''));
+  msg(name + ' point held. ' + (q.bench.vac && q.bench.air ? 'Apply changes to use it.' : 'Capture the ' + (pt === 'vac' ? 'air' : 'vacuum') + ' point next.'), 'info');
+}
+function buildCal() {
+  const s = newScreen('cal');
+  const sig = infoCard(s, 10, RY[0], 109, 'Signal, mV/V');
+  const now = infoCard(s, 127, RY[0], 109, 'Reading, mB');
+  const nw = infoCard(s, 244, RY[0], 109, 'New cal, mB');
+  const vac = infoCard(s, 10, RY[1], 226, 'Vacuum point, mB @ mV/V');
+  const air = infoCard(s, 10, RY[2], 226, 'Air point, mB @ mV/V');
+  const q0 = () => fv(PROF_FIELD)[sIdx()] || SENS.prof[sIdx()];
+  const bV = btn(s, 244, RY[1], 109, RH, lab('Capture vacuum'), () => {
+    if (!needAcc()) return;
+    keypad({ title: 'Vacuum point, mB', now: '0', min: 0, max: 50, info: 'Pumped down; 0 unless a gauge says otherwise', onSet: v => calCapture('vac', v) });
+  });
+  const bA = btn(s, 244, RY[2], 109, RH, lab('Capture air'), () => {
+    if (!needAcc()) return;
+    const b = q0().bench;
+    keypad({ title: 'Air pressure now, mB', now: (b && b.air ? b.air.p : 1013.2).toFixed(1), min: 500, max: 1100, info: 'Vented; reading of the room barometer', onSet: v => calCapture('air', v) });
+  });
+  const sideU = cfgSide(s, 'cal', () => [
+    'A two-point calibration of the sensor in use, read live through the board, so the board input is inside it.',
+    'Capture vacuum: pump the sensor down, then capture. The point is 0 mB unless a gauge says otherwise (±0.01 mB).',
+    'Capture air: vent the sensor, type the room barometer reading, then capture (±1.0 mB).',
+    'Each capture averages 10 readings. Either point can be redone on its own; the other is kept.',
+    'Once both are held the new calibration is an unapplied change: check New cal, then Apply changes, then Save settings.']);
+  screens.cal.update = () => {
+    sideU();
+    const ok = BENCH.druck && BENCH.exc, q = q0(), d = DRAFT.has('S.prof');
+    sig.set(ok ? (C.mv / 10).toFixed(4) : '----');
+    now.set(PV == null ? '----' : PV.toFixed(1));
+    nw.set(!ok ? '----' : d && q.table ? calP(C.mv, q).toFixed(1) : 'No change');
+    const cap = k => CAP.pt === k ? 'Capturing ' + CAP.n + ' of ' + CAP.need : ptText(q.bench && q.bench[k]);
+    vac.set(cap('vac')); air.set(cap('air'));
+    tog(bV, 'dis', !ACC.on || !!CAP.pt || !ok); tog(bA, 'dis', !ACC.on || !!CAP.pt || !ok);
   };
 }
 // Calibration of the sensor that will be in use: identity, date, kind and state on separate lines.
@@ -2009,8 +2055,9 @@ function calState(q) {
 function calDetail() {
   const q = fv(PROF_FIELD)[sIdx()] || SENS.prof[sIdx()];
   textView('Calibration, s/n ' + q.serial, [['Identity', q.calId || 'None recorded'], ['Date', q.calDate || 'None recorded'],
-    ['Kind', q.table ? q.table.length + '-point table, mV/V to mB' : 'Certificate zero ' + (+q.zero).toFixed(3) + ' mV, span ' + (+q.span).toFixed(3) + ' mV'],
-    ['Cal factor', (+q.atm).toFixed(4)], ['State', calState(q)]].map(([k, v]) => k + ': ' + v));
+    ['Kind', calKind(q) === 'nominal' ? 'Nominal, 0 to 10 mV/V is 0 to ' + q.fs + ' mB' : calKind(q)]]
+    .concat(q.bench ? [['Vacuum point, mB @ mV/V', ptText(q.bench.vac)], ['Air point, mB @ mV/V', ptText(q.bench.air)]] : [])
+    .concat([['State', calState(q)]]).map(([k, v]) => k + ': ' + v));
 }
 // Settings page (v51, review 9 Oct): fields on the 2-column content grid. Pages with more than one group show the
 // groups as a labelled segmented choice in row 1 (all choices visible), not a cycling page button.
@@ -2064,7 +2111,7 @@ function buildDiag() {
   screens.diag.update = () => {
     const ok = BENCH.druck && BENCH.exc;
     sig.set(BENCH.druck ? (C.mv / 10).toFixed(4) : '0.0000', ok ? COL.text : COL.fault);
-    raw.set(ok ? calP(C.mv, { fs: 1034, zero: 0, span: 100, atm: 1 }).toFixed(1) : '----');
+    raw.set(ok ? calP(C.mv, { fs: 1034 }).toFixed(1) : '----');
     sup.set(BENCH.exc ? '10.00' : '8.71', BENCH.exc ? COL.text : COL.fault);
     pos.set(fint(M.pos)); sw.set(LIM.active ? 'Pressed' : 'Not pressed', LIM.active ? COL.warn : COL.text); over.set(fint(LIM.over) + ' steps', LIM.over ? COL.fault : COL.text);
     const has = M.t0 != null, dur = has ? (M.moving ? t : M.tEnd) - M.t0 : 0;
@@ -2121,7 +2168,7 @@ function importCfg(o, how) {
     if (i < 0) { SENS.prof.push(JSON.parse(JSON.stringify(q))); list.push(JSON.parse(JSON.stringify(q))); added++; }
     else { const j = list.findIndex(x => x.serial === q.serial); if (!same(list[j], q)) { list[j] = JSON.parse(JSON.stringify(q)); revised++; } }
   });
-  if (revised) { setDraft(PROF_FIELD, list); if (list.some(q => q.serial === SENS.prof[sIdx()].serial && !same(q, SENS.prof[sIdx()]))) ['S.zero', 'S.span', 'S.atm'].forEach(id => DRAFT.delete(id)); }   // a new calibration for a known sensor is a draft until applied
+  if (revised) setDraft(PROF_FIELD, list);   // a new calibration for a known sensor is a draft until applied
   let n = revised; allFields().forEach(f => { if (f === PROF_FIELD) return; const v = f.fromCfg && f.fromCfg(o); if (v !== undefined && v !== null && !same(v, fv(f))) { setDraft(f, v); n++; } });
   C.lastImport = { t, name: o.name || how };
   ev('CFG', 'Imported ' + (o.name ? o.name + (o.rev ? ' rev ' + o.rev : '') : how) + ' from the laptop: ' + n + ' setting' + (n === 1 ? '' : 's') + ' as a draft' + (revised ? ' (' + revised + ' revised sensor calibration' + (revised > 1 ? 's' : '') + ')' : '') + (added ? ', ' + added + ' sensor profile' + (added > 1 ? 's' : '') + ' added (not in use)' : ''));
@@ -2129,7 +2176,7 @@ function importCfg(o, how) {
   return true;
 }
 // Example of a profile prepared on the laptop: a second Druck with a 12-point calibration table (mV/V -> mbar).
-const EXAMPLE_PROF = { model: 'UNIK 5000 PDCR50G1', fs: 2000, type: 'abs', serial: 5880211, exc: 10.0, zero: 0, span: 100, atm: 1.0, atmDate: '', calId: 'Table T-0211', calDate: '02 Sep 2026',
+const EXAMPLE_PROF = { model: 'UNIK 5000 PDCR50G1', fs: 2000, type: 'abs', serial: 5880211, exc: 10.0, calId: 'Table T-0211', calDate: '02 Sep 2026',
   table: [[0.004, 0], [0.5, 100.4], [1, 200.6], [1.5, 300.7], [2.5, 500.9], [3.5, 701.0], [4.5, 900.8], [5.5, 1100.5], [6.5, 1300.2], [7.5, 1499.9], [8.5, 1699.8], [10.0, 2000]] };
 
 function setParam(key, v) {
@@ -2555,7 +2602,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-buildGlobal(); buildCtrl(); buildValve(); buildMenu(); buildRef(); buildInfo(); buildComm(); buildGuide(); buildSensor(); buildMotor(); buildTune(); buildLimits(); buildDiag(); buildCfg(); buildFaults(); buildTrend();
+buildGlobal(); buildCtrl(); buildValve(); buildMenu(); buildRef(); buildInfo(); buildComm(); buildSensor(); buildCal(); buildMotor(); buildTune(); buildLimits(); buildDiag(); buildCfg(); buildFaults(); buildTrend();
 setSpeed(1); setWin(600); fit();
 flBuildParams(); flBuildRead(); setPlumb('line'); setLink('usb'); flCurveCalc(); flDraw();
 conLog('PMC ' + FW + ' simulated. Demo starting condition: page load starts referenced at 0 % in MANUAL. Reboot board (real start) boots not referenced, as the firmware will. Type HELP for commands.');

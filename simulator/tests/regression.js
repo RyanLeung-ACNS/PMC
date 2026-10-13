@@ -16,8 +16,8 @@ module.exports = async (p, h) => {
   ok(/^ERR/.test(r), 'serial PID SPMAX below Target min refused: ' + r);
   r = await ev(() => { DRAFT.clear(); C.SP = 5; DRAFT.set('P.Pmin', 6); applyAll(); const asked = overlay && /outside the new limits/.test(overlay.textContent); closeOverlay(); applyFields([FIELDS.limits.find(f => f.id === 'P.Pmin')], true); return { asked, sp: C.SP, pmin: P.Pmin }; });
   ok(r.asked && r.sp === 6 && r.pmin === 6, 'new limits that exclude the target: asked once, target moved with them');
-  r = await ev(() => { DRAFT.clear(); loadActive(SAVED); const q = JSON.parse(JSON.stringify(SENS.prof[0])); q.atm = 1.06; q.calId = 'Reissue'; importCfg({ sens: { prof: [q] } }, 't'); return { d: DRAFT.has('S.prof'), atm: SENS.prof[0].atm }; });
-  ok(r.d && r.atm === 1.0512, 'revised calibration for a known serial is a draft, not applied');
+  r = await ev(() => { DRAFT.clear(); loadActive(SAVED); const q = JSON.parse(JSON.stringify(SENS.prof[0])); q.table = [[0.01, 0], [9.4, 1013.2]]; delete q.bench; q.calId = 'Reissue'; importCfg({ sens: { prof: [q] } }, 't'); return { d: DRAFT.has('S.prof'), tab: SENS.prof[0].table[0][0] }; });
+  ok(r.d && r.tab === 0.004756, 'revised calibration for a known serial is a draft, not applied');
   r = await ev(() => { DRAFT.clear(); P.Kp = 5; SIM_FLASH_FAIL = true; const rev = SAVED.rev; const res = saveCfg(); SIM_FLASH_FAIL = false; return { res, same: rev === SAVED.rev, dirty: cfgDirty() }; });
   ok(r.res === false && r.same && r.dirty, 'failed flash write: not saved, reported');
   r = await ev(() => { DRAFT.set('P.Ti', 0.5); const was = [C.mode, M.pos]; commExit(); const t = overlay.textContent; closeOverlay(); return { t, was }; });

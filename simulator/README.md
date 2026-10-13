@@ -51,6 +51,11 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Home Target and Go to boxes (Ryan, 13 Oct): everything in them is 16 px, the size of "Not set", and the box is 82 px (a little over "Not set" plus the chevron); 1034.0 fits. The OK on status messages is one narrow 60 px button everywhere.
 - Where the review and v54 clash, v54 holds (names, mB/@/±, Diagnostics layout, Fully close/open, filled pressure bar, Not set, OK button).
 
+## Live calibration, 13 October 2026 (v56)
+- Engineer settings has a Live calibration page in line with firmware 0.3.30 (`CAL VAC`, `CAL AIR`): Capture vacuum (pumped down, 0 mB unless typed, ±0.01) and Capture air (vented, room barometer reading 500 to 1100 mB, ±1.0) each average 10 live readings through the board. Either point can be redone alone. Once both are held the two-point table is an unapplied change; the page shows the signal, the reading now and the reading with the new calibration, then Apply changes and Save settings as on every settings page.
+- Certificate zero, span and the cal factor are removed (inaccurate: the INA228 loads the Druck output). Pressure sensor keeps Sensor in use, the calibration detail (kind, points, state) and Import from PC. About this unit shows Cal type instead of Cal factor. Saved config key is now v6, so older saved settings are dropped.
+- Duplications removed from Engineer settings: the Diagnostics tile (Diagnostics is on the Menu without the PIN) and the Setup guide (it repeated the six tiles). Each tile now shows where it stands; Review and save shows no count because the status strip carries it.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:

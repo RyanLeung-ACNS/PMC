@@ -5,7 +5,7 @@ module.exports = async (p, h) => {
   const go = name => `navStack = []; closeOverlay(); show('${name}', false, true);`;
   const base = () => { localStorage.clear(); SAVED = defaultCfg(); loadActive(SAVED); DRAFT.clear(); C.faults.clear(); setHe(true); setPump(true); accEnter('audit'); C.msg = null; };
   await p.evaluate(base);
-  for (const sc of ['ctrl', 'valve', 'menu', 'ref', 'info', 'comm', 'guide', 'sensor', 'motor', 'tune', 'limits', 'diag', 'cfg', 'faults', 'trend'])
+  for (const sc of ['ctrl', 'valve', 'menu', 'ref', 'info', 'comm', 'cal', 'sensor', 'motor', 'tune', 'limits', 'diag', 'cfg', 'faults', 'trend'])
     await check(sc, go(sc));
   // tabs on Valve setup
   for (const t of ['Zero', 'Drive']) { await p.evaluate(go('motor')); await h.tap(t); await check('motor-' + t.toLowerCase(), 'updateUI()'); }
