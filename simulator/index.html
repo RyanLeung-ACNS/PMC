@@ -1202,10 +1202,9 @@ function vbarX(p) { return clamp(p, 0, 100) * PBAR / 100; }
 // valve moves line up; a tap on either opens Trend. The 30 s band and the direction arrow are removed (the sparkline
 // shows both). The pressure bar keeps the log scale for range context and adds the low-alarm zone (R5).
 const SPARK_WIN = 600;
-// Ryan (13 Oct): the Target and Go to boxes are a little wider than the widest value they can show, "999.9" or "100.0"
-// at 26 px (tabular digits, about 80 px), plus the chevron; one font size always. Target max is capped at 999.9 so a
-// target never needs more. Right edge on the bar's right end.
-const SPW = 104;
+// Ryan (13 Oct): everything in the Target and Go to boxes is 16 px, the size of "Not set", and the box is a little wider
+// than "Not set" (59 px) plus the chevron. 1034.0 fits too. Right edge on the bar's right end.
+const SPW = 82;
 function homeTile(s, x, name, unit, fname, onTap) {
   const c = mk(s, x, RY[0], 167, 160, 'card');
   mk(c, 12, 4, 90, null, 'cap', name);
@@ -1221,7 +1220,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   const ticks = [], labels = [];
   const mark = st(mk(bar, 0, -3, 3, 14, ''), { background: COL.text });
   st(mk(c, 12, 116, 40, 40, 'cap', fname), { lineHeight: '40px' });
-  const f = st(mk(c, 155 - SPW, 116, SPW, 40, ''), { borderRadius: '4px', fontSize: '26px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
+  const f = st(mk(c, 155 - SPW, 116, SPW, 40, ''), { borderRadius: '4px', fontSize: '16px', lineHeight: '38px', textAlign: 'right', boxSizing: 'border-box', cursor: 'pointer' });
   const fv = mk(f, 0, 0, SPW - 18, 38, '', ''); st(fv, { textAlign: 'right', lineHeight: '38px', overflow: 'hidden' });
   const chev = st(mk(f, SPW - 16, 0, 14, 38, ''), { lineHeight: '38px', color: COL.blue }); chev.innerHTML = sym('RIGHT', 14);
   f.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); onTap(); updateUI(); });
@@ -1234,7 +1233,7 @@ function tileTicks(T, xs, labs) {
 function tileField(T, active, text) {
   set(T.fv, text); vis(T.chev, active);
   st(T.fv, { width: (active ? SPW - 18 : SPW - 8) + 'px' });
-  st(T.fv, { fontSize: '26px' });   // one size always (Ryan, 13 Oct)
+  st(T.fv, { fontSize: '16px' });   // one size always, the size of "Not set" (Ryan, 13 Oct)
   st(T.f, active ? { background: '#E9F0F6', borderBottom: '3px solid ' + COL.blue, borderRadius: '4px 4px 0 0', color: COL.text }
                  : { background: '#EEF2F6', borderBottom: '3px solid #EEF2F6', borderRadius: '4px', color: COL.idle });
 }
@@ -1307,7 +1306,7 @@ function buildCtrl() {
     st(P1.fill, { width: PV != null ? barX(PV).toFixed(1) + 'px' : '0px' });   // filled like the valve bar (Ryan, 13 Oct: the bar did not read as working)
     st(P1.zone, { width: barX(P.alarmLo).toFixed(1) + 'px', background: C.faults.has('F-02') ? COL.fault : '#A3AFBB' });
     drawSpark(P1.sp, 'pv', auto);
-    tileField(P1, auto, C.spSet ? fmtOp(C.SP) : '----');   // no target yet: dashes, as for any value not available
+    tileField(P1, auto, C.spSet ? fmtOp(C.SP) : 'Not set');
     // S6: the tile that owns an active alarm gets the alarm border (WP023 s9.3.1 p50)
     const pAlm = PV == null || ['F-01', 'F-02', 'F-03', 'F-15'].some(k => C.faults.has(k));
     const vAlm = ['F-07', 'F-08', 'F-09', 'F-10', 'F-13', 'F-16', 'F-17'].some(k => C.faults.has(k));
@@ -1857,7 +1856,7 @@ P_FIELD('tune', 'outMin', 'Auto min', '% open', 1, 'AUTO never closes the valve 
 P_FIELD('tune', 'DB', 'Deadband', 'steps', 0, 'AUTO skips moves smaller than this');
 P_FIELD('limits', 'band', 'Target band', 'mB', 2, 'Within this of the target reads Within target band');
 P_FIELD('limits', 'Pmin', 'Target min', 'mB', 2, 'Lowest target an operator can set', { check: v => v >= fv(FIELDS.limits.find(f => f.id === 'P.spMax')) ? 'must be below Target max' : null });
-P_FIELD('limits', 'spMax', 'Target max', 'mB', 1, 'Highest target; at most 999.9 and the sensor range', { check: v => v > SP_CAP ? 'above 999.9' : v > SENS.prof[sIdx()].fs ? 'above the sensor range ' + SENS.prof[sIdx()].fs + ' mB' : v <= fv(FIELDS.limits.find(f => f.id === 'P.Pmin')) ? 'must be above Target min' : null });
+P_FIELD('limits', 'spMax', 'Target max', 'mB', 1, 'Highest target; at most the sensor range', { check: v => v > SENS.prof[sIdx()].fs ? 'above the sensor range ' + SENS.prof[sIdx()].fs + ' mB' : v <= fv(FIELDS.limits.find(f => f.id === 'P.Pmin')) ? 'must be above Target min' : null });
 P_FIELD('limits', 'alarmLo', 'Low alarm', 'mB', 2, 'F-02 in AUTO below this for 5 s', { check: v => v > fv(FIELDS.limits.find(f => f.id === 'P.Pmin')) ? 'must be at or below Target min' : null });
 
 function fullTravelEdit(f) {
@@ -1968,8 +1967,7 @@ function profileList(f) {
     it.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); closeOverlay(); setDraft(f, k); ['S.zero', 'S.span', 'S.atm'].forEach(x => DRAFT.delete(x)); updateUI(); });
   });
 }
-const SP_CAP = 999.9;   // Ryan (13 Oct): the home Target box shows at most 999.9 at one font size
-function pMax() { return Math.min(P.spMax, SENS.prof[SENS.active].fs, SP_CAP); }
+function pMax() { return Math.min(P.spMax, SENS.prof[SENS.active].fs); }
 function sensFs() { return SENS.prof[SENS.active].fs; }
 function profName(q) { return 'Druck ' + q.fs + ' mB ' + q.type + (q.serial ? ', s/n ' + q.serial : ''); }
 function buildSensor() {
