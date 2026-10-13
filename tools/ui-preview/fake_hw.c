@@ -46,6 +46,13 @@ void fake_hw_set_scenario(const char *name)
         fake_saved = fake_bench = true;
         st.p_mmbar = 1013200;
         strcpy(value, "1013.20");
+    } else if (!strcmp(name, "neg")) {
+        // Pumped below the vacuum point after drift: reads below zero.
+        st.cal_nominal = false;
+        fake_saved = fake_bench = true;
+        st.r_ppb = 127100;
+        st.p_mmbar = -123;
+        strcpy(value, "-0.12");
     } else if (!strcmp(name, "nodruck")) {
         st.reading_ok = false;
         st.druck_absent = true;
