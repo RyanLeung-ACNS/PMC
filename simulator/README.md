@@ -36,6 +36,15 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - No default target. The first Start AUTO opens the keypad and starts AUTO on Set; after that Start AUTO confirms the remembered target or offers New target. Serial and toAuto refuse AUTO with no target set.
 - Nothing is called flow: the pressure is the operator's chosen value for that cryostat.
 
+## Ryan's batch, 13 October 2026 (v54)
+- Home: pressure shown to 1 dp everywhere on screen; worst cases (1034.9 mB, target 1034.0, 100.0 %, two-line status) checked by the audit in MANUAL and AUTO. The pressure bar is filled like the valve bar. The Target box says "Not set" before the first target (taken from the Mercury iTC).
+- Units and symbols: mB for mbar abs on screen, @ for "at" in status and confirms (Stable @ 5.0 mB ±0.1 for 60 s), ± for plus or minus and the keypad sign key. The serial console keeps mbar. **± (U+00B1) is not in LVGL's built-in Montserrat fonts: the firmware font must be converted with U+00B1 added** (the audit allows it).
+- Valve page: Fully close (0 %) and Fully open (100 %) replace the what-the-valve-is-doing card (it repeated the status strip); each asks first.
+- Diagnostics: three rows named at the left (Pressure sensor, Valve motor, Last move); Closed switch reads Pressed / Not pressed; board temperature and link in the footer.
+- Names in operator terms: Reference valve is Zero valve (Zeroing, Zeroed, NOT ZEROED); Trend is Pressure trend; Alarms and events is Faults and log; System information is About this unit; Commissioning is Engineer settings (Engineer PIN, Lock settings); Configuration is Review and save; Sensor is Pressure sensor.
+- A message in the status strip has an OK button that dismisses it.
+- Stage then Apply (liked in the iTC screens) was already how Engineer settings work: changes are drafts until Apply changes.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:

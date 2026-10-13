@@ -29,7 +29,7 @@ module.exports.audit = () => {
     const t = textRect(e), box = e.closest('.card, .fld, .ro, .b, .modal, .hdr');
     if (box && !scrollable(e) && !e.dataset.trunc) { const bx = rel(box.getBoundingClientRect()); if (t.l < bx.l - 1 || t.r > bx.r + 1 || t.t < bx.t - 1 || t.b > bx.b + 1) out.push('OUTSIDE ' + name(e)); }
     if (!scrollable(e) && (t.l < -1 || t.r > 481 || t.t < -1 || t.b > 273)) out.push('OFFSCREEN ' + name(e));
-    for (const ch of e.textContent) { const c = ch.codePointAt(0); if (!((c >= 0x20 && c <= 0x7E) || c === 0xB0 || c === 0x2022)) out.push('GLYPH U+' + c.toString(16).toUpperCase() + ' ' + name(e)); }
+    for (const ch of e.textContent) { const c = ch.codePointAt(0); if (!((c >= 0x20 && c <= 0x7E) || c === 0xB0 || c === 0xB1 || c === 0x2022)) out.push('GLYPH U+' + c.toString(16).toUpperCase() + ' ' + name(e)); }
   });
   // text against text in other elements, and against buttons it is not inside
   for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {

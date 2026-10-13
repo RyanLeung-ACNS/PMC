@@ -8,7 +8,7 @@ module.exports = async (p, h) => {
   for (const sc of ['ctrl', 'valve', 'menu', 'ref', 'info', 'comm', 'guide', 'sensor', 'motor', 'tune', 'limits', 'diag', 'cfg', 'faults', 'trend'])
     await check(sc, go(sc));
   // tabs on Valve setup
-  for (const t of ['Reference', 'Drive']) { await p.evaluate(go('motor')); await h.tap(t); await check('motor-' + t.toLowerCase(), 'updateUI()'); }
+  for (const t of ['Zero', 'Drive']) { await p.evaluate(go('motor')); await h.tap(t); await check('motor-' + t.toLowerCase(), 'updateUI()'); }
   // modes on home and the valve page
   await check('ctrl-notref', 'reboot(); accEnter("audit"); C.msg = null; ' + go('ctrl'));
   await check('valve-notref', go('valve'));
@@ -24,7 +24,8 @@ module.exports = async (p, h) => {
   await check('faultdetail', 'faultDetail(faultsByPriority()[0][0])');
   await p.evaluate('C.faults.clear(); bootHomed();');
   // extreme valid values
-  await check('ctrl-extreme', 'M.pos = P.POSMAX; C.manPos = M.pos; C.SP = 1034; PV = 1034; ' + go('ctrl'));
+  await check('ctrl-extreme', 'M.pos = P.POSMAX; C.manPos = M.pos; C.SP = 1034; C.spSet = true; PV = 1034.9; ' + go('ctrl'));
+  await check('ctrl-extreme-auto', 'C.mode = "AUTO"; C.SP = 1034; PV = 1034.9; ' + go('ctrl'));
   await check('valve-extreme', go('valve'));
   await check('diag-extreme', 'M.target = 99072; M.from = 0; M.t0 = 0; M.tEnd = 9999; ' + go('diag'));
   await check('tune-extreme', 'P.Kp = 100; P.Ti = 100; P.DB = 2000; P.outMin = 100; ' + go('tune'));

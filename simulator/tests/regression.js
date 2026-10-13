@@ -25,5 +25,5 @@ module.exports = async (p, h) => {
   // v52: the header never changes with commissioning; the idle lock is announced, not counted down.
   r = await ev(() => { accEnter('test'); show('sensor', false, true); updateUI(); const a = [G.title.style.top, getComputedStyle(G.h).backgroundColor, G.h.textContent];
     ACC.last -= ACC.idleMs + 1; updateUI(); return { a, b: [G.title.style.top, getComputedStyle(G.h).backgroundColor], acc: ACC.on, cur: current, foot: G.ftxt.textContent }; });
-  ok(r.a[0] === r.b[0] && r.a[1] === r.b[1] && !/\d:\d\d/.test(r.a[2]) && !r.acc && r.cur === 'menu' && /^Commissioning locked/.test(r.foot), 'header fixed through commissioning; idle lock shows "Commissioning locked"');
+  ok(r.a[0] === r.b[0] && r.a[1] === r.b[1] && !/\d:\d\d/.test(r.a[2]) && !r.acc && r.cur === 'menu' && /^Engineer settings locked/.test(r.foot), 'header fixed through commissioning; idle lock shows "Commissioning locked"');
 };

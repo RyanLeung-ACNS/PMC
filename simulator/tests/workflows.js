@@ -6,8 +6,8 @@ module.exports = async (p, h) => {
 
   // 1. Unreferenced startup -> reference -> set target -> AUTO
   await ev(() => document.getElementById('reboot').click());
-  let o = await st(); ok(o.badge === 'NOT REFERENCED' && o.mode === 'NOT HOMED', 'WF1 real start boots NOT REFERENCED'); await shot('wf1-1-boot');
-  await tap('Reference valve'); await shot('wf1-2-ask'); await tap('Start reference'); await run(3); await shot('wf1-3-referencing');
+  let o = await st(); ok(o.badge === 'NOT ZEROED' && o.mode === 'NOT HOMED', 'WF1 real start boots NOT ZEROED'); await shot('wf1-1-boot');
+  await tap('Zero valve'); await shot('wf1-2-ask'); await tap('Start zeroing'); await run(3); await shot('wf1-3-referencing');
   await run(400); o = await st(); ok(o.mode === 'MANUAL' && o.pos === 0, 'WF1 referenced, MANUAL at 0 %');
   await tap('Valve'); await tap('Enter position'); await keys('34'); await tap('Set'); await run(120); await tap('Back');
   ok(await ev(() => !C.spSet), 'WF1 no default target');
@@ -33,12 +33,12 @@ module.exports = async (p, h) => {
   await ev(() => { C.mode = 'PAUSED'; updateUI(); }); await tap('Switch to MANUAL'); await tap('Switch to MANUAL'); o = await st(); ok(o.mode === 'MANUAL', 'WF3 paused -> MANUAL from the status line');
 
   // 4. Edit several commissioning pages -> review -> apply -> save -> restart
-  await run(5); await tap('Menu'); await tap('Commissioning', true); await keys('2468'); await tap('Set'); await shot('wf4-1-comm');
-  await tap('Control tuning'); await tap('Gain, %/mbar', true); await keys('6'); await tap('Set'); await tap('Back');
+  await run(5); await tap('Menu'); await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf4-1-comm');
+  await tap('Control tuning'); await tap('Gain, %/mB', true); await keys('6'); await tap('Set'); await tap('Back');
   o = await st(); ok(o.cur === 'comm' && !o.ov, 'WF4 Back with a draft: no Apply/Discard question');
-  await tap('Pressure limits'); await tap('Target band, mbar', true); await keys('0.2'); await tap('Set'); await tap('Back');
+  await tap('Pressure limits'); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
   await tap('Valve setup'); await tap('Drive'); await tap('Run speed, steps/s', true); await keys('500'); await tap('Set'); await shot('wf4-2-drive-draft'); await tap('Back');
-  await tap('Configuration'); await shot('wf4-3-config');
+  await tap('Review and save'); await shot('wf4-3-config');
   await tap('Unapplied changes', true); const list = (await st()).ov; await shot('wf4-4-list');
   ok(/Gain/.test(list) && /Target band/.test(list) && /Run speed/.test(list), 'WF4 review lists all three by label and page'); await tap('Close');
   await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF4 applied together, not saved');
@@ -58,7 +58,7 @@ module.exports = async (p, h) => {
   await ev(() => show('info', false, true)); await shot('wf5-4-info-saved'); o = await ev(() => calState(SENS.prof[SENS.active])); ok(o === 'Saved', 'WF5 calibration saved');
 
   // 6. STOP and fault recovery, including during referencing
-  await ev(() => show('ctrl', false, true)); await tap('Menu'); await tap('Reference valve'); await tap('Start reference'); await tap('Start reference'); await run(3);
+  await ev(() => show('ctrl', false, true)); await tap('Menu'); await tap('Zero valve'); await tap('Start zeroing'); await tap('Start zeroing'); await run(3);
   await shot('wf6-1-referencing'); await tap('STOP'); await run(5); o = await st();
   ok(o.mode === 'NOT HOMED' && !o.moving && o.badge === 'STOPPED', 'WF6 STOP while referencing: stopped, not referenced'); await shot('wf6-2-stopped');
   await ev(() => { home && 0; }); await ev(() => show('ctrl', false, true)); await tap('Reset fault'); o = await st(); ok(!o.faults.length && o.mode === 'NOT HOMED', 'WF6 reset; still NOT REFERENCED');
@@ -77,6 +77,6 @@ module.exports = async (p, h) => {
   const before = await st();
   await ev(() => { ACC.last = performance.now() - 11 * 60 * 1000; updateUI(); }); o = await st(); await shot('wf7-2-timeout');
   ok(!o.acc && o.drafts.includes('P.Ti') && o.mode === before.mode && o.pos === before.pos, 'WF7 timeout: access closed, draft kept, mode and valve unchanged');
-  await tap('Commissioning', true); await keys('2468'); await tap('Set'); await shot('wf7-3-reentry'); o = await st();
+  await tap('Engineer settings', true); await keys('2468'); await tap('Set'); await shot('wf7-3-reentry'); o = await st();
   ok(o.drafts.includes('P.Ti') && /unapplied/.test(o.foot), 'WF7 draft offered for review after re-entry');
 };
