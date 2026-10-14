@@ -303,13 +303,15 @@ static void powermonitor_init(void)
 #define DRUCK_VEXC_MIN_MV    7000      // datasheet supply range 7-12 V
 
 /* A connected Druck gives about 0.01-0.13 mV/V at vacuum (cert 13825224
- * zero 1.337 mV at 10 V; the bench unit 5880156 reads 0.13 mV, 0.013 mV/V,
- * 14 Oct 2026) up to about 10.2 mV/V at 15 psia. The lower limit sits below
- * zero, about -50 mbar, so a sensor with a low or negative zero still reads
- * at vacuum. Well outside the window, the sensor is unplugged or faulty.
- * Not tested with the Druck unplugged yet: if the open inputs float inside
- * this window, the check will not catch it. */
-#define DRUCK_R_MIN_PPB      (-500000) // -0.5 mV/V
+ * zero 1.337 mV at 10 V; the bench unit 5880156 gives 0.13 mV, 0.013 mV/V)
+ * up to about 10.2 mV/V at 15 psia. Unplugged, the open inputs read about
+ * 0 mV (bench, 14 Oct 2026), so anything under 0.005 mV/V is taken as no
+ * sensor. That leaves 5880156 about 0.9 mbar of zero drift at vacuum
+ * (spec +/-0.41 mbar); a sensor whose zero is under 0.005 mV/V would read
+ * as unplugged at vacuum. A shorted output also reads 0 mV and is caught
+ * the same way. The check is on the raw ratio, not the pressure, so it
+ * does not depend on the cal and CAL VAC still works with a wrong cal. */
+#define DRUCK_R_MIN_PPB      5000      // 0.005 mV/V
 #define DRUCK_R_MAX_PPB      11000000  // 11 mV/V
 
 // The ratio-to-pressure table lives in cal.c (stored in serial flash).
@@ -341,8 +343,8 @@ static void druck_update(int32_t raw_shunt, int32_t raw_bus, int32_t bus_mv)
         state.druck_absent = true;
         lv_snprintf(druck_value, sizeof druck_value, "----");
         lv_snprintf(druck_status, STATUS_LEN,
-                    "Druck: signal %s mV/V, outside -0.5 to 11 mV/V (not connected?)",
-                    fixed_fmt(r, sizeof r, r_ppb / 1000, 3));
+                    "Druck: signal %s mV/V, outside 0.005-11 mV/V (not connected?)",
+                    fixed_fmt(r, sizeof r, r_ppb / 100, 4));
         return;
     }
     state.reading_ok = true;
