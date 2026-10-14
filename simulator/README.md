@@ -66,6 +66,10 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Pressure sensor page: Sensor in use and Add sensor; Calibration and Remove sensor; Live calibration and Import from PC. Sensors are named by range in psi (15 psi, s/n 5880156); Add sensor asks for the serial, then the range (5 to 100 psi), and starts uncalibrated.
 - Live calibration opens from Pressure sensor. Capture vacuum asks nothing (0 mB; Not 0 mB if a gauge reads more). Capture air asks for the barometer reading and shows what the sensor reads now beside the keypad.
 
+## Limit question and time range, 14 October 2026 (v58)
+- Home tiles say "10 min" beside the reading: the time range of the sparkline.
+- The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). A hit more than 200 steps from 0 % no longer resets the count: a question asks whether the valve is seated (Seated, 0 %) or the switch is stuck (Stuck, keep). Closing stays blocked while the switch is pressed. Within 200 steps of 0 % the count resets as before.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:

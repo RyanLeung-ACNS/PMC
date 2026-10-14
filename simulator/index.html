@@ -639,11 +639,17 @@ function finish(reason) {
 function stopMotor() { if (M.moving) { M.target = M.pos; finish('STOP'); } }
 
 // Switch opened outside homing (Control Logic 4.2): stop, set zero, W-01 if far from zero.
+// Ryan (14 Oct): the switch is force-actuated and can open before the needle is seated (ice, mechanical fault). Only a
+// person can tell, so a hit away from 0 % asks before the count is reset; near 0 % (within 200 steps) it resets as before.
 function limitHit() {
   if (!C.ref) return;
-  if (Math.abs(M.pos - P.Noffset) > 200) ev('W-01', 'Switch opened at count ' + fint(M.pos) + ', count reset to ' + P.Noffset);
-  M.pos = P.Noffset;
-  if (C.mode === 'MANUAL') { C.manPos = Math.max(C.manPos, P.Noffset); }
+  const at = M.pos;
+  if (Math.abs(at - P.Noffset) <= 200) { M.pos = P.Noffset; if (C.mode === 'MANUAL') C.manPos = Math.max(C.manPos, P.Noffset); return; }
+  ev('W-01', 'Closed switch pressed at count ' + fint(at) + ' (' + pctOf(at).toFixed(1) + ' %), asking whether the valve is seated');
+  confirmBox('Closed switch pressed at ' + pctOf(at).toFixed(1) + ' %. Is the valve seated, or is the switch stuck (ice)?', 'Seated, 0 %', 'act', () => {
+    const d = M.pos - at; M.pos = P.Noffset + d; if (C.mode === 'MANUAL') C.manPos = C.posCmd = C.lastSent = M.pos;
+    ev('W-01', 'Operator: valve seated, count reset to ' + P.Noffset); msg('Valve seated, now 0 %.', 'info');
+  }, null, ['Stuck, keep', () => { ev('W-01', 'Operator: switch stuck, count kept at ' + fint(at)); msg('Count kept. Closing stays blocked while the switch is pressed.', 'info'); }]);
 }
 
 // Central permissive for manual, jog and auto moves.
@@ -1212,6 +1218,7 @@ function homeTile(s, x, name, unit, fname, onTap) {
   mk(c, 12, 4, 90, null, 'cap', name);
   st(mk(c, 75, 4, 80, null, 'cap', unit), { textAlign: 'right' });
   const val = st(mk(c, 12, 20, PBAR, 28, '', ''), { fontSize: '26px', lineHeight: '28px', textAlign: 'right' });
+  st(mk(c, 12, 34, 48, null, 'cap', '10 min'), { color: COL.muted });   // Ryan (14 Oct): the sparkline's time range
   const hit = st(mk(c, 12, 46, PBAR, 40, ''), { cursor: 'pointer' });
   hit.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); show('trend'); });
   const sp = document.createElement('canvas'); sp.width = PBAR * 2; sp.height = 64;
@@ -1383,7 +1390,7 @@ let screensKeypadNow = null;
 function closeOverlay() { if (overlay) { overlay.remove(); overlay = null; } if (sidePanel) { sidePanel.remove(); sidePanel = null; } screensKeypadNow = null; }
 // v51 (review item 4): the box is sized to the wrapped text, centred in the band above STOP (40-208). Text longer than
 // the band scrolls inside its own area; it never runs under the buttons.
-function confirmBox(text, okLabel, okCls, fn, alt) {
+function confirmBox(text, okLabel, okCls, fn, alt, cancel) {   // cancel: [label, fn] in place of a plain Cancel
   closeOverlay();
   overlay = st(mk(dev, 0, HDR, 480, 272 - HDR, 'ov'), { zIndex: '10' });
   const m = mk(overlay, 70, 8, 340, 156, 'modal');
@@ -1397,7 +1404,7 @@ function confirmBox(text, okLabel, okCls, fn, alt) {
     btn(m, 121, by, 98, 48, lab(alt[0]), () => { closeOverlay(); alt[1](); });
     btn(m, 227, by, 97, 48, lab(okLabel), () => { closeOverlay(); fn(); }, okCls);
   } else {
-    btn(m, 16, by, 150, 48, lab('Cancel'), () => closeOverlay());
+    btn(m, 16, by, 150, 48, lab(cancel ? cancel[0] : 'Cancel'), () => { closeOverlay(); if (cancel) cancel[1](); });
     btn(m, 174, by, 150, 48, lab(okLabel), () => { closeOverlay(); fn(); }, okCls);
   }
 }

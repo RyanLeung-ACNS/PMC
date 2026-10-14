@@ -25,4 +25,7 @@ module.exports = async (p, h) => {
   ok(/^\d\d [A-Z][a-z]{2} 2026 \d\d:\d\d$/.test(r.home) && r.tile && r.cur === 'comm', 'date on the home header (' + r.home + '); Settings opens with no PIN');
   r = await ev(() => { const o = []; const keep = conLog; conLog = x => o.push(x); command('PID?'); command('HELP'); conLog = keep; return o; });
   ok(r.every(l => l.length <= 70), 'console replies broken into lines of 70 characters or less: longest ' + Math.max(...r.map(l => l.length)));
+  r = await ev(() => { closeOverlay(); bootHomed(); M.pos = 5000; limitHit(); const t1 = overlay ? overlay.textContent : ''; [...overlay.querySelectorAll('.b')].find(b => /Stuck/.test(b.textContent)).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const kept = M.pos; M.pos = 5000; limitHit(); [...overlay.querySelectorAll('.b')].find(b => /Seated/.test(b.textContent)).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return { t1, kept, seated: M.pos }; });
+  ok(/Is the valve seated/.test(r.t1) && r.kept === 5000 && r.seated === 0, 'limit hit away from 0 asks: Stuck keeps the count, Seated sets 0 %');
 };

@@ -54,7 +54,7 @@ module.exports = async (p, h) => {
   // dialogs
   const dialogs = { 'dlg-auto': go('ctrl') + ' modePress()', 'dlg-manual': 'C.mode = "AUTO"; askManual(); C.mode = "MANUAL"', 'dlg-paused': 'C.mode = "PAUSED"; modePress(); C.mode = "MANUAL"',
     'dlg-reference': 'homeAsk()', 'dlg-response': go('tune') + ' editField(FIELDS.tune.find(f => f.id === "P.KDIR"))', 'dlg-motordir': 'editField(FIELDS.motor.find(f => f.id === "MOT.rev"))',
-    'dlg-calvac': go('cal') + ' calVacAsk()', 'dlg-discard': 'DRAFT.set("P.Kp", 6); P.Ti = 0.3; confirmDiscard()', 'dlg-save': 'saveAsk()',
+    'dlg-calvac': go('cal') + ' calVacAsk()', 'dlg-limithit': go('valve') + ' bootHomed(); M.pos = 5000; limitHit()', 'dlg-discard': 'DRAFT.set("P.Kp", 6); P.Ti = 0.3; confirmDiscard()', 'dlg-save': 'saveAsk()',
     'dlg-target-big': 'DRAFT.clear(); loadActive(SAVED); ' + go('ctrl') + ' keypadSP()' };
   for (const [k, js] of Object.entries(dialogs)) { await check(k, js); if (k === 'dlg-target-big') { await h.keys('500'); await h.tap('Set'); await check('dlg-target-big2', 'updateUI()'); } }
   await check('difflist', 'closeOverlay(); for (const f of allFields().filter(f => f.min != null).slice(0, 12)) DRAFT.set(f.id, f.max); diffList("Unapplied changes", cfgDiffs().nd, "Apply changes puts them in use.")');

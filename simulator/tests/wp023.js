@@ -15,7 +15,7 @@ module.exports = async (p, h) => {
   ok(r === 15.1 || r === 15, 'S3 serial target rounded to 0.1 mbar: ' + r);
   // S1, S3, S4: AUTO, step, readings 1 dp, no green or amber
   await ev(() => { for (let i = 0; i < 3000; i++) simTick(); setSP(5); toAuto(); for (let i = 0; i < 60000; i++) simTick(); setSP(8); for (let i = 0; i < 40000; i++) simTick(); updateUI(); });
-  r = await ev(() => document.querySelector('#dev').textContent.match(/\b\d+\.\d+\b/g).slice(0, 4));
+  r = await ev(() => document.querySelector('#dev').innerText.match(/\b\d+\.\d+\b/g).slice(0, 4));
   ok(r.every(x => /^\d+\.\d$/.test(x)), 'S3 home readings at 0.1: ' + r.join(' '));
   r = await banned(); ok(r.length === 0, 'S4 no green or amber in AUTO: ' + r.join(','));
   // S1: the step is visible in the sparkline (dark pen pixels on more than one row band)
