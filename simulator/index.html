@@ -299,7 +299,7 @@ dm<sub>L</sub>/dt = &#7745;<sub>in</sub> &minus; &#7745;<sub>evap</sub><br>
 <li>Untick Druck connected: F-01. Reset fault is refused until the Druck is back.</li>
 <li>Menu &gt; Settings &gt; Control tuning. Change the gain: violet edge (not saved yet). Save settings puts it in use and in flash (revision goes up); Review and save &gt; Load settings &gt; Previous save is the undo.</li>
 <li>Laptop panel: send the s/n 5880211 profile (table). Settings &gt; Pressure sensor &gt; Sensor in use: pick it, Save settings. The reading changes because the table is for a different sensor. Review and save &gt; Load settings &gt; Previous save, Save settings puts it back.</li>
-<li>Settings &gt; Pressure sensor &gt; Live calibration: untick Pumped line on the bench panel... capture vacuum near 0 mbar and air at the barometer reading; New cal shows the result before Apply. A small negative reading after drift is shown as it is, with no fault.</li>
+<li>Menu &gt; Calibrate sensor: untick Pumped line on the bench panel... capture vacuum near 0 mbar and air at the barometer reading; New cal shows the result before Apply. A small negative reading after drift is shown as it is, with no fault.</li>
 <li>In AUTO, turn the helium flow off: F-16 after about 60 s. Turn the pump off instead: F-17. Untick the drive: F-10.</li>
 <li>Bench panel Force open, then reference: F-09. Force closed: F-07. Valve setup &gt; Motor direction Reversed, Apply, reference: F-07.</li>
 </ol>
@@ -660,7 +660,7 @@ function limOverrideAsk() {
 }
 // Central permissive for manual, jog and auto moves.
 function requestMove(target, quiet) {
-  if (C.mode === 'HOMING') return quiet ? false : refuse('Zeroing');
+  if (C.mode === 'HOMING') return quiet ? false : refuse('Calibrating');
   if (C.faults.size) return quiet ? false : refuse('Reset the fault first');
   if (C.ref) target = clamp(Math.round(target), 0, P.POSMAX);
   if (!M.moving && target < M.pos && LIM.active && !LIM.override) return quiet ? false : refuse('At seat, cannot close');
@@ -672,20 +672,20 @@ function requestMove(target, quiet) {
  * ==================================================================== */
 // v25 (Ryan, 9 Oct: homing UX bad): ask first with what will happen, name the step while it runs,
 // Mode button becomes Stop, and say when it is done.
-function homeStep() { return { 'clearance move': 'Moving off the switch', 'fast approach': 'Zeroing 1 of 3: closing to the switch', 'back-off': 'Zeroing 2 of 3: backing off', 'creep approach': 'Zeroing 3 of 3: slow approach' }[C.homeStage] || 'Zeroing'; }
+function homeStep() { return { 'clearance move': 'Moving off the switch', 'fast approach': 'Calibrating 1 of 3: closing to the switch', 'back-off': 'Calibrating 2 of 3: backing off', 'creep approach': 'Calibrating 3 of 3: slow approach' }[C.homeStage] || 'Calibrating'; }
 function homeAsk() {
-  if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before zeroing');
+  if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before calibrating');
   if (C.faults.size) return refuse('Reset the fault first');
   const mins = Math.ceil(1.1 * P.POSMAX / P.fhome / 60);
-  confirmBox('Zero the valve? It closes to the seat to find 0 %, up to ' + mins + ' min.', 'Start zeroing', 'act', home);
+  confirmBox('Calibrate the valve? It closes to the seat to find 0 %, up to ' + mins + ' min.', 'Start calibration', 'act', home);
 }
 function home() {
-  if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before zeroing');
-  if (C.mode === 'HOMING') return refuse('Already zeroing');
+  if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Switch to MANUAL before calibrating');
+  if (C.mode === 'HOMING') return refuse('Already calibrating');
   if (C.faults.size) return refuse('Reset the fault first');
   stopMotor();
   C.ref = false; C.mode = 'HOMING'; C.homeT0 = t;
-  ev('REF', 'Zeroing started at count ' + fint(M.pos));
+  ev('REF', 'Calibrating started at count ' + fint(M.pos));
   if (LIM.active) {
     C.homeStage = 'clearance move';
     startMove(M.pos + P.Nclear, P.fhome, r => {
@@ -718,13 +718,13 @@ function homeCreep() {
       M.pos = P.Noffset; C.ref = true; C.mode = 'MANUAL'; C.homeStage = '';
       C.manPos = C.posCmd = C.lastSent = M.pos;
       C.lastHome = { t, dur: t - C.homeT0 };
-      ev('REF', 'Zeroed in ' + (t - C.homeT0).toFixed(1) + ' s, position ' + P.Noffset);
-      msg('Zeroed', 'info');
+      ev('REF', 'Calibrated in ' + (t - C.homeT0).toFixed(1) + ' s, position ' + P.Noffset);
+      msg('Calibrated', 'info');
     } else if (r === 'DONE') homeFault('F-07', 'Homing: switch not found on creep approach');
     else homeAbort(r);
   });
 }
-function homeAbort(r) { if (C.mode === 'HOMING') { C.mode = 'NOT HOMED'; C.homeStage = ''; ev('REF', 'Zeroing aborted (' + r.toLowerCase() + ')'); } }
+function homeAbort(r) { if (C.mode === 'HOMING') { C.mode = 'NOT HOMED'; C.homeStage = ''; ev('REF', 'Calibrating aborted (' + r.toLowerCase() + ')'); } }
 function homeFault(tag, text) { C.mode = 'NOT HOMED'; C.homeStage = ''; raise(tag, text, { ref: true }); }
 
 /* ======================================================================
@@ -778,7 +778,7 @@ function ack() {
   ackAll();   // S5: Reset fault also acknowledges
   for (const tag of [...C.faults.keys()]) { if (faultCanReset(tag)) { C.faults.delete(tag); ev(tag, 'reset by operator'); } }
   if (C.faults.size) return refuse('Not reset, cause still present: ' + [...C.faults.keys()].join(', '));
-  msg('Fault reset' + (C.ref ? '' : ', valve not zeroed'), 'info');
+  msg('Fault reset' + (C.ref ? '' : ', valve not calibrated'), 'info');
   return true;
 }
 // What happened, what the controller did, what to check, what allows reset (review item 6).
@@ -787,12 +787,12 @@ const FAULT_INFO = {
   'F-01': ['No signal from the Druck (below 0.05 mV/V).', HELD, 'Druck cable and M12 connector; Druck supply.', 'Signal back in range.'],
   'F-02': ['Pressure stayed above the sensor range for 5 s in AUTO.', HELD, 'Pumping line and pump; sensor range.', 'Any time; then start AUTO again.'],
   'F-03': ['Druck excitation outside 9.5 to 10.5 V.', HELD, 'Boost supply and 10 V wiring.', 'Excitation back in the window.'],
-  'F-07': ['Zeroing did not find the limit switch within the travel.', 'Zeroing stopped; valve not zeroed.', 'Switch wiring, motor direction, drive coupling.', 'Any time; then zero again.'],
-  'F-09': ['Limit switch still open after moving off it.', 'Zeroing stopped; valve not zeroed.', 'Switch stuck or wiring open.', 'Any time; then zero again.'],
+  'F-07': ['Calibrating did not find the limit switch within the travel.', 'Calibrating stopped; valve not calibrated.', 'Switch wiring, motor direction, drive coupling.', 'Any time; then zero again.'],
+  'F-09': ['Limit switch still open after moving off it.', 'Calibrating stopped; valve not calibrated.', 'Switch stuck or wiring open.', 'Any time; then zero again.'],
   'F-10': ['Valve moved in AUTO but the pressure did not respond.', HELD, 'Drive slipping, motor unplugged, needle seized.', 'Any time; check before starting AUTO.'],
   'F-16': ['Valve opening while the pressure kept falling.', HELD, 'Helium supply (bath empty, capillary blocked); on first use, valve direction.', 'Any time; check before starting AUTO.'],
   'F-17': ['Valve closing while the pressure kept rising.', HELD, 'Pump stopped, pumping valve shut, heat load; on first use, valve direction.', 'Any time; check before starting AUTO.'],
-  'F-12': ['STOP pressed.', HELD + ' Zeroing, if running, is cancelled.', 'Why STOP was pressed.', 'Any time. AUTO does not restart by itself.'] };
+  'F-12': ['STOP pressed.', HELD + ' Calibrating, if running, is cancelled.', 'Why STOP was pressed.', 'Any time. AUTO does not restart by itself.'] };
 function faultDetail(tag) {
   const f = C.faults.get(tag); if (!f) return;
   closeOverlay();
@@ -818,8 +818,8 @@ function operatorStop() {
 function kpSteps() { return P.Kp / 100 * P.POSMAX; }
 function toAuto() {
   if (C.mode === 'AUTO') return true;
-  if (!C.ref) return refuse('Zero the valve first');
-  if (C.mode === 'HOMING') return refuse('Zeroing');
+  if (!C.ref) return refuse('Calibrate the valve first');
+  if (C.mode === 'HOMING') return refuse('Calibrating');
   if (C.faults.size) return refuse('Reset the fault first');
   if (!pvValid || PV == null) return refuse('No valid pressure');
   if (!C.spSet) return refuse('Set a target first');
@@ -859,7 +859,7 @@ function setSP(v) {
   return true;
 }
 function setManSteps(n) {
-  if (C.mode !== 'MANUAL') return refuse(C.mode === 'NOT HOMED' ? 'Zero the valve first' : 'MANUAL only');
+  if (C.mode !== 'MANUAL') return refuse(C.mode === 'NOT HOMED' ? 'Calibrate the valve first' : 'MANUAL only');
   n = clamp(Math.round(n), 0, P.POSMAX);
   if (!requestMove(n)) return false;
   C.manPos = C.posCmd = C.lastSent = n;
@@ -867,7 +867,7 @@ function setManSteps(n) {
 }
 function jog(n) {
   if (C.mode === 'AUTO' || C.mode === 'PAUSED') return refuse('Jog locked in auto');
-  if (C.mode === 'HOMING') return refuse('Zeroing');
+  if (C.mode === 'HOMING') return refuse('Calibrating');
   let target = (M.moving ? M.target : M.pos) + n;
   if (C.ref) target = clamp(target, 0, P.POSMAX);
   if (!requestMove(target)) return false;
@@ -980,14 +980,14 @@ function reboot() {
   ev('F-14', 'Power-up (event only)');
   // v48 (review item 8): a restart no longer invents a reference or moves the mechanism. The step count restarts
   // at 0 with the valve wherever it was, so the controller boots NOT REFERENCED (plan G3).
-  ev('REF', 'Boot: valve not zeroed');
+  ev('REF', 'Boot: valve not calibrated');
 }
 function bootHomed() {                  // simulator convenience (Ryan, 8 Oct): start homed, valve closed on the switch
   LIM.simPos = 0; LIM.raw = true; LIM.active = true; LIM.clearSince = null;
   M.pos = P.Noffset; C.ref = true; C.mode = 'MANUAL'; C.homeStage = '';
   C.manPos = C.posCmd = C.lastSent = M.pos;
   C.lastHome = { t, dur: 0 };
-  ev('REF', 'Demo starting condition (simulator only): zeroed at ' + M.pos);
+  ev('REF', 'Demo starting condition (simulator only): calibrated at ' + M.pos);
 }
 
 /* ======================================================================
@@ -1100,9 +1100,9 @@ function sym(n, px) { const z = px || 16; return '<i class="sym" data-lv="' + SY
 const MODE_COL = { AUTO: '#C3CDD7', MANUAL: '#C3CDD7', 'NOT HOMED': '#C3CDD7', HOMING: '#C3CDD7', PAUSED: '#C3CDD7' };
 
 const TITLES = { menu: 'Menu', sensor: 'Pressure sensor', motor: 'Valve setup', tune: 'Control tuning', diag: 'Diagnostics', cfg: 'Review and save', faults: 'Faults and log', trend: 'Trend', valve: 'Valve',
-  ref: 'Zero valve', info: 'About this unit', comm: 'Settings', cal: 'Live calibration' };
+  ref: 'Calibrate valve', comm: 'Settings', cal: 'Calibrate sensor' };
 // Review item 1: "Home" meant both the main page and a physical move. The move is now "Reference valve".
-const MODE_WORD = { 'NOT HOMED': 'NOT ZEROED', HOMING: 'ZEROING', PAUSED: 'AUTO PAUSED', MANUAL: 'MANUAL', AUTO: 'AUTO' };
+const MODE_WORD = { 'NOT HOMED': 'NOT CALIBRATED', HOMING: 'CALIBRATING', PAUSED: 'AUTO PAUSED', MANUAL: 'MANUAL', AUTO: 'AUTO' };
 function newScreen(name) {
   const s = mk(dev, 0, HDR, 480, 272 - HDR, 'scr');
   st(s, { top: '0px', height: '272px' });
@@ -1297,7 +1297,7 @@ function buildCtrl() {
   const s = newScreen('ctrl');
   const P1 = homeTile(s, 10, 'Pressure', 'mB', 'Target', () => {
     if (C.mode === 'AUTO' || C.mode === 'PAUSED') return keypadSP();
-    refuse(C.mode === 'MANUAL' ? 'Target is used in AUTO: Start AUTO asks for it' : 'Zero the valve first');
+    refuse(C.mode === 'MANUAL' ? 'Target is used in AUTO: Start AUTO asks for it' : 'Calibrate the valve first');
   });
   tileTicks(P1, [0.1, 1, 10, 100, 1000].map(barX), [[barX(0.1), '0.1'], [barX(10), '10'], [barX(1000), '1000']]);
   const V1 = homeTile(s, 186, 'Valve', '%', 'Go to', () => canManual() ? keypadPct() : notManual());
@@ -1327,7 +1327,7 @@ function buildCtrl() {
     tog(P1.c, 'tile-alm', pAlm); tog(V1.c, 'tile-alm', vAlm); tog(P1.c, 'unack', pAlm && unacked()); tog(V1.c, 'unack', vAlm && unacked());
     // Valve tile
     const vp = C.ref ? pctOf(M.pos) : null;
-    set(V1.val, C.ref ? vp.toFixed(1) : C.mode === 'HOMING' ? 'Zeroing' : '----');
+    set(V1.val, C.ref ? vp.toFixed(1) : C.mode === 'HOMING' ? 'Calibrating' : '----');
     st(V1.val, { fontSize: C.mode === 'HOMING' ? '16px' : '26px' }); setc(V1.val, C.ref || C.mode === 'HOMING' ? COL.text : COL.idle);
     st(V1.fill, { width: C.ref ? vbarX(vp).toFixed(1) + 'px' : '0px' });
     tileMark(V1, vbarX, vp);
@@ -1348,7 +1348,7 @@ function buildCtrl() {
   };
 }
 function modeAction() {               // [action, state]: the button names the action it takes; state only while referencing
-  return { 'NOT HOMED': ['Zero valve'], HOMING: ['Zeroing', (homeStep().match(/\d of 3/) || [''])[0]], MANUAL: ['Start AUTO'], AUTO: ['Switch to MANUAL'], PAUSED: ['Resume AUTO'] }[C.mode];
+  return { 'NOT HOMED': ['Calibrate valve'], HOMING: ['Calibrating', (homeStep().match(/\d of 3/) || [''])[0]], MANUAL: ['Start AUTO'], AUTO: ['Switch to MANUAL'], PAUSED: ['Resume AUTO'] }[C.mode];
 }
 // Regulation words (review item 1): one in-band reading is "Within target band"; "Stable" needs the pressure to have
 // stayed in the band for P.stableT seconds without a break.
@@ -1366,7 +1366,7 @@ function statusLine() {
   }
   if (C.msg && performance.now() < C.msg.until) return { kind: C.msg.kind, text: C.msg.text, btn: C.mode === 'PAUSED' ? 'manual' : 'ok' };   // the paused choice stays on screen
   switch (C.mode) {
-    case 'NOT HOMED': return { kind: 'prompt', text: 'Valve not zeroed' };   // S4: a prompt, not a warning (WP023 s9.8.1 p55)
+    case 'NOT HOMED': return { kind: 'prompt', text: 'Valve not calibrated' };   // S4: a prompt, not a warning (WP023 s9.8.1 p55)
     case 'HOMING': return { kind: 'info', dot: COL.grey, text: homeStep() };
     case 'MANUAL': if (LIM.override) return { kind: 'warn', text: 'Limit override on' };
       return { kind: 'info', dot: COL.muted, text: M.moving ? 'Moving to ' + pctOf(M.target).toFixed(1) + ' %' : 'Valve held' };
@@ -1383,7 +1383,7 @@ function statusLine() {
 }
 function modePress() {
   if (C.mode === 'NOT HOMED') return homeAsk();
-  if (C.mode === 'HOMING') return refuse('Zeroing: STOP to cancel');
+  if (C.mode === 'HOMING') return refuse('Calibrating: STOP to cancel');
   if (C.mode === 'MANUAL') {
     if (!C.spSet) return keypadStart();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
     confirmBox('Start AUTO @ ' + fmtOp(C.SP) + ' mB?', 'Start AUTO', 'act', toAuto, ['New target', keypadStart]);
@@ -1539,7 +1539,7 @@ function textView(title, lines) {
 /* ---- Valve ------------------------------------------------------------ */
 function canManual() { return C.mode === 'MANUAL'; }
 function manPct(v) { return setManSteps(v / 100 * P.POSMAX); }
-function notManual() { return refuse(C.mode === 'NOT HOMED' ? 'Zero the valve first' : C.faults.size ? 'Reset the fault first' : 'Switch to MANUAL first'); }
+function notManual() { return refuse(C.mode === 'NOT HOMED' ? 'Calibrate the valve first' : C.faults.size ? 'Reset the fault first' : 'Switch to MANUAL first'); }
 const STEP_PCT = 5;   // Ryan 13 Oct: the step buttons move 5 % (were 1 %)
 function nudge(d) { if (!canManual()) return notManual(); return setManSteps(C.manPos + d / 100 * P.POSMAX); }
 function keypadPct() {
@@ -1628,8 +1628,8 @@ function buildMenu() {
   // opens without the PIN (s3.1 p8, level 4 for troubleshooting); the footer keeps the process status (s6.7 p16).
   tile(0, 0, 'Trend', () => show('trend'));   // Ryan (14 Oct): it shows the valve too
   const ba = tile(1, 0, 'Faults and log', () => show('faults'));
-  tile(0, 1, 'Zero valve', () => show('ref'));
-  tile(1, 1, 'About this unit', () => show('info'));
+  tile(0, 1, 'Calibrate valve', () => show('ref'));
+  tile(1, 1, 'Calibrate sensor', () => show('cal'));   // Ryan (14 Oct): replaces About this unit
   tile(0, 2, 'Diagnostics', () => show('diag'));
   tile(1, 2, 'Settings', () => show('comm'));
   let lastA = null;
@@ -1661,54 +1661,25 @@ function infoCard(par, x, y, w, cap) {
 function buildRef() {
   const s = newScreen('ref');
   // v52: values and the action only; what referencing does is behind Help (side slot 1, as on settings pages).
-  const stat = infoCard(s, 10, RY[0], 226, 'Zero');
+  const stat = infoCard(s, 10, RY[0], 226, 'Valve calibration');
   // S19: operator units; step counts and the past-switch count stay on Diagnostics.
   const pos = infoCard(s, 244, RY[0], 109, 'Valve, %');
-  const last = infoCard(s, 10, RY[1], 226, 'Last zeroed');
+  const last = infoCard(s, 10, RY[1], 226, 'Last calibrated');
   const sw = infoCard(s, 244, RY[1], 109, 'Seat switch');
-  navBtn(s, 361, RY[0], 109, RH, 'Help', () => textView('Zero valve', [
+  navBtn(s, 361, RY[0], 109, RH, 'Help', () => textView('Calibrate valve', [
     'Finds the closed position: closes to the limit switch, backs off, approaches slowly and sets 0 %. Takes up to ' + Math.ceil(1.1 * P.POSMAX / P.fhome / 60) + ' min; the pressure will change.',
-    'MANUAL only. STOP cancels; the valve is then not zeroed.', 'Position is counted in steps from the closed limit.']));
-  const bh = btn(s, 361, RY[1], 109, RH, lab('Start zeroing'), homeAsk, 'act');
+    'MANUAL only. STOP cancels; the valve is then not calibrated.', 'Position is counted in steps from the closed limit.']));
+  const bh = btn(s, 361, RY[1], 109, RH, lab('Start calibration'), homeAsk, 'act');
   screens.ref.update = () => {
     const hm = C.mode === 'HOMING' ? (homeStep().match(/(\d of 3): (.*)/) || []) : [];
-    set(stat.cp, hm[1] ? 'Zeroing, step ' + hm[1] : 'Zero');
-    stat.set(C.mode === 'HOMING' ? (hm[2] ? hm[2][0].toUpperCase() + hm[2].slice(1) : 'Starting') : C.ref ? 'Zeroed' : 'Not zeroed', C.mode === 'HOMING' || C.ref ? COL.text : COL.warn);
+    set(stat.cp, hm[1] ? 'Calibrating, step ' + hm[1] : 'Valve calibration');
+    stat.set(C.mode === 'HOMING' ? (hm[2] ? hm[2][0].toUpperCase() + hm[2].slice(1) : 'Starting') : C.ref ? 'Calibrated' : 'Not calibrated', C.mode === 'HOMING' || C.ref ? COL.text : COL.warn);
     pos.set(C.ref || C.mode === 'HOMING' ? pctOf(M.pos).toFixed(1) : '--');
     sw.set(LIM.active ? 'At seat' : 'Off seat');
     last.set(C.lastHome ? stamp(C.lastHome.t) : 'Not since power-on');
     tog(bh, 'dis', C.mode === 'AUTO' || C.mode === 'PAUSED' || C.mode === 'HOMING');
   };
-  screens.ref.foot = () => C.mode === 'AUTO' || C.mode === 'PAUSED' ? 'AUTO on: zeroing needs MANUAL.' : C.mode === 'HOMING' ? 'Zeroing. STOP cancels.' : '';
-}
-
-/* ---- System information (operator, read only) ------------------------- */
-// v46 (UI/UX review item 4): the operator sees what is loaded without editing it.
-function buildInfo() {
-  const s = newScreen('info');
-  // v51 (review 9 Oct): calibration identity, date and saved state in separate cards, so a long identity can never
-  // push the save state out of view. Link and firmware moved to the footer.
-  // v52: one 16 px line per value, so the date gets a wide card; the target range is on the Set target keypad.
-  const sen = infoCard(s, 10, RY[0], 226, 'Sensor');
-  const rng = infoCard(s, 244, RY[0], 109, 'Range');
-  const cal = infoCard(s, 361, RY[0], 109, 'Cal type');
-  const calD = infoCard(s, 10, RY[1], 226, 'Calibration');
-  const calT = infoCard(s, 244, RY[1], 226, 'Calibration date');
-  const cfg = infoCard(s, 10, RY[2], 226, 'Configuration');
-  const cfgS = infoCard(s, 244, RY[2], 109, 'Settings');
-  const calS = infoCard(s, 361, RY[2], 109, 'Calibration');
-  screens.info.update = () => {
-    const q = SENS.prof[SENS.active], cs = calState(q), dirty = cfgDirty();
-    sen.set('Druck s/n ' + q.serial);
-    rng.set(psiName(q));
-    cal.set(calKind(q) === 'nominal' ? 'Nominal' : q.bench ? 'Bench' : 'Table');
-    calD.set(q.calId || (q.table ? q.table.length + '-point table' : 'Nominal 0 to 10 mV/V'));
-    calT.set(q.calDate || 'None');
-    calS.set(cs === 'Saved' ? 'Saved' : 'Not saved');
-    cfg.set(cfgLabel());
-    cfgS.set(dirty ? 'Not saved' : 'Saved');
-  };
-  screens.info.foot = () => 'Link ' + (BENCH.link === 'eth' ? 'Ethernet 192.168.1.50' : 'USB') + '. Firmware ' + FW + '.';
+  screens.ref.foot = () => C.mode === 'AUTO' || C.mode === 'PAUSED' ? 'AUTO on: calibrating needs MANUAL.' : C.mode === 'HOMING' ? 'Calibrating. STOP cancels.' : '';
 }
 
 /* ---- Settings (Ryan 14 Oct: no engineer mode, everyone using it is an engineer) ---- */
@@ -1785,7 +1756,7 @@ function applyFields(fs, moveTarget, then) {
 // Sensor fields act on the profile that will be in use after Apply.
 function sIdx() { return DRAFT.has('S.active') ? DRAFT.get('S.active') : SENS.active; }
 function savedProf(q) { return SAVED.sens.prof.find(x => x.serial === q.serial) || {}; }
-const manualOnly = () => isAuto() ? 'switch to MANUAL first' : C.mode === 'HOMING' ? 'wait for zeroing to finish' : null;
+const manualOnly = () => isAuto() ? 'switch to MANUAL first' : C.mode === 'HOMING' ? 'wait for calibrating to finish' : null;
 const stillOnly = () => M.moving || C.mode === 'HOMING' ? 'wait for the valve to stop' : null;
 const P_FIELD = (page, key, cap, unit, dec, info, extra) => fld(page, Object.assign({ id: 'P.' + key, cap, unit, dec, min: RANGE[key][0], max: RANGE[key][1], info,
   get: () => P[key], saved: () => Object.assign({}, DEF_P, SAVED.P)[key], def: () => DEF_P[key], fromCfg: o => o.P && o.P[key],
@@ -1925,18 +1896,13 @@ function sensName(q) { return psiName(q) + ', s/n ' + q.serial; }
 function profName(q) { return 'Druck ' + sensName(q); }
 function buildSensor() {
   const s = newScreen('sensor');
-  // Ryan (14 Oct): sensors can be added and removed on the board; Live calibration opens from here. Rows: the sensor
-  // and Add, its calibration and Remove, Live calibration and Import from PC.
+  // Ryan (14 Oct): sensors can be added and removed on the board. Calibrate sensor is on the Menu; Import from PC went.
   const F = id => FIELDS.sensor.find(f => f.id === id);
   const u = [fieldCard(s, F('S.active'), 10, RY[0], 226)];
   btn(s, 244, RY[0], 109, RH, lab('Add sensor'), addSensor);
   const src = editCard(s, 10, RY[1], 226, RH, 'Calibration', () => calDetail());
   const bRm = btn(s, 244, RY[1], 109, RH, lab('Remove sensor'), removeSensor);
-  const bCal = navBtn(s, 10, RY[2], 226, RH, '', () => show('cal'));
-  btn(s, 244, RY[2], 109, RH, lab('Import from PC'), () => textView('Import from PC', [
-    'Profiles and calibration tables can also be made on the PC and sent over USB or Ethernet (bench panel: Laptop configuration tool).',
-    'A revised calibration arrives as an unsaved change; a new sensor is added to Sensor in use but not selected.']));
-  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active'], ['Add sensor: type its serial number and pick its range in psi. It starts uncalibrated: select it, Save settings, then Live calibration.',
+  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active'], ['Add sensor: type its serial number and pick its range in psi. It starts uncalibrated: select it, Save settings, then Menu > Calibrate sensor.',
     'Remove sensor: removes a sensor that is not in use.', 'Calibration: tap for its date, points and state.']));
   screens.sensor.update = () => {
     u.forEach(f => f()); sideU();
@@ -1944,7 +1910,6 @@ function buildSensor() {
     const ct = q.bench && q.calDate ? 'Two-point, ' + q.calDate : q.calId || (q.table ? 'Table' : 'Not calibrated');
     if (src.v.textContent !== ct) { set(src.v, ct); if (fits(src.v)) delete src.v.dataset.trunc; else src.v.dataset.trunc = 'detail'; }   // long: "...", full text in the detail view
     setc(src.v, DRAFT.has('S.prof') ? COL.draft : COL.text);
-    seth(bCal, navLab('Live calibration', CAP.pt ? 'Capturing' : DRAFT.has('S.prof') ? 'Not saved' : 'For ' + psiName(SENS.prof[SENS.active]) + ', s/n ' + SENS.prof[SENS.active].serial));
     tog(bRm, 'dis', SENS.prof.length < 2);
   };
 }
@@ -2095,7 +2060,7 @@ function buildSettingsPage(name, tabs) {
 function buildMotor() {
   buildSettingsPage('motor', [
     { label: 'Valve', cells: [['P.POSMAX', 0, 0], ['MOT.rev', 1, 0]] },
-    { label: 'Zero', cells: [['P.Noffset', 0, 0], ['P.Nbackoff', 1, 0], ['P.fhome', 0, 1], ['P.fcreep', 1, 1]] },
+    { label: 'Calibrate', cells: [['P.Noffset', 0, 0], ['P.Nbackoff', 1, 0], ['P.fhome', 0, 1], ['P.fcreep', 1, 1]] },
     { label: 'Drive', cells: [['MOT.run', 0, 0], ['MOT.start', 1, 0], ['MOT.accel', 0, 1]], help: () => ['Used by manual and AUTO moves. Applied when the valve is stopped.'] }]);
 }
 function buildTune() {
@@ -2113,7 +2078,7 @@ function buildDiag() {
   const sig = g(0, 0, 'Signal, mV/V'), sup = g(0, 1, 'Supply, V'), raw = g(0, 2, 'Before cal, mB');
   const pos = g(1, 0, 'Position, steps'), sw = g(1, 1, 'Closed switch'), over = g(1, 2, 'Beyond switch');
   const last = g(2, 0, 'Result'), dist = g(2, 1, 'Moved, steps'), took = g(2, 2, 'Took, s');
-  screens.diag.foot = () => 'Read only. Board 23.5 \u00B0C. Link ' + (BENCH.link === 'eth' ? 'Ethernet' : 'USB') + '.';
+  screens.diag.foot = () => 'Firmware ' + FW + '. Board 23.5 \u00B0C. Link ' + (BENCH.link === 'eth' ? 'Ethernet' : 'USB') + '.';   // About this unit went (Ryan, 14 Oct)
   screens.diag.update = () => {
     const ok = BENCH.druck && BENCH.exc;
     sig.set(BENCH.druck ? (C.mv / 10).toFixed(4) : '0.0000', ok ? COL.text : COL.fault);
@@ -2600,10 +2565,10 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-buildGlobal(); buildCtrl(); buildValve(); buildMenu(); buildRef(); buildInfo(); buildComm(); buildSensor(); buildCal(); buildMotor(); buildTune(); buildDiag(); buildCfg(); buildFaults(); buildTrend();
+buildGlobal(); buildCtrl(); buildValve(); buildMenu(); buildRef(); buildComm(); buildSensor(); buildCal(); buildMotor(); buildTune(); buildDiag(); buildCfg(); buildFaults(); buildTrend();
 setSpeed(1); setWin(600); fit();
 flBuildParams(); flBuildRead(); setPlumb('line'); setLink('usb'); flCurveCalc(); flDraw();
-['PMC ' + FW + ' simulated.', 'Page load starts zeroed at 0 % in MANUAL (demo).', 'Reboot board boots not zeroed, as the firmware will.', 'Type HELP for commands.'].forEach(l => conLog(l));
+['PMC ' + FW + ' simulated.', 'Page load starts calibrated at 0 % in MANUAL (demo).', 'Reboot board boots not calibrated, as the firmware will.', 'Type HELP for commands.'].forEach(l => conLog(l));
 ev('F-14', 'Power-up (event only)');
 bootHomed();
 show('ctrl');

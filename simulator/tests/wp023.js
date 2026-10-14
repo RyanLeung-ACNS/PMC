@@ -31,7 +31,7 @@ module.exports = async (p, h) => {
   ok(!r.ua && r.latched && !r.blink, 'S5 tap acknowledges, blink stops, latch stays');
   await ev(() => { BENCH.druck = true; for (let i = 0; i < 300; i++) simTick(); ack(); updateUI(); });
   // S4: not referenced is a prompt
-  r = await ev(() => { document.getElementById('reboot').click(); show('ctrl'); updateUI(); return [...document.querySelectorAll('#dev .card')].some(e => e.classList.contains('k-prompt') && /Valve not zeroed/.test(e.textContent)); });
+  r = await ev(() => { document.getElementById('reboot').click(); show('ctrl'); updateUI(); return [...document.querySelectorAll('#dev .card')].some(e => e.classList.contains('k-prompt') && /Valve not calibrated/.test(e.textContent)); });
   ok(r, 'S4 not zeroed shown as a prompt');
   r = await banned(); ok(r.length === 0, 'S4 no green or amber at boot: ' + r.join(','));
   // S9: jog row gaps

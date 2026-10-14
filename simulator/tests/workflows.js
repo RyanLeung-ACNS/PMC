@@ -6,8 +6,8 @@ module.exports = async (p, h) => {
 
   // 1. Unreferenced startup -> reference -> set target -> AUTO
   await ev(() => document.getElementById('reboot').click());
-  let o = await st(); ok(o.badge === 'NOT ZEROED' && o.mode === 'NOT HOMED', 'WF1 real start boots NOT ZEROED'); await shot('wf1-1-boot');
-  await tap('Zero valve'); await shot('wf1-2-ask'); await tap('Start zeroing'); await run(3); await shot('wf1-3-referencing');
+  let o = await st(); ok(o.badge === 'NOT CALIBRATED' && o.mode === 'NOT HOMED', 'WF1 real start boots NOT CALIBRATED'); await shot('wf1-1-boot');
+  await tap('Calibrate valve'); await shot('wf1-2-ask'); await tap('Start calibration'); await run(3); await shot('wf1-3-referencing');
   await run(400); o = await st(); ok(o.mode === 'MANUAL' && o.pos === 0, 'WF1 referenced, MANUAL at 0 %');
   await tap('Valve'); await tap('Go to'); await keys('34'); await tap('Set'); await run(120); await tap('Back');
   ok(await ev(() => !C.spSet), 'WF1 no default target');
@@ -52,10 +52,10 @@ module.exports = async (p, h) => {
   await shot('wf5-1-sensor-imported'); await tap('Calibration', true); o = await st(); await shot('wf5-2-detail');
   ok(/Druck reissue/.test(o.ov) && /Not saved/.test(o.ov), 'WF5 detail shows new identity, state Not saved'); await tap('Close');
   await tap('Save settings'); await tap('Save settings');
-  await ev(() => show('info', false, true)); await shot('wf5-4-info-saved'); o = await ev(() => calState(SENS.prof[SENS.active])); ok(o === 'Saved', 'WF5 calibration saved');
+  await ev(() => show('sensor', false, true)); await shot('wf5-4-saved'); o = await ev(() => calState(SENS.prof[SENS.active])); ok(o === 'Saved', 'WF5 calibration saved');
 
   // 6. STOP and fault recovery, including during referencing
-  await ev(() => show('ctrl', false, true)); await tap('Menu'); await tap('Zero valve'); await tap('Start zeroing'); await tap('Start zeroing'); await run(3);
+  await ev(() => show('ctrl', false, true)); await tap('Menu'); await tap('Calibrate valve'); await tap('Start calibration'); await tap('Start calibration'); await run(3);
   await shot('wf6-1-referencing'); await tap('STOP'); await run(5); o = await st();
   ok(o.mode === 'NOT HOMED' && !o.moving && o.badge === 'STOPPED', 'WF6 STOP while referencing: stopped, not referenced'); await shot('wf6-2-stopped');
   await ev(() => { home && 0; }); await ev(() => show('ctrl', false, true)); await tap('Reset fault'); o = await st(); ok(!o.faults.length && o.mode === 'NOT HOMED', 'WF6 reset; still NOT REFERENCED');
@@ -76,8 +76,8 @@ module.exports = async (p, h) => {
   await ev(() => show('cfg', false, true)); await tap('Load settings', true); await shot('wf7-2-load-list'); await tap('Previous save', true); await shot('wf7-2-revert'); await tap('Save settings'); await tap('Save settings'); o = await st();
   const kpNow = await ev(() => P.Kp); ok(kpNow === kp && !o.dirty, 'WF7 Load settings > Previous save, then Save settings, brings back gain ' + kp);
   // 8. Live calibration: capture vacuum and air through the board, check New cal, apply and save
-  await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('comm'); updateUI(); });
-  await tap('Pressure sensor', true); await tap('Live calibration', true); await shot('wf8-1-cal');
+  await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('menu'); updateUI(); });
+  await tap('Calibrate sensor'); await shot('wf8-1-cal');
   await tap('Capture vacuum'); await shot('wf8-2-vac-ask'); await tap('Capture'); await run(1); await shot('wf8-2-capturing');
   await run(30); o = await st(); ok(o.drafts.includes('S.prof'), 'WF8 vacuum point held as an unapplied change');
   await ev(() => { BENCH.air = 1013.4; }); await run(2);

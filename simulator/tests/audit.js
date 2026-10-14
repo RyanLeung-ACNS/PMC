@@ -5,10 +5,10 @@ module.exports = async (p, h) => {
   const go = name => `navStack = []; closeOverlay(); show('${name}', false, true);`;
   const base = () => { localStorage.clear(); SAVED = defaultCfg(); loadActive(SAVED); DRAFT.clear(); C.faults.clear(); setHe(true); setPump(true); C.msg = null; };
   await p.evaluate(base);
-  for (const sc of ['ctrl', 'valve', 'menu', 'ref', 'info', 'comm', 'cal', 'sensor', 'motor', 'tune', 'diag', 'cfg', 'faults', 'trend'])
+  for (const sc of ['ctrl', 'valve', 'menu', 'ref', 'comm', 'cal', 'sensor', 'motor', 'tune', 'diag', 'cfg', 'faults', 'trend'])
     await check(sc, go(sc));
   // tabs on Valve setup
-  for (const t of ['Zero', 'Drive']) { await p.evaluate(go('motor')); await h.tap(t); await check('motor-' + t.toLowerCase(), 'updateUI()'); }
+  for (const t of ['Calibrate', 'Drive']) { await p.evaluate(go('motor')); await h.tap(t); await check('motor-' + t.toLowerCase(), 'updateUI()'); }
   // modes on home and the valve page
   await check('ctrl-notref', 'reboot(); C.msg = null; ' + go('ctrl'));
   await check('valve-notref', go('valve'));
@@ -37,7 +37,7 @@ module.exports = async (p, h) => {
   await check('motor-extreme', 'MOT.accel = 20000; MOT.run = 1000; ' + go('motor'));
   await p.evaluate(() => { loadActive(SAVED); });
   // long metadata
-  await check('info-longcal', 'SENS.prof[0].calId = "Druck Leicester reissued certificate CA-5880156-2026 rev B"; SENS.prof[0].calDate = "09 Oct 2026"; ' + go('info'));
+  await check('info-longcal', 'SENS.prof[0].calId = "Druck Leicester reissued certificate CA-5880156-2026 rev B"; SENS.prof[0].calDate = "09 Oct 2026"; ' + go('sensor'));
   await check('sensor-longcal', go('sensor'));
   await check('caldetail', 'calDetail()');
   await p.evaluate(() => { loadActive(SAVED); });
@@ -65,6 +65,6 @@ module.exports = async (p, h) => {
   await check('cfg-revert', 'PREV = JSON.parse(JSON.stringify(SAVED)); PREV.rev = 41; SAVED.rev = 42; ' + go('cfg'));
   await h.tap('Load settings', true); await check('cfg-load-list', 'updateUI()');
   await p.evaluate(() => { closeOverlay(); PREV = null; SAVED = defaultCfg(); });
-  await check('sensor-import', go('sensor') + ' DRAFT.clear();'); await h.tap('Import from PC'); await check('import-info', 'updateUI()');
+
   console.log(n ? n + ' states with findings' : 'no findings');
 };

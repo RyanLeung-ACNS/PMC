@@ -80,6 +80,11 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Settings pages: Help, Save settings, Discard changes. Review and save: Unsaved changes (one list), Last saved, Configuration, Load settings. The strip says "N unsaved changes. Save settings to use."
 - Changes that take effect at once (serial PID/VALVE commands, Add/Remove sensor) count as unsaved changes until Save settings.
 
+## Menu tidy, 14 October 2026 (v62)
+- Menu: Trend, Faults and log, Calibrate valve, Calibrate sensor, Diagnostics, Settings. About this unit removed (firmware version moved to the Diagnostics strip); Live calibration renamed Calibrate sensor and opened from the Menu.
+- Zero valve renamed Calibrate valve (closes to the seat switch to find 0 %); NOT ZEROED / ZEROING / Zeroed read NOT CALIBRATED / CALIBRATING / Calibrated. Valve setup tab Zero renamed Calibrate.
+- Pressure sensor page: Import from PC removed.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:
