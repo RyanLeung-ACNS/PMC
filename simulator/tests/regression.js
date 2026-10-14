@@ -10,8 +10,8 @@ module.exports = async (p, h) => {
   await ev(() => { command('LIM SIM NORMAL'); ack(); bootHomed(); });
   r = await ev(() => { const res = importCfg({ MOT: { run: -100 } }, 'bad'); return { res, d: DRAFT.size }; });
   ok(r.res === false && r.d === 0, 'import with run speed -100 refused, nothing drafted');
-  r = await ev(() => { DRAFT.clear(); DRAFT.set('MOT.start', 900); DRAFT.set('MOT.run', 500); DRAFT.set('P.Kp', 9); const res = applyAll(); return { res, kp: P.Kp, d: DRAFT.size, why: C.refusal }; });
-  ok(r.res === false && r.kp === 4 && r.d === 3, 'invalid change set rejected whole, nothing applied, drafts kept: ' + r.why);
+  r = await ev(() => { DRAFT.clear(); DRAFT.set('MOT.start', 900); DRAFT.set('MOT.run', 500); DRAFT.set('P.Kp', 9); const rev = SAVED.rev; const res = saveAll(); return { res, kp: P.Kp, d: DRAFT.size, why: C.refusal, same: rev === SAVED.rev }; });
+  ok(r.res === false && r.kp === 4 && r.d === 3 && r.same, 'invalid change set rejected whole, nothing applied, drafts kept: ' + r.why);
   r = await ev(() => { DRAFT.clear(); command('PID SPMAX 0.1'); return [...document.querySelectorAll('#con div')].slice(-1)[0].textContent; });
   ok(/^ERR/.test(r), 'serial PID SPMAX below Target min refused: ' + r);
   r = await ev(() => { DRAFT.clear(); bootHomed(); BENCH.plumb = 'air'; BENCH.air = 0.01; const q = JSON.parse(JSON.stringify(SENS.prof[0])); q.table = [[q.table[0][0] + 0.005, 0], q.table[1]]; SENS.prof[0] = q;

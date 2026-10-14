@@ -57,7 +57,7 @@ module.exports = async (p, h) => {
     'dlg-calvac': go('cal') + ' calVacAsk()', 'dlg-limithit': go('valve') + ' bootHomed(); M.pos = 5000; limitHit()', 'dlg-override': go('comm') + ' limOverrideAsk()', 'dlg-discard': 'DRAFT.set("P.Kp", 6); P.Ti = 0.3; confirmDiscard()', 'dlg-save': 'saveAsk()',
     'dlg-target-big': 'DRAFT.clear(); loadActive(SAVED); ' + go('ctrl') + ' keypadSP()' };
   for (const [k, js] of Object.entries(dialogs)) { await check(k, js); if (k === 'dlg-target-big') { await h.keys('500'); await h.tap('Set'); await check('dlg-target-big2', 'updateUI()'); } }
-  await check('difflist', 'closeOverlay(); for (const f of allFields().filter(f => f.min != null).slice(0, 12)) DRAFT.set(f.id, f.max); diffList("Unapplied changes", cfgDiffs().nd, "Apply changes puts them in use.")');
+  await check('difflist', 'closeOverlay(); for (const f of allFields().filter(f => f.min != null).slice(0, 12)) DRAFT.set(f.id, f.max); diffList("Unsaved changes", cfgDiffs().nd, "Save settings puts them in use and keeps them.")');
   await check('comm-override', 'closeOverlay(); LIM.override = true; ' + go('comm'));
   await check('ctrl-override', go('ctrl') + ' C.mode = "MANUAL";');
   await p.evaluate(() => { LIM.override = false; });

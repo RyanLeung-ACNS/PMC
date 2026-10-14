@@ -297,8 +297,8 @@ dm<sub>L</sub>/dt = &#7745;<sub>in</sub> &minus; &#7745;<sub>evap</sub><br>
 <li>Switch to MANUAL, then Valve: Enter position, -1 % / +1 %, Hold to close or Hold to open. The strip in row 3 says what the valve is doing.</li>
 <li>STOP in AUTO: header STOPPED, status line says the valve was not commanded closed. Tap the status line for the fault detail; Reset fault returns to MANUAL, not AUTO.</li>
 <li>Untick Druck connected: F-01. Reset fault is refused until the Druck is back.</li>
-<li>Menu &gt; Settings &gt; Control tuning. Change the gain: violet edge (unapplied). Apply changes: grey edge (in use, not saved). Drafts stay when moving between pages. Reboot loses applied changes; Save settings keeps them (revision goes up).</li>
-<li>Laptop panel: send the s/n 5880211 profile (table). Settings &gt; Pressure sensor &gt; Sensor in use: pick it, Apply. The reading changes because the table is for a different sensor. Review and save &gt; Restore saved, Apply changes puts it back.</li>
+<li>Menu &gt; Settings &gt; Control tuning. Change the gain: violet edge (not saved yet). Save settings puts it in use and in flash (revision goes up); Review and save &gt; Load settings &gt; Previous save is the undo.</li>
+<li>Laptop panel: send the s/n 5880211 profile (table). Settings &gt; Pressure sensor &gt; Sensor in use: pick it, Save settings. The reading changes because the table is for a different sensor. Review and save &gt; Load settings &gt; Previous save, Save settings puts it back.</li>
 <li>Settings &gt; Pressure sensor &gt; Live calibration: untick Pumped line on the bench panel... capture vacuum near 0 mbar and air at the barometer reading; New cal shows the result before Apply. A small negative reading after drift is shown as it is, with no fault.</li>
 <li>In AUTO, turn the helium flow off: F-16 after about 60 s. Turn the pump off instead: F-17. Untick the drive: F-10.</li>
 <li>Bench panel Force open, then reference: F-09. Force closed: F-07. Valve setup &gt; Motor direction Reversed, Apply, reference: F-07.</li>
@@ -364,7 +364,6 @@ function loadActive(cfg) {
 }
 function cfgDirty() { const a = cfgCore(), b = SAVED; return JSON.stringify(a.P) !== JSON.stringify(Object.assign({}, DEF_P, b.P)) || JSON.stringify(a.MOT) !== JSON.stringify(Object.assign({}, DEF_MOT, b.MOT)) || JSON.stringify(a.sens) !== JSON.stringify(b.sens); }
 function saveCfg() {
-  if (DRAFT.size) return refuse('Apply or discard the draft first (' + DRAFT.size + ' not applied)');
   const c = cfgCore(), next = Object.assign({ name: SAVED.name, rev: SAVED.rev + 1, savedAt: t }, c);
   // v50 (review 9 Oct): a failed write is a failed save; SAVED changes only once the write has succeeded.
   try { if (SIM_FLASH_FAIL) throw new Error('simulated flash write failure'); localStorage.setItem(CFG_KEY, JSON.stringify(next)); localStorage.setItem(CFG_KEY + '-prev', JSON.stringify(SAVED)); }
@@ -1716,8 +1715,8 @@ function buildInfo() {
 const SET_PAGES = ['comm', 'sensor', 'cal', 'motor', 'tune', 'cfg'];
 function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 function confirmDiscard(then) {
-  const n = DRAFT.size; if (!n) return refuse('No unapplied changes');
-  confirmBox('Discard ' + plural(n, 'unapplied change') + '? Settings in use are not affected.', 'Discard changes', '', () => { DRAFT.clear(); ev('CFG', 'Unapplied changes discarded (' + n + ')'); msg('Unapplied changes discarded.', 'info'); if (then) then(); });
+  const n = DRAFT.size; if (!n) return refuse('No unsaved changes');
+  confirmBox('Discard ' + plural(n, 'unsaved change') + '? Settings in use are not affected.', 'Discard changes', '', () => { DRAFT.clear(); ev('CFG', 'Unapplied changes discarded (' + n + ')'); msg('Unapplied changes discarded.', 'info'); if (then) then(); });
 }
 
 /* ---- Settings fields: edit -> apply -> save (UI/UX review item 7) ------- */
@@ -1756,7 +1755,7 @@ function cfgProblem(fs) {
   if (pv('MOT.start') > pv('MOT.run')) return 'Start speed must not exceed Run speed';
   return null;
 }
-function applyFields(fs, moveTarget) {
+function applyFields(fs, moveTarget, then) {
   if (!fs.length) return refuse('Nothing to apply');
   for (const f of fs) { const e = f.check && f.check(DRAFT.get(f.id)); if (e) return refuse(f.cap + ': ' + e); }
   const bad = cfgProblem(fs); if (bad) return refuse('Not applied: ' + bad);
@@ -1766,7 +1765,7 @@ function applyFields(fs, moveTarget) {
   const prof = lim('S.prof'), lo = 0, hi = prof[lim('S.active')].fs;
   if ((C.SP < lo || C.SP > hi) && !moveTarget) {
     const to = clamp(C.SP, lo, hi);
-    confirmBox('The target ' + C.SP.toFixed(1) + ' mB is outside the new limits ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + '. Apply and move the target to ' + to.toFixed(1) + ' mB?' + (C.mode === 'AUTO' ? ' AUTO will drive to it.' : ''), 'Apply', 'act', () => applyFields(fs, true));
+    confirmBox('The target ' + C.SP.toFixed(1) + ' mB is outside the new limits ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + '. Apply and move the target to ' + to.toFixed(1) + ' mB?' + (C.mode === 'AUTO' ? ' AUTO will drive to it.' : ''), 'Save', 'act', () => applyFields(fs, true, then));
     return false;
   }
   const spWas = C.SP;
@@ -1780,9 +1779,8 @@ function applyFields(fs, moveTarget) {
   }
   fs.forEach(f => DRAFT.delete(f.id));
   if (moveTarget && (C.SP < 0 || C.SP > pMax())) { C.SP = clamp(C.SP, 0, pMax()); C.convStart = t; C.inBandSince = null; words.push('target ' + spWas.toFixed(1) + ' to ' + C.SP.toFixed(1) + ' mB'); }
-  ev('CFG', 'Applied, not saved: ' + words.join('; '));
-  msg('Applied ' + plural(fs.length, 'change') + '. In use now; lost at restart unless saved.', 'info');
-  return true;
+  ev('CFG', 'Changed: ' + words.join('; '));
+  return then ? then() : true;
 }
 // Sensor fields act on the profile that will be in use after Apply.
 function sIdx() { return DRAFT.has('S.active') ? DRAFT.get('S.active') : SENS.active; }
@@ -1836,7 +1834,7 @@ function fullTravelEdit(f) {
 function editField(f) {
   if (f.edit) return f.edit(f);
   if (f.kind === 'choice') return profileList(f);
-  if (f.kind === 'toggle') { const cur = fv(f), nv = f.id === 'P.KDIR' ? (cur === 1 ? -1 : 1) : (cur ? 0 : 1); return confirmBox(f.ask ? f.ask(nv) : 'Set ' + f.cap.toLowerCase() + ' to ' + fmtF(f, nv) + '? Unapplied until Apply changes.', 'Change', 'act', () => setDraft(f, nv)); }
+  if (f.kind === 'toggle') { const cur = fv(f), nv = f.id === 'P.KDIR' ? (cur === 1 ? -1 : 1) : (cur ? 0 : 1); return confirmBox(f.ask ? f.ask(nv) : 'Set ' + f.cap.toLowerCase() + ' to ' + fmtF(f, nv) + '? Used once saved.', 'Change', 'act', () => setDraft(f, nv)); }
   keypad({ title: f.cap + (f.unit ? ', ' + f.unit : ''), now: fmtF(f, f.get()), saved: fmtF(f, f.saved()), min: f.min, max: f.max, dec: f.dec === 0 ? 0 : undefined,
     info: 'Range ' + f.min + ' to ' + f.max, onSet: v => { const e = f.check && f.check(v); if (e && !/MANUAL|stop|finish/.test(e)) return refuse(e); setDraft(f, f.dec === 0 ? Math.round(v) : v); return true; } });
 }
@@ -1854,20 +1852,23 @@ function fieldCard(par, f, x, y, w) {
   u.el = e.c;
   return u;
 }
-// Apply changes applies the whole unapplied change set, checked together, all or nothing. Save settings writes the whole
-// configuration in use. Apply never turns into Save; each keeps its place and name.
-function applyAll() { const fs = allFields().filter(f => DRAFT.has(f.id)); return fs.length ? applyFields(fs) : refuse('No unapplied changes'); }
-function saveAsk() {
-  if (!cfgDirty()) return refuse('Nothing to save: in use matches saved');
-  const n = cfgDiffs().ns.length, d = DRAFT.size;
-  confirmBox('Save the settings in use as rev ' + (SAVED.rev + 1) + '? Saves the whole configuration (' + plural(n, 'change') + ' since rev ' + SAVED.rev + ').' + (d ? ' Unapplied changes are not saved.' : ''), 'Save settings', 'act', saveCfg);
+// Ryan (14 Oct, decision card): one step. Save settings puts the edits in use, checked together, all or nothing, and
+// writes the whole configuration to flash as the next revision. Load settings > Previous save is the undo.
+function saveAll() {
+  const fs = allFields().filter(f => DRAFT.has(f.id));
+  return fs.length ? applyFields(fs, false, saveCfg) : saveCfg();
 }
-// v52: slot 1 Help (or Discard changes on Configuration), slot 2 Apply changes, slot 3 Save settings on every
-// settings page. The counts are in the status strip, which opens Configuration.
+function unsavedCount() { return DRAFT.size + (cfgDirty() ? cfgDiffs().ns.length : 0); }
+function saveAsk() {
+  const n = unsavedCount();
+  if (!n) return refuse('Nothing to save');
+  confirmBox('Save ' + plural(n, 'change') + ' as rev ' + (SAVED.rev + 1) + '? They are used now and after restart. Rev ' + SAVED.rev + ' stays as Previous save.', 'Save settings', 'act', saveAll);
+}
+// Settings pages: slot 1 Help (Discard changes on Review and save), slot 2 Save settings, slot 3 Discard changes.
 function cfgButtons(s, slot0) {
-  const bA = side(s, 1, lab('Apply changes'), applyAll, 'act');
-  const bS = side(s, 2, lab('Save settings'), saveAsk);
-  return () => { tog(bA, 'dis', !DRAFT.size); tog(bS, 'dis', !cfgDirty()); };
+  const bS = side(s, 1, lab('Save settings'), saveAsk, 'act');
+  const bD = slot0 ? null : side(s, 2, lab('Discard changes'), () => confirmDiscard());
+  return () => { tog(bS, 'dis', !DRAFT.size && !cfgDirty()); if (bD) tog(bD, 'dis', !DRAFT.size); };
 }
 function cfgSide(s, page, help) {
   navBtn(s, 361, RY[0], 109, RH, 'Help', () => textView(TITLES[page], help()));
@@ -1881,9 +1882,8 @@ function cfgStatus(page, here) {   // status strip: change counts, tap opens Con
   Object.defineProperty(screens[page], 'footCol', { get: () => DRAFT.size ? COL.draft : cfgDirty() ? COL.grey : null, configurable: true });
 }
 function cfgFoot() {
-  const d = DRAFT.size, ns = cfgDirty() ? cfgDiffs().ns.length : 0;
-  if (!d && !ns) return 'All settings saved, ' + cfgLabel() + '.';
-  return [d ? plural(d, 'unapplied change') : '', ns ? plural(ns, 'applied change') + ' not saved' : ''].filter(Boolean).join(', ') + '.';
+  const n = unsavedCount();
+  return n ? plural(n, 'unsaved change') + '. Save settings to use.' : 'All settings saved, ' + cfgLabel() + '.';
 }
 // Help for a settings page: one line per setting from its field description, plus any page notes.
 function fieldHelp(ids, notes) { return (notes || []).concat(ids.map(id => { const f = allFields().find(q => q.id === id); return fLabel(f) + ': ' + (f.info || '') + '.'; })); }
@@ -1935,8 +1935,8 @@ function buildSensor() {
   const bCal = navBtn(s, 10, RY[2], 226, RH, '', () => show('cal'));
   btn(s, 244, RY[2], 109, RH, lab('Import from PC'), () => textView('Import from PC', [
     'Profiles and calibration tables can also be made on the PC and sent over USB or Ethernet (bench panel: Laptop configuration tool).',
-    'A revised calibration arrives as an unapplied change; a new sensor is added to Sensor in use but not selected.']));
-  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active'], ['Add sensor: type its serial number and pick its range in psi. It starts uncalibrated: select it, Apply changes, then Live calibration.',
+    'A revised calibration arrives as an unsaved change; a new sensor is added to Sensor in use but not selected.']));
+  const sideU = cfgSide(s, 'sensor', () => fieldHelp(['S.active'], ['Add sensor: type its serial number and pick its range in psi. It starts uncalibrated: select it, Save settings, then Live calibration.',
     'Remove sensor: removes a sensor that is not in use.', 'Calibration: tap for its date, points and state.']));
   screens.sensor.update = () => {
     u.forEach(f => f()); sideU();
@@ -1944,7 +1944,7 @@ function buildSensor() {
     const ct = q.bench && q.calDate ? 'Two-point, ' + q.calDate : q.calId || (q.table ? 'Table' : 'Not calibrated');
     if (src.v.textContent !== ct) { set(src.v, ct); if (fits(src.v)) delete src.v.dataset.trunc; else src.v.dataset.trunc = 'detail'; }   // long: "...", full text in the detail view
     setc(src.v, DRAFT.has('S.prof') ? COL.draft : COL.text);
-    seth(bCal, navLab('Live calibration', CAP.pt ? 'Capturing' : DRAFT.has('S.prof') ? 'Not applied' : 'For ' + psiName(SENS.prof[SENS.active]) + ', s/n ' + SENS.prof[SENS.active].serial));
+    seth(bCal, navLab('Live calibration', CAP.pt ? 'Capturing' : DRAFT.has('S.prof') ? 'Not saved' : 'For ' + psiName(SENS.prof[SENS.active]) + ', s/n ' + SENS.prof[SENS.active].serial));
     tog(bRm, 'dis', SENS.prof.length < 2);
   };
 }
@@ -2019,8 +2019,8 @@ function calCaptureTick() {
     q.calId = 'Bench two-point'; q.calDate = stamp(t).slice(0, 11);
   }
   setDraft(PROF_FIELD, list);
-  ev('CAL', name + ' point ' + ptText(b) + (q.table && q.bench.vac && q.bench.air ? ', two-point table unapplied' : ''));
-  msg(name + ' point held. ' + (q.bench.vac && q.bench.air ? 'Apply changes to use it.' : 'Capture the ' + (pt === 'vac' ? 'air' : 'vacuum') + ' point next.'), 'info');
+  ev('CAL', name + ' point ' + ptText(b) + (q.table && q.bench.vac && q.bench.air ? ', two-point table not saved' : ''));
+  msg(name + ' point held. ' + (q.bench.vac && q.bench.air ? 'Save settings to use it.' : 'Capture the ' + (pt === 'vac' ? 'air' : 'vacuum') + ' point next.'), 'info');
 }
 function calVacAsk() {
   confirmBox('Pump the sensor down to vacuum first. Capture takes 10 readings and calls them 0 mB.', 'Capture', 'act', () => calCapture('vac', 0),
@@ -2044,7 +2044,7 @@ function buildCal() {
     'Capture vacuum: pump the sensor down, then Capture. Nothing to type: the point is 0 mB (Not 0 mB if a gauge reads more).',
     'Capture air: vent the sensor to the room, then type the lab barometer reading in mB, for example 1013.2.',
     'Each capture averages 10 readings. Either point can be redone on its own; the other is kept.',
-    'Once both are held the new calibration is an unapplied change: check New cal, then Apply changes, then Save settings.']);
+    'Once both are held the new calibration is an unsaved change: check New cal, then Save settings.']);
   screens.cal.update = () => {
     sideU();
     const ok = BENCH.druck && BENCH.exc, q = q0(), d = DRAFT.has('S.prof');
@@ -2059,7 +2059,7 @@ function buildCal() {
 // Calibration of the sensor that will be in use: identity, date, kind and state on separate lines.
 function calState(q) {
   const inUse = SENS.prof.find(x => x.serial === q.serial), sv = SAVED.sens.prof.find(x => x.serial === q.serial);
-  if (DRAFT.has('S.prof') && !same(inUse, q)) return 'Unapplied change';
+  if (DRAFT.has('S.prof') && !same(inUse, q)) return 'Not saved';
   return sv && same(sv, inUse) ? 'Saved' : 'Applied, not saved';
 }
 function calDetail() {
@@ -2130,17 +2130,16 @@ function buildCfg() {
   // v51 (review 9 Oct): the review page. Unapplied changes and Applied, not saved are shown separately; each opens a
   // list by label and unit. Apply changes and Save settings sit where they sit on every settings page.
   const c2 = cols(2);
-  const nApp = editCard(s, c2[0][0], RY[0], c2[0][1], RH, 'Unapplied changes', () => diffList('Unapplied changes', cfgDiffs().nd, 'Apply changes puts them in use.'));
-  const nSav = editCard(s, c2[1][0], RY[0], c2[1][1], RH, 'Applied, not saved', () => diffList('Applied, not saved', cfgDiffs().ns, 'In use now; lost at restart until saved.'));
-  const name = infoCard(s, c2[0][0], RY[1], c2[0][1], 'Configuration in use');
-  const saved = infoCard(s, c2[1][0], RY[1], c2[1][1], 'Last saved');
+  const nApp = editCard(s, c2[0][0], RY[0], c2[0][1], RH, 'Unsaved changes', () => { const d = cfgDiffs(); diffList('Unsaved changes', d.nd.concat(cfgDirty() ? d.ns : []), 'Save settings puts them in use and keeps them.'); });
+  const saved = infoCard(s, c2[1][0], RY[0], c2[1][1], 'Last saved');
+  const name = infoCard(s, c2[0][0], RY[1], c2[0][1], 'Configuration');
   // Ryan (14 Oct): Restore saved, Load defaults and Revert were unclear side by side. One Load settings button lists the
   // three sources by what they are; any of them comes in as unapplied changes (review, Apply, Save).
   const loadFrom = (name, val) => {
     let n = 0; allFields().forEach(f => { const v = val(f); if (v !== undefined && v !== null && !same(fv(f), v)) { setDraft(f, JSON.parse(JSON.stringify(v))); n++; } });
-    return n ? msg(name + ' loaded as ' + plural(n, 'unapplied change') + '. Apply changes to use them.', 'info') : refuse('Already the same as ' + name.toLowerCase());
+    return n ? msg(name + ' loaded as ' + plural(n, 'unsaved change') + '. Save settings to use them.', 'info') : refuse('Already the same as ' + name.toLowerCase());
   };
-  const bLoad = btn(s, 10, RY[2], 226, RH, lab('Load settings', 'saved, previous or defaults'), () => pickList('Load which settings? (as unapplied changes)',
+  const bLoad = btn(s, 10, RY[2], 226, RH, lab('Load settings', 'saved, previous or defaults'), () => pickList('Load which settings? (as unsaved changes)',
     [['Last save, rev ' + SAVED.rev, 'saved']].concat(PREV ? [['Previous save, rev ' + PREV.rev, 'prev']] : []).concat([['Factory defaults', 'def']]), null, k =>
       k === 'saved' ? loadFrom('Rev ' + SAVED.rev, f => f.saved()) : k === 'prev' ? loadFrom('Rev ' + PREV.rev, f => f === PROF_FIELD ? PREV.sens.prof : f.fromCfg && f.fromCfg(PREV)) : loadFrom('Factory defaults', f => f.def && f.def())));
   const bDis = side(s, 0, lab('Discard changes'), () => confirmDiscard());
@@ -2149,9 +2148,8 @@ function buildCfg() {
   screens.cfg.update = () => {
     u();
     name.set(SAVED.name);
-    const d = cfgDiffs(), ns = cfgDirty() ? d.ns.length : 0;
-    set(nApp.v, d.nd.length ? plural(d.nd.length, 'change') : 'None'); setc(nApp.v, d.nd.length ? COL.draft : COL.text);
-    set(nSav.v, ns ? plural(ns, 'change') : 'None');
+    const n = unsavedCount();
+    set(nApp.v, n ? plural(n, 'change') : 'None'); setc(nApp.v, n ? COL.draft : COL.text);
     saved.set('rev ' + SAVED.rev + (SAVED.savedAt ? ', ' + stamp(SAVED.savedAt).slice(0, 6) + ' ' + clock(SAVED.savedAt).slice(0, 5) : ''));
     tog(bDis, 'dis', !DRAFT.size);
   };

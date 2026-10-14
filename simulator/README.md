@@ -75,6 +75,11 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Pressure trend renamed Trend (it shows the valve too). The range is up and down buttons either side of a Range card, cycling 1, 2, 5, 10, 30 min and 1 hour; one hour of samples is kept.
 - Diagnostics "Past switch" renamed "Beyond switch": closing steps taken after the valve passed the closed-switch point (the switch did not stop it, or Limit override). Should stay 0.
 
+## One-step save, 14 October 2026 (v61)
+- Ryan chose one step (decision card): Apply changes is gone. Edits are violet until Save settings, which checks them together (all or nothing), puts them in use and writes the whole configuration to flash as the next revision. The revision before stays as Load settings > Previous save, the undo.
+- Settings pages: Help, Save settings, Discard changes. Review and save: Unsaved changes (one list), Last saved, Configuration, Load settings. The strip says "N unsaved changes. Save settings to use."
+- Changes that take effect at once (serial PID/VALVE commands, Add/Remove sensor) count as unsaved changes until Save settings.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:

@@ -39,11 +39,10 @@ module.exports = async (p, h) => {
   await tap('Control tuning', true); await tap('Target band, mB', true); await keys('0.2'); await tap('Set'); await tap('Back');
   await tap('Valve setup', true); await tap('Drive'); await tap('Run speed, steps/s', true); await keys('500'); await tap('Set'); await shot('wf4-2-drive-draft'); await tap('Back');
   await tap('Review and save', true); await shot('wf4-3-config');
-  await tap('Unapplied changes', true); const list = (await st()).ov; await shot('wf4-4-list');
+  await tap('Unsaved changes', true); const list = (await st()).ov; await shot('wf4-4-list');
   ok(/Gain/.test(list) && /Target band/.test(list) && /Run speed/.test(list), 'WF4 review lists all three by label and page'); await tap('Close');
-  await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF4 applied together, not saved');
-  await shot('wf4-5-applied'); await tap('Save settings'); await shot('wf4-6-save-ask'); await tap('Save settings');
-  o = await st(); ok(o.rev === 2 && !o.dirty, 'WF4 saved as rev 2');
+  await tap('Save settings'); await shot('wf4-6-save-ask'); await tap('Save settings');
+  o = await st(); ok(o.rev === 2 && !o.dirty && !o.drafts.length, 'WF4 one step: Save settings puts all edits in use and saves rev 2');
   await ev(() => document.getElementById('reboot').click());
   o = await ev(() => [P.Kp, P.band, MOT.run, SAVED.rev]); ok(o.join() === '6,0.2,500,2', 'WF4 kept after restart: ' + o.join(', '));
 
@@ -51,10 +50,8 @@ module.exports = async (p, h) => {
   await ev(() => { bootHomed(); show('sensor', false, true); });
   await ev(() => { const q = JSON.parse(JSON.stringify(SENS.prof[0])); q.atm = 1.06; q.calId = 'Druck reissue CA-5880156'; q.calDate = '09 Oct 2026'; importCfg({ sens: { prof: [q] } }, 'PC tool'); });
   await shot('wf5-1-sensor-imported'); await tap('Calibration', true); o = await st(); await shot('wf5-2-detail');
-  ok(/Druck reissue/.test(o.ov) && /Unapplied change/.test(o.ov), 'WF5 detail shows new identity, state Unapplied change'); await tap('Close');
-  await tap('Apply changes'); await ev(() => show('info', false, true)); await shot('wf5-3-info-applied');
-  o = await ev(() => document.querySelector('#dev').innerText); ok(/Druck reissue/.test(o) && /Not saved/.test(o), 'WF5 System information: identity, date, Not saved apart');
-  await ev(() => show('cfg', false, true)); await tap('Save settings'); await tap('Save settings');
+  ok(/Druck reissue/.test(o.ov) && /Not saved/.test(o.ov), 'WF5 detail shows new identity, state Not saved'); await tap('Close');
+  await tap('Save settings'); await tap('Save settings');
   await ev(() => show('info', false, true)); await shot('wf5-4-info-saved'); o = await ev(() => calState(SENS.prof[SENS.active])); ok(o === 'Saved', 'WF5 calibration saved');
 
   // 6. STOP and fault recovery, including during referencing
@@ -74,10 +71,10 @@ module.exports = async (p, h) => {
   ok(o.rev === rev0 && o.dirty && /Save failed/.test(o.foot + why), 'WF7 failed save reported, rev unchanged, still not saved: ' + JSON.stringify([o.rev, o.dirty, o.foot, why]));
   await ev(() => document.getElementById('b-flash').click());
   await tap('Integral time, min', true); await keys('0.4'); await tap('Set');
-  await tap('Apply changes'); const kp = await ev(() => P.Kp); await tap('Save settings'); await tap('Save settings');
+  await tap('Save settings'); await tap('Save settings'); const kp = await ev(() => P.Kp);
   await ev(() => { P.Kp = 3; updateUI(); }); await tap('Save settings'); await tap('Save settings'); o = await st();
-  await ev(() => show('cfg', false, true)); await tap('Load settings', true); await shot('wf7-2-load-list'); await tap('Previous save', true); await shot('wf7-2-revert'); await tap('Apply changes'); o = await st();
-  const kpNow = await ev(() => P.Kp); ok(kpNow === kp && o.dirty, 'WF7 Load settings > Previous save loads the previous rev (gain ' + kp + '), applied, not saved');
+  await ev(() => show('cfg', false, true)); await tap('Load settings', true); await shot('wf7-2-load-list'); await tap('Previous save', true); await shot('wf7-2-revert'); await tap('Save settings'); await tap('Save settings'); o = await st();
+  const kpNow = await ev(() => P.Kp); ok(kpNow === kp && !o.dirty, 'WF7 Load settings > Previous save, then Save settings, brings back gain ' + kp);
   // 8. Live calibration: capture vacuum and air through the board, check New cal, apply and save
   await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('comm'); updateUI(); });
   await tap('Pressure sensor', true); await tap('Live calibration', true); await shot('wf8-1-cal');
@@ -87,8 +84,7 @@ module.exports = async (p, h) => {
   await tap('Capture air'); await shot('wf8-3-air-keypad'); await keys('1013.4'); await tap('Set'); await run(30); await shot('wf8-3-both');
   let c = await ev(() => { const q = fv(PROF_FIELD)[sIdx()]; return { kind: calKind(q), nw: calP(C.mv, q), old: PV }; });
   ok(c.kind === 'two-point bench' && Math.abs(c.nw - 1013.4) < 0.3, 'WF8 two-point table reads ' + c.nw.toFixed(2) + ' mB at 1013.4 (in use ' + c.old.toFixed(1) + ')');
-  await tap('Apply changes'); o = await st(); ok(!o.drafts.length && o.dirty, 'WF8 Apply uses the new calibration, not saved yet');
-  await tap('Save settings'); await tap('Save settings'); o = await st(); ok(!o.dirty, 'WF8 Save settings writes it');
+  await tap('Save settings'); await tap('Save settings'); o = await st(); ok(!o.dirty && !o.drafts.length, 'WF8 Save settings puts the new calibration in use and saves it');
   await ev(() => { BENCH.plumb = 'line'; });
 
   // 9. Add a sensor on the board, then remove it
