@@ -50,6 +50,7 @@ Valve motor (Stepper 3):
 | `MOT STOP` | Stop (coils stay on if hold is on) |
 | `MOT OFF` | Stop and de-energise the coils |
 | `MOT ZERO` | Call the current position 0 |
+| `MOT OVERRIDE` | Let the next move close past an open limit switch (one move, not saved); `MOT OVERRIDE OFF` cancels |
 | `MOT RATE <16-1000>` | Run rate, steps/s |
 | `MOT START <16-1000>` | Start rate, steps/s |
 | `MOT ACCEL <10-20000>` | Acceleration, steps/s² |

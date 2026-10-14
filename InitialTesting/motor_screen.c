@@ -354,11 +354,14 @@ static void refresh(void)
         set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed. Stop off, display only" :
                               lim == LIMIT_OPEN ? "Limit switch OPEN. Stop off, display only" :
                               "Limit switch not read yet");
+    else if (stepper3_override() && lim != LIMIT_CLOSED)
+        set_text(limit_label, "OVERRIDE: next close ignores the open limit switch");
     else
         set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed: closing allowed" :
                               lim == LIMIT_OPEN ? "Limit switch OPEN: closing blocked (at limit or wire broken)" :
                               "Limit switch not read yet: closing blocked");
-    set_color(limit_label, lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
+    set_color(limit_label, lim == LIMIT_CLOSED ? COL_OK : stepper3_override() ? COL_WARN :
+                           lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
 }
 
 static void refresh_timer_cb(lv_timer_t *t)

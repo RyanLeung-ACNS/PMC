@@ -11,6 +11,7 @@
 #include "pmc_config.h"
 #include "motor_screen.h"
 #include "limit.h"
+#include "stepper3.h"
 #include "fixed.h"
 
 lvgl_main_screen_ui_t lvgl_main_screen_ui;
@@ -280,6 +281,10 @@ static void limit_timer_cb(lv_timer_t *t)
 {
     (void)t;
     limit_state_t lim = limit_state();
+    if (stepper3_override()) {
+        set_chip(chip_lim, "Limit OVR", COL_WARN);
+        return;
+    }
     set_chip(chip_lim, lim == LIMIT_CLOSED ? "Limit OK" : lim == LIMIT_OPEN ? "Limit OPEN" : "Limit --",
              lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
 }

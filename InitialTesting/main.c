@@ -92,6 +92,7 @@ static bool help_command(const char *line)
         "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
         "  MOT STOP | MOT OFF         stop / stop and de-energise",
         "  MOT ZERO                   call this position 0",
+        "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
         "  MOT RATE <16-1000>         run rate, steps/s",
         "  MOT START <16-1000>        start rate, steps/s",
         "  MOT ACCEL <10-20000>       steps/s^2",

@@ -144,6 +144,8 @@ void stepper3_zero(void) { m_pos = 0; }
 stepper3_stop_t stepper3_last_stop(void) { return m_stop; }
 bool stepper3_limit_open(void) { return limit_state() != LIMIT_CLOSED; }
 bool stepper3_limit_fitted(void) { return true; }
+bool stepper3_override(void) { return false; }
+void stepper3_override_arm(void) {}
 bool stepper3_set_rate(uint32_t v) { m_rate = v; return true; }
 bool stepper3_set_start(uint32_t v) { m_start = v; return true; }
 bool stepper3_set_accel(uint32_t v) { m_accel = v; return true; }
