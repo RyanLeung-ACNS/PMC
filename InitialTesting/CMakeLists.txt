@@ -8,9 +8,11 @@ endif()
 
 include(mikroeUtils)
 
-# Release builds optimise for size (-Os) rather than CMake's -O3: about 400 KB
-# of flash against 580 KB at -O3 and 650 KB for Debug (0.3.33, tools/xbuild),
-# and the GUI port needs the room. Debug stays unoptimised (-O0).
+# Both NECTO build types optimise for size (-Os): Debug 431 KB of flash,
+# Release 403 KB, against 650 KB at CMake's Debug -O0 and 578 KB at its
+# Release -O3 (0.3.33, tools/xbuild). The GUI port needs the room, and an
+# unoptimised build redraws slowly. Debug keeps -g and asserts.
+set(CMAKE_C_FLAGS_DEBUG "-g -Os")
 set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
