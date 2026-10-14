@@ -958,7 +958,7 @@ function ctrlTick() {
 }
 function trendPush() {
   trend.push({ t, pv: PV, sp: C.SP, pos: C.ref ? pctOf(M.pos) : null, mech: pctMech(), auto: C.mode === 'AUTO' });
-  if (trend.length > 1900) trend.shift();
+  if (trend.length > 3700) trend.shift();   // one sample a second, 1 hour kept (Ryan, 14 Oct: 1 hour max)
 }
 function simTick() {
   t += DT;
@@ -1082,6 +1082,8 @@ function stripKind(box, kind, mark, dotCol) {
 const SYM = {
   LEFT: ['LV_SYMBOL_LEFT', '<path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
   RIGHT: ['LV_SYMBOL_RIGHT', '<path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
+  UP: ['LV_SYMBOL_UP', '<path d="M3 10l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
+  DOWN: ['LV_SYMBOL_DOWN', '<path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
   BACKSPACE: ['LV_SYMBOL_BACKSPACE', '<path d="M6 3h8v10H6L1.5 8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6l4 4M12 6l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'],
   WARNING: ['LV_SYMBOL_WARNING', '<path d="M8 1.5L15 14H1z" fill="currentColor"/><path d="M8 6v4" style="stroke:var(--symin,#fff)" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" style="fill:var(--symin,#fff)"/>'],
   UNLOCK: ['asset: lock_open_16 (image, not in LVGL fonts)', '<rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 5.8-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
@@ -1098,7 +1100,7 @@ function sym(n, px) { const z = px || 16; return '<i class="sym" data-lv="' + SY
 // with a latched fault. Shape, not colour, separates AUTO (filled) from the others (ring).
 const MODE_COL = { AUTO: '#C3CDD7', MANUAL: '#C3CDD7', 'NOT HOMED': '#C3CDD7', HOMING: '#C3CDD7', PAUSED: '#C3CDD7' };
 
-const TITLES = { menu: 'Menu', sensor: 'Pressure sensor', motor: 'Valve setup', tune: 'Control tuning', diag: 'Diagnostics', cfg: 'Review and save', faults: 'Faults and log', trend: 'Pressure trend', valve: 'Valve',
+const TITLES = { menu: 'Menu', sensor: 'Pressure sensor', motor: 'Valve setup', tune: 'Control tuning', diag: 'Diagnostics', cfg: 'Review and save', faults: 'Faults and log', trend: 'Trend', valve: 'Valve',
   ref: 'Zero valve', info: 'About this unit', comm: 'Settings', cal: 'Live calibration' };
 // Review item 1: "Home" meant both the main page and a physical move. The move is now "Reference valve".
 const MODE_WORD = { 'NOT HOMED': 'NOT ZEROED', HOMING: 'ZEROING', PAUSED: 'AUTO PAUSED', MANUAL: 'MANUAL', AUTO: 'AUTO' };
@@ -1625,7 +1627,7 @@ function buildMenu() {
   const tile = (c, r, label, fn) => navBtn(s, c2[c][0], RY[r], c2[c][1], RH, label, fn);
   // WP023 proposal S16 to S18: the Alarms tile carries the alarm state (s9.3.1 p50); Diagnostics is read only and
   // opens without the PIN (s3.1 p8, level 4 for troubleshooting); the footer keeps the process status (s6.7 p16).
-  tile(0, 0, 'Pressure trend', () => show('trend'));
+  tile(0, 0, 'Trend', () => show('trend'));   // Ryan (14 Oct): it shows the valve too
   const ba = tile(1, 0, 'Faults and log', () => show('faults'));
   tile(0, 1, 'Zero valve', () => show('ref'));
   tile(1, 1, 'About this unit', () => show('info'));
@@ -2109,7 +2111,7 @@ function buildDiag() {
   const g = (r, c, cap) => infoCard(s, c3[c][0], RY[r], c3[c][1], cap);
   ['Pressure sensor', 'Valve motor', 'Last move'].forEach((w, r) => st(mk(s, 10, RY[r], 80, RH, '', w), { fontSize: '16px', lineHeight: '18px', whiteSpace: 'normal', display: 'flex', alignItems: 'center', color: COL.muted }));
   const sig = g(0, 0, 'Signal, mV/V'), sup = g(0, 1, 'Supply, V'), raw = g(0, 2, 'Before cal, mB');
-  const pos = g(1, 0, 'Position, steps'), sw = g(1, 1, 'Closed switch'), over = g(1, 2, 'Past switch');
+  const pos = g(1, 0, 'Position, steps'), sw = g(1, 1, 'Closed switch'), over = g(1, 2, 'Beyond switch');
   const last = g(2, 0, 'Result'), dist = g(2, 1, 'Moved, steps'), took = g(2, 2, 'Took, s');
   screens.diag.foot = () => 'Read only. Board 23.5 \u00B0C. Link ' + (BENCH.link === 'eth' ? 'Ethernet' : 'USB') + '.';
   screens.diag.update = () => {
@@ -2242,9 +2244,15 @@ function buildTrend() {
   devCanvas.width = 686; devCanvas.height = 320;
   st(devCanvas, { position: 'absolute', left: '0', top: '0', width: '343px', height: '160px' });
   c.appendChild(devCanvas);
-  const wb = [[120, '2 min'], [600, '10 min'], [1800, '30 min']].map((w, i) => [side(s, i, lab(w[1]), () => { devWin = w[0]; }), w[0]]);
+  // Ryan (14 Oct): the range is up/down buttons cycling through a list, 1 hour at most.
+  const WINS = [[60, '1 min'], [120, '2 min'], [300, '5 min'], [600, '10 min'], [1800, '30 min'], [3600, '1 hour']];
+  const wi = () => Math.max(0, WINS.findIndex(w => w[0] === devWin));
+  const step = d => { devWin = WINS[(wi() + d + WINS.length) % WINS.length][0]; };
+  side(s, 0, sym('UP', 20), () => step(1));
+  const rng = infoCard(s, 361, RY[1], 109, 'Range');
+  side(s, 2, sym('DOWN', 20), () => step(-1));
   screens.trend.update = () => {
-    wb.forEach(([b, w]) => tog(b, 'on', devWin === w));
+    rng.set(WINS[wi()][1]);
     // S8 (R15; WP023 s8.12.7 p32, s6.3 p15): pens told apart by colour, width and dash; normal states in greys;
     // legend words match home (Pressure, Target, Valve). AUTO spans shaded light grey.
     drawChart(devCanvas, devWin, { pv: '#2D5877', sp: '#3F3F3F', pos: '#7B8794', mech: '#969EA6', grid: '#E3E9EF', text: '#546374', band: 'rgba(91,107,123,0.10)', font: 'Montserrat, sans-serif', solid: true, wp023: true }, 2, true);

@@ -30,4 +30,7 @@ module.exports = async (p, h) => {
   ok(/Set this point as 0/.test(r.t1) && r.kept === 5000 && r.seated === 0, 'limit hit asks: Skip keeps the count, Set as 0 % zeroes it');
   r = await ev(() => { closeOverlay(); bootHomed(); LIM.force = 'OPEN'; updateRaw(); for (let i = 0; i < 50; i++) simTick(); stopMotor(); C.msg = null; M.pos = 5000; const blocked = requestMove(M.pos - 1000) === false; LIM.override = true; const allowed = requestMove(M.pos - 1000) !== false; show('comm', false, true); C.msg = null; updateUI(); const foot = G.ftxt.textContent; stopMotor(); const ended = !LIM.override; LIM.force = 'NORMAL'; updateRaw(); closeOverlay(); return { blocked, allowed, foot, ended, act: LIM.active, f: [...C.faults.keys()], why: C.refusal }; });
   ok(r.blocked && r.allowed && /Limit override on/.test(r.foot), 'switch pressed blocks closing; Limit override allows it and the strip says so ' + JSON.stringify(r));
+  r = await ev(() => { show('trend', false, true); updateUI(); const up = () => [...document.querySelectorAll('#dev .b')].filter(b => b.offsetParent && b.querySelector('[data-lv="LV_SYMBOL_UP"]'))[0].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const seen = []; for (let i = 0; i < 7; i++) { updateUI(); seen.push(devWin); up(); } return { seen, title: G.title.textContent }; });
+  ok(r.title === 'Trend' && r.seen.join() === '600,1800,3600,60,120,300,600', 'Trend range cycles up to 1 hour and wraps: ' + r.seen.join());
 };

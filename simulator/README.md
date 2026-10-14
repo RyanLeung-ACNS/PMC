@@ -71,6 +71,10 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). Every hit (v59) asks "Set this point as 0 %?" with Skip (count kept) or Set as 0 %. Closing stays blocked while the switch is pressed.
 - Settings > Limit override (v59) lets the valve close past a pressed switch, for a stuck switch. It asks first and covers the next move only, ending when that move stops (as firmware MOT OVERRIDE, 0.3.32); while armed the status strip says so on every page.
 
+## Trend, 14 October 2026 (v60)
+- Pressure trend renamed Trend (it shows the valve too). The range is up and down buttons either side of a Range card, cycling 1, 2, 5, 10, 30 min and 1 hour; one hour of samples is kept.
+- Diagnostics "Past switch" renamed "Beyond switch": closing steps taken after the valve passed the closed-switch point (the switch did not stop it, or Limit override). Should stay 0.
+
 ## Tests
 
 `tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:
