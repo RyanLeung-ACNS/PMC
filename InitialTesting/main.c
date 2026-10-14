@@ -30,6 +30,7 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "cfg.h"
+#include "ui.h"
 #include "limit.h"
 #include "main_screen.h"
 
@@ -209,9 +210,14 @@ void application_init()
     // Initialize all available screens.
     init_screens();
 
+#if PMC_UI_NEW
+    // The new frame and Home; the 0.6.0 screens open from Menu > Service.
+    ui_init();
+#else
     // Show the main screen.
     // To display another screen, call its respective show function.
     show_main_screen();
+#endif
 
     // Draw the screen once first, so a link start-up fault cannot leave it blank.
     lv_timer_handler();

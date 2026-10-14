@@ -7,6 +7,7 @@ Pressure-based needle-valve controller firmware for the MikroE Mikromedia 4 (STM
 - `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. The two can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
 - The linker script `.meproject/setup/FileLinker/stm32f407zg.ld` is patched so `.ccmram` is `(NOLOAD)`, which keeps the LVGL heap that lives there out of the flash image. If NECTO ever regenerates this file, re-apply the patch.
 - Build Debug (-O0) in NECTO. Optimised builds (Release -O3, or -Os) leave the display blank: the mikroSDK GPIO register struct in `.meproject/setup/*/include/hal_ll_port/hal_ll_gpio_port.h` is not `volatile`, so the compiler merges `WR_LOW; WR_HIGH` into one store and the SSD1963 gets no write strobe (found on the bench, 0.3.33). Debug is about 650 KB of flash.
+- Screens: `PMC_UI_NEW 1` (default, 0.7.0) gives the new frame and Home from the simulator (`ui.c`, `ui_home.c`): header, status strip and STOP on every screen, Home with the Pressure and Valve tiles, Menu. The 0.6.0 main and motor screens open from Menu > Service, and their "Home" button goes back. `PMC_UI_NEW 0` builds the 0.6.0 screens only. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •).
 - NECTO's build folders (`build-MM4/`, `build-Default Configuration/`, ...), `compile_commands.json` and the clangd index in `.cache/` are not tracked, so a NECTO build no longer blocks `git pull`. The one exception is `build-MM4/generated/` (screen code from `main_screen.mscr`), which `tools/ui-preview` compiles. NECTO also rewrites `.meproject/config.json` (it holds machine paths, but also the board and MCU selection, so it stays tracked): before a pull, `git stash` or `git checkout -- InitialTesting/.meproject/config.json`.
 
 ## PC link commands
@@ -96,5 +97,5 @@ The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR busy, MOT STOP
 
 - `tools/logger/log_druck.py <IP or COM>` logs the once-a-second DATA lines to CSV and reconnects on its own.
 - `tools/cal/druck_cal.py <IP or COM> show|zs|load|erase` manages the Druck calibration table in serial flash.
-- `tools/ui-preview/build.sh` renders the main screen to PNG on a PC.
+- `tools/ui-preview/build.sh` renders the 0.6.0 main screen and the new Home, Menu, keypad and confirm screens (`out/new-*.png`) to PNG on a PC, and checks the LVGL heap returns after opening and leaving screens.
 - `tools/xbuild/build.sh [Release|Debug]` cross-builds the firmware on Linux (cmake, ninja, Ubuntu `gcc-arm-none-eabi` and `libnewlib-arm-none-eabi`) with the mikroSDK libraries in `.meproject` and prints flash and RAM use. For size checks only; the flashed build is NECTO's.

@@ -14,6 +14,9 @@
 #include "stepper3.h"
 #include "fixed.h"
 #include "valve.h"
+#if PMC_UI_NEW
+#include "ui.h"
+#endif
 
 lvgl_main_screen_ui_t lvgl_main_screen_ui;
 
@@ -146,6 +149,14 @@ static void detail_tab_event(lv_event_t *e)
     lv_obj_add_state(calibration ? tab_cal : tab_raw, LV_STATE_CHECKED);
     lv_obj_remove_state(calibration ? tab_raw : tab_cal, LV_STATE_CHECKED);
 }
+
+#if PMC_UI_NEW
+static void home_event(lv_event_t *e)
+{
+    (void)e;
+    ui_home();
+}
+#endif
 
 static void motor_button_event(lv_event_t *e)
 {
@@ -699,13 +710,23 @@ void init_main_screen()
     lv_obj_set_style_pad_hor(hdr, 10, 0);
     lv_obj_set_style_pad_ver(hdr, 0, 0);
 
+#if PMC_UI_NEW
+    // Opened from Menu > Service: this goes back to the new Home.
+    lv_obj_t *title = make_label(hdr, LV_SYMBOL_LEFT " Home", lv_color_white());
+    lv_obj_add_flag(title, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(title, 8);
+    lv_obj_add_event_cb(title, home_event, LV_EVENT_CLICKED, NULL);
+    const int32_t clock_x = 76;
+#else
     lv_obj_t *title = make_label(hdr, "PMC", lv_color_white());
+    const int32_t clock_x = 46;
+#endif
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
     clock_label = make_label(hdr, "time not set", COL_IDLE);
     lv_obj_set_style_text_font(clock_label, &lv_font_montserrat_12, 0);
     lv_obj_set_width(clock_label, 90);
     lv_label_set_long_mode(clock_label, LV_LABEL_LONG_CLIP);
-    lv_obj_align(clock_label, LV_ALIGN_LEFT_MID, 46, 0);
+    lv_obj_align(clock_label, LV_ALIGN_LEFT_MID, clock_x, 0);
     // Status words, right-aligned row; green = ok, red = fault, grey = idle.
     lv_obj_t *chips = lv_obj_create(hdr);
     lv_obj_remove_flag(chips, LV_OBJ_FLAG_SCROLLABLE);

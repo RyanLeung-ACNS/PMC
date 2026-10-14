@@ -2,6 +2,7 @@
 #define _VALVE_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "clicks.h"
@@ -68,6 +69,20 @@ const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]);
 // Sets all of them; false (nothing changed) if one is out of range or the
 // valve is calibrating or moving.
 bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]);
+// For the screens (ui_*.c). Each refusal sets *why to a short reason.
+bool valve_calibrate(const char **why);          // VALVE CAL
+uint32_t valve_cal_budget_s(void);               // longest calibration, s
+int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
+bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
+int32_t valve_target_pct10(void);                // where the valve is going
+void valve_stop(void);                           // CTRL STOP: latch F-12
+// CTRL RESET; returns the number latched before, left = those kept.
+int valve_reset(char *left, size_t n);
+int valve_fault_count(void);
+bool valve_fault_first(const char **tag, const char **text);   // highest priority
+bool valve_fault_is(const char *tag);            // e.g. "F-12" latched
+bool valve_question(int32_t *pct10);             // switch question waiting, where
+
 // Adds an event to the log (tag up to 5 characters).
 void valve_event(const char *tag, const char *fmt, ...);
 

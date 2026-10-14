@@ -46,6 +46,12 @@ add_executable(InitialTesting
     cal.c
     cfg.h
     cfg.c
+    ui.h
+    ui.c
+    ui_home.c
+    ui_font_12.c
+    ui_font_16.c
+    ui_font_26.c
     sysinfo.h
     sysinfo.c
     rtclock.c

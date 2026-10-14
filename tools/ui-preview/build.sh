@@ -19,7 +19,7 @@ if [ ! -f "$OUT/liblvgl.a" ]; then
   ar rcs "$OUT/liblvgl.a" "$OUT"/lvgl/*.o
 fi
 
-gcc $CFLAGS -o "$OUT/ui_preview" \
+gcc $CFLAGS -DPMC_UI_NEW=0 -o "$OUT/ui_preview" \
   "$HERE/sim_main.c" "$HERE/fake_hw.c" \
   "$PROJ/main_screen.c" "$PROJ/motor_screen.c" "$PROJ/fixed.c" \
   "$PROJ/build-MM4/generated/scr_main_screen.c" \
@@ -46,4 +46,13 @@ python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"
 rm "$OUT/motor-trip.raw"
 python3 "$HERE/render.py" "$OUT/motor.raw" "$OUT/motor.png"
 rm "$OUT/motor.raw"
+# Stage 4 screens (ui.c): Home states, Menu, keypad, confirm.
+gcc $CFLAGS -o "$OUT/ui_new" "$HERE/ui_new_main.c" "$HERE/fake_hw.c" \
+  "$PROJ/ui.c" "$PROJ/ui_home.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" \
+  "$PROJ/fixed.c" "$OUT/liblvgl.a" -lm
+for s in notcal manual calib moving nodruck stop neg menu keypad confirm; do
+  "$OUT/ui_new" "$s" "$OUT/new-$s.raw"
+  python3 "$HERE/render.py" "$OUT/new-$s.raw" "$OUT/new-$s.png"
+  rm "$OUT/new-$s.raw"
+done
 echo "Wrote calibration and chip-reading previews for all scenarios to $OUT"
