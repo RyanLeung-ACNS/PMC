@@ -10,6 +10,8 @@
 #include "uncert.h"
 #include "pmc_config.h"
 #include "motor_screen.h"
+#include "limit.h"
+#include "stepper3.h"
 #include "fixed.h"
 
 lvgl_main_screen_ui_t lvgl_main_screen_ui;
@@ -35,7 +37,7 @@ lvgl_main_screen_ui_t lvgl_main_screen_ui;
 #define COL_IDLE     lv_color_make(150, 158, 166)
 #define COL_WARN     lv_color_make(214, 130, 0)
 
-static lv_obj_t *chip_pm, *chip_boost, *chip_usb;
+static lv_obj_t *chip_pm, *chip_boost, *chip_lim, *chip_usb;
 static lv_obj_t *clock_label;
 static lv_obj_t *pressure_label;
 static lv_obj_t *pressure_sub;
@@ -44,7 +46,7 @@ static lv_font_t pressure_font;
 static lv_obj_t *detail_cal, *detail_raw, *tab_cal, *tab_raw;
 static lv_obj_t *val_signal, *val_exc, *val_die, *val_pg;
 static lv_obj_t *pressure_unc;
-static lv_obj_t *cal_table, *cal_zero, *cal_span, *cal_atm, *cal_store;
+static lv_obj_t *cal_table, *cal_vac, *cal_air, *cal_kind, *cal_store;
 
 #define STATUS_LINES 5
 static const char *last_line[STATUS_LINES];
@@ -218,7 +220,8 @@ static void set_chip(lv_obj_t *chip, const char *text, lv_color_t col)
  * Lines not starting with DATA are status text.
  */
 // DATA lines once a second; DATA OFF pauses them and the live status lines.
-static bool data_on = true;
+// Off at boot; DATA ON (the logger sends it) turns them on.
+static bool data_on = false;
 
 bool main_screen_data_command(const char *line)
 {
@@ -270,6 +273,23 @@ static void print_changed_lines(void)
     }
 }
 
+/*
+ * Valve limit switch chip, display only (does not stop the motor). Its own
+ * 50 ms timer: the 1 s status timer made a change take up to a second to
+ * show. Unchanged state redraws nothing.
+ */
+static void limit_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    limit_state_t lim = limit_state();
+    if (stepper3_override()) {
+        set_chip(chip_lim, "Limit OVR", COL_WARN);
+        return;
+    }
+    set_chip(chip_lim, lim == LIMIT_CLOSED ? "Limit OK" : lim == LIMIT_OPEN ? "Limit OPEN" : "Limit --",
+             lim == LIMIT_CLOSED ? COL_OK : lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
+}
+
 /**
  * @brief Every second: re-read the boards, refresh the screen, and print any
  * changed status line to COM3.
@@ -282,6 +302,7 @@ static void status_timer_cb(lv_timer_t *t)
 
     const clicks_state_t *s = clicks_state();
     uncert_update(s);
+    cal_update(s);
     if (s->pm_found && data_on && !s->pm_diag)
         print_data_line(s);
 
@@ -347,38 +368,34 @@ static void status_timer_cb(lv_timer_t *t)
         set_color(val_pg, s->boost_pg ? COL_TEXT : COL_FAULT);
     }
 
-    // Calibration. Zero and span are shown as the cert gives them, mV at
-    // 10 V excitation, with the ATM correction taken back out. A table saved
-    // by firmware before 0.3.5 has no record of its ATM factor, so its zero
-    // and span still include it and are flagged.
+    // Calibration: the bench two-point (CAL VAC, CAL AIR), each point as
+    // its pressure and the ratio measured there.
     bool nominal = cal_is_default();
-    int32_t k = cal_atm_ppm();
-    bool k_unknown = cal_atm_applied() && k <= 0;
     set_text(cal_table, PMC_DRUCK_SERIAL);
-
-    lv_color_t zs_col = nominal || k_unknown ? COL_WARN : COL_TEXT;
-    char z[32], sp[32];
-    fmt_fixed2(z, sizeof z, (int64_t)cal_zero_ppb() * 10, 6, "mV");
-    fmt_fixed2(sp, sizeof sp, (int64_t)cal_span_ppb() * 10, 6, "mV");
-    const char *suffix = nominal ? " (nominal)" : k_unknown ? " incl. ATM" : "";
-    set_text_fmt(cal_zero, "%s%s", z, suffix);
-    set_text_fmt(cal_span, "%s%s", sp, suffix);
-    set_color(cal_zero, zs_col);
-    set_color(cal_span, zs_col);
-
-    if (!cal_atm_applied()) {
-        set_text(cal_atm, nominal ? "--" : "not applied (CAL ATM)");
-        set_color(cal_atm, nominal ? COL_MUTED : COL_WARN);
-    } else if (k_unknown) {
-        set_text(cal_atm, "unknown, redo cal");
-        set_color(cal_atm, COL_WARN);
+    int32_t rv, pv, ra, pa;
+    bool bench = cal_bench(&rv, &pv, &ra, &pa);
+    int left = cal_capture_left();
+    if (left) {
+        set_text_fmt(cal_kind, "capturing, %d s left", left);
+        set_color(cal_kind, COL_WARN);
+    } else if (cal_old_version()) {
+        set_text(cal_kind, "old cal not loaded, redo");
+        set_color(cal_kind, COL_WARN);
     } else {
-        // Gain as a factor and a percentage: 0.957300 shows x0.9573 (-4.27 %).
-        char f[16], c[16];
-        fixed_fmt(f, sizeof f, fixed_round(k, 2), 4);
-        fixed_fmt(c, sizeof c, fixed_round(LV_ABS(k - 1000000), 2), 2);   // %
-        set_text_fmt(cal_atm, "x%s (%s%s %%)", f, k < 1000000 ? "-" : "+", c);
-        set_color(cal_atm, COL_TEXT);
+        set_text(cal_kind, nominal ? "nominal, not calibrated" : bench ? "bench two-point" : "entered table");
+        set_color(cal_kind, bench ? COL_TEXT : COL_WARN);
+    }
+    if (bench) {
+        char p[24], r[24];
+        fmt_fixed2(p, sizeof p, pv, 3, "mbar");
+        fixed_fmt(r, sizeof r, fixed_round(rv, 2), 4);
+        set_text_fmt(cal_vac, "%s, %s mV/V", p, r);
+        fmt_fixed2(p, sizeof p, pa, 3, "mbar");
+        fixed_fmt(r, sizeof r, fixed_round(ra, 2), 4);
+        set_text_fmt(cal_air, "%s, %s mV/V", p, r);
+    } else {
+        set_text(cal_vac, "--");
+        set_text(cal_air, "--");
     }
 
     // Only a warning: nothing is shown once the table is saved. The button
@@ -432,10 +449,13 @@ void init_main_screen()
     lv_obj_align(chips, LV_ALIGN_RIGHT_MID, 0, 0);
     chip_pm = make_label(chips, "PM", COL_IDLE);
     chip_boost = make_label(chips, "BOOST", COL_IDLE);
+    chip_lim = make_label(chips, "Limit --", COL_IDLE);
     chip_usb = make_label(chips, link_chip_text(), COL_IDLE);
-    lv_obj_set_width(chip_pm, 60);
-    lv_obj_set_width(chip_boost, 78);
-    lv_obj_set_width(chip_usb, 122);
+    lv_obj_set_width(chip_pm, 52);
+    lv_obj_set_width(chip_boost, 70);
+    lv_obj_set_width(chip_lim, 80);
+    lv_obj_set_width(chip_usb, 90);
+    lv_label_set_long_mode(chip_lim, LV_LABEL_LONG_CLIP);
     lv_label_set_long_mode(chip_usb, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(chip_usb, LV_TEXT_ALIGN_RIGHT, 0);
 
@@ -500,9 +520,9 @@ void init_main_screen()
     detail_cal = make_detail_panel(details);
     lv_obj_add_flag(detail_cal, LV_OBJ_FLAG_HIDDEN);
     cal_table = make_field(detail_cal, 6, 0, "Druck serial number");
-    cal_atm = make_field(detail_cal, 236, 0, "Atmospheric correction");
-    cal_zero = make_field(detail_cal, 6, 36, "Certificate zero at 10 V");
-    cal_span = make_field(detail_cal, 236, 36, "Certificate span at 10 V");
+    cal_kind = make_field(detail_cal, 236, 0, "Calibration");
+    cal_vac = make_field(detail_cal, 6, 36, "Vacuum point (CAL VAC)");
+    cal_air = make_field(detail_cal, 236, 36, "Air point (CAL AIR)");
 
     detail_raw = make_detail_panel(details);
     val_signal = make_field(detail_raw, 6, 0, "INA228 signal (ratio)");
@@ -511,6 +531,7 @@ void init_main_screen()
     val_pg = make_field(detail_raw, 236, 36, "Boost 10 supply");
 
     lv_timer_create(status_timer_cb, 1000, NULL);
+    lv_timer_create(limit_timer_cb, 50, NULL);
     motor_screen_init(scr);
 }
 

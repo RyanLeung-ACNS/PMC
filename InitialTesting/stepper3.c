@@ -7,6 +7,7 @@
 #include "lvgl.h"   // lv_snprintf
 #include "link.h"
 #include "pmc_config.h"
+#include "limit.h"
 #include "stepper3.h"
 
 /* --------------------------------------------------------------------------
@@ -98,18 +99,36 @@ static uint32_t n_acc;                  // steps spent accelerating
 static char status_text[160];
 
 /* --------------------------------------------------------------------------
- * Limit switch (one NC dry contact at the closed end of travel)
- *
- * To fit: read DIGI IN IN1 here and set LIMIT_FITTED to 1. An open contact
- * (at the limit, or a broken wire) must return true.
+ * Limit switch (one NC dry contact at the closed end of travel), read by
+ * limit.c. Checked before a closing move starts and again before every
+ * closing step (in the step interrupt). Open, unknown or a broken wire all
+ * stop. Opening moves are never blocked, so the valve can always back off.
+ * PMC_LIMIT_STOP 0 turns the stop off (state displayed only).
  * ------------------------------------------------------------------------ */
-#define LIMIT_FITTED 0
+#define LIMIT_FITTED PMC_LIMIT_STOP
 
 bool stepper3_limit_fitted(void) { return LIMIT_FITTED; }
 
+/*
+ * Override: MOT OVERRIDE (or the screen, later) lets the NEXT move close
+ * past an open limit, for a switch that trips early (ice, a forced
+ * actuator). One move only: it is used up by the next move in either
+ * direction and ends when that move stops. RAM only, off at reset.
+ */
+static volatile bool override_armed, override_active;
+
+bool stepper3_override(void) { return override_armed || override_active; }
+
+void stepper3_override_arm(void)
+{
+    override_armed = true;
+    link_printf("MOT override armed: the next closing move ignores the limit switch\r\n");
+}
+
+// True when a closing step must not be taken now.
 bool stepper3_limit_open(void)
 {
-    return false;
+    return LIMIT_FITTED && limit_open_now() && !override_armed && !override_active;
 }
 
 /* --------------------------------------------------------------------------
@@ -203,6 +222,7 @@ static void timer_start(uint32_t us)
 
 static void finish(stepper3_stop_t why)
 {
+    override_active = false;
     last_stop = why;
     run_state = ST_SETTLE;
     TIM7->ARR = SETTLE_US - 1;
@@ -279,6 +299,13 @@ bool stepper3_move(int32_t steps)
         last_stop = STEPPER3_STOP_LIMIT;
         return false;
     }
+    // An armed override is used up by this move, whichever way it goes.
+    if (override_armed) {
+        override_armed = false;
+        override_active = steps < 0;
+        if (override_active && LIMIT_FITTED && limit_open_now())
+            link_printf("MOT override: closing %ld steps with the limit switch open\r\n", (long)-steps);
+    }
 
     // Wave uses the one-coil entries, full the two-coil entries.
     if (mode == STEPPER3_WAVE)
@@ -304,6 +331,7 @@ bool stepper3_move(int32_t steps)
 void stepper3_stop(void)
 {
     timer_stop();
+    override_active = false;
     if (run_state == ST_MOVING)
         last_stop = STEPPER3_STOP_CMD;
     run_state = ST_IDLE;
@@ -334,7 +362,9 @@ const char *stepper3_status(void)
     lv_snprintf(status_text, sizeof status_text,
                 "S%d Stepper 3: %s, pos %ld, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
                 st, (long)position, stepper3_mode_name(mode), (unsigned long)rate_run,
-                !LIMIT_FITTED ? "not fitted" : stepper3_limit_open() ? "OPEN" : "ok");
+                !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)"
+                : stepper3_override() ? (limit_open_now() ? "OPEN, override" : "ok, override armed")
+                : stepper3_limit_open() ? "OPEN" : "ok");
     return status_text;
 }
 
@@ -469,7 +499,8 @@ static void show(void)
     link_printf("MOT hold %d, dir %d, order %d%d%d%d, coils %s, limit %s\r\n",
                 hold, reverse, order[0], order[1], order[2], order[3],
                 energised ? "on" : "off",
-                !LIMIT_FITTED ? "not fitted" : stepper3_limit_open() ? "OPEN" : "closed (ok)");
+                !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)" : stepper3_override() ? "OVERRIDE (next close ignores it)" :
+                stepper3_limit_open() ? "OPEN" : "closed (ok)");
     link_printf("OK\r\n");
 }
 
@@ -497,6 +528,18 @@ bool stepper3_command(const char *line)
             link_printf("ERR limit open, closing move refused\r\n");
         else
             link_printf("OK moving %ld from %ld\r\n", v, (long)(position));
+    } else if (strcmp(a, " OVERRIDE") == 0) {
+        if (!LIMIT_FITTED) {
+            link_printf("ERR limit stop is off (PMC_LIMIT_STOP 0), nothing to override\r\n");
+        } else if (run_state != ST_IDLE) {
+            link_printf("ERR busy, MOT STOP first\r\n");
+        } else {
+            stepper3_override_arm();
+            link_printf("OK\r\n");
+        }
+    } else if (strcmp(a, " OVERRIDE OFF") == 0) {
+        override_armed = false;
+        link_printf("OK override cleared\r\n");
     } else if (run_state != ST_IDLE) {
         // Settings below change the step timing or sequence mid-move.
         link_printf("ERR busy, MOT STOP first\r\n");

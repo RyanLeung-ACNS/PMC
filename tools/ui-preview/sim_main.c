@@ -3,7 +3,7 @@
  * and generated designer code against LVGL 9.4 on a PC, with fake Click
  * readings (fake_hw.c), and writes one 480 x 272 frame as raw RGB565.
  *
- *   ./ui_preview <scenario> <out.raw>     scenario: ok | nopm | lowexc | trip | cal | unsaved
+ *   ./ui_preview <scenario> <out.raw>     scenario: ok | nopm | lowexc | trip | cal | unsaved | nodruck | neg
  */
 #include <assert.h>
 #include <stdio.h>
@@ -164,7 +164,8 @@ static void check_motor_screen(void)
     assert(stepper3_position() == 10);
     tap_label(LV_SYMBOL_LEFT " Close");
     tap_label(LV_SYMBOL_LEFT " Close");
-    assert(stepper3_position() == -10);
+    // Close is disabled while the limit stop reads open (trip scenario).
+    assert(stepper3_position() == (stepper3_limit_open() ? 10 : -10));
     tap_label("Order 0213");
     tap_label("Order 0132");
     uint8_t o[4];

@@ -7,6 +7,12 @@ else()
 endif()
 
 include(mikroeUtils)
+
+# Build Debug (-O0). Any optimised build (-Os, -O2, -O3) blanks the display:
+# the mikroSDK GPIO register struct (.meproject/.../hal_ll_gpio_port.h) is
+# not volatile, so with the flattened inline digital_out_low/high the
+# compiler merges WR_LOW; WR_HIGH into one store and the SSD1963 never sees
+# a write strobe (found on the bench, 0.3.33, 14 Oct 2026).
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
 set(PROJECT_TYPE "lvgl_designer" CACHE STRING "" FORCE)
@@ -23,6 +29,8 @@ add_executable(InitialTesting
     main_screen.h
     motor_screen.c
     motor_screen.h
+    limit.c
+    limit.h
     usb_serial.h
     usb_serial.c
     tinyusb_cdc_device.c

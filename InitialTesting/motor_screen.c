@@ -4,6 +4,7 @@
 #include "motor_screen.h"
 #include "stepper3.h"
 #include "link.h"
+#include "limit.h"
 
 /*
  * Motor screen, 480 x 272. Every MOT setting and move from the touchscreen;
@@ -36,6 +37,7 @@ static lv_obj_t *size_btn[5], *mode_btn[3];
 static lv_obj_t *rate_val, *start_val, *accel_val;
 static lv_obj_t *order_btn, *dir_btn, *hold_btn;
 static lv_obj_t *move_btns[2];
+static lv_obj_t *limit_label;
 static int size_sel = 2;
 
 static const int32_t step_sizes[5] = { 1, 10, 100, 1000, 10000 };
@@ -319,8 +321,9 @@ static void refresh(void)
 
     for (int i = 0; i < 5; i++)
         set_checked(size_btn[i], i == size_sel);
-    for (int i = 0; i < 2; i++)
-        set_disabled(move_btns[i], busy);
+    // Close is refused while the limit stop reads open; Open always works.
+    set_disabled(move_btns[0], busy || stepper3_limit_open());
+    set_disabled(move_btns[1], busy);
     for (int i = 0; i < 3; i++) {
         set_checked(mode_btn[i], (int)stepper3_mode() == i);
         set_disabled(mode_btn[i], busy);
@@ -344,6 +347,21 @@ static void refresh(void)
     set_disabled(order_btn, busy);
     set_disabled(dir_btn, busy);
     set_disabled(hold_btn, busy);
+
+    // Limit switch: the closing stop (PMC_LIMIT_STOP), or display only.
+    limit_state_t lim = limit_state();
+    if (!stepper3_limit_fitted())
+        set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed. Stop off, display only" :
+                              lim == LIMIT_OPEN ? "Limit switch OPEN. Stop off, display only" :
+                              "Limit switch not read yet");
+    else if (stepper3_override() && lim != LIMIT_CLOSED)
+        set_text(limit_label, "OVERRIDE: next close ignores the open limit switch");
+    else
+        set_text(limit_label, lim == LIMIT_CLOSED ? "Limit switch closed: closing allowed" :
+                              lim == LIMIT_OPEN ? "Limit switch OPEN: closing blocked (at limit or wire broken)" :
+                              "Limit switch not read yet: closing blocked");
+    set_color(limit_label, lim == LIMIT_CLOSED ? COL_OK : stepper3_override() ? COL_WARN :
+                           lim == LIMIT_OPEN ? COL_FAULT : COL_IDLE);
 }
 
 static void refresh_timer_cb(lv_timer_t *t)
@@ -435,12 +453,12 @@ void motor_screen_init(lv_obj_t *return_screen)
     make_button(sc, 80, 180, 60, 30, "Zero", zero_event, 0);
     make_button(sc, 144, 180, 76, 30, "Coils off", off_event, 0);
 
-    if (!stepper3_limit_fitted()) {
-        lv_obj_t *w = make_label(screen, "Limit switch not fitted: closing moves are not stopped",
-                                 COL_WARN);
-        lv_obj_set_style_text_font(w, &lv_font_montserrat_12, 0);
-        lv_obj_set_pos(w, 12, 256);
-    }
+    // Limit switch state and whether closing is allowed.
+    limit_label = make_label(screen, "", COL_IDLE);
+    lv_obj_set_style_text_font(limit_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_width(limit_label, 456);
+    lv_label_set_long_mode(limit_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(limit_label, 12, 256);
 
     refresh();
     lv_timer_create(refresh_timer_cb, 100, NULL);

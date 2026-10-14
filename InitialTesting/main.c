@@ -28,6 +28,7 @@
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
+#include "limit.h"
 #include "main_screen.h"
 
 /*
@@ -52,14 +53,64 @@ static bool perf_command(const char *line)
     if (strcmp(line, "PERF?") != 0)
         return false;
     uint32_t span = lv_tick_elaps(perf_since);
+    lv_mem_monitor_t mem;
+    lv_mem_monitor(&mem);
     link_printf("PERF over %lu ms: loops=%lu longest_loop_ms=%lu longest_lvgl_ms=%lu "
-                "flush_ms=%lu flush_px=%lu\r\nOK\r\n",
+                "flush_ms=%lu flush_px=%lu\r\n",
                 (unsigned long)span, (unsigned long)perf_loops, (unsigned long)perf_gap_max,
                 (unsigned long)perf_handler_max, (unsigned long)disp_flush_ms,
                 (unsigned long)disp_flush_px);
+    // LVGL heap: peak is the most ever used since boot, not since the last PERF?.
+    link_printf("HEAP total=%lu used=%lu peak=%lu biggest_free=%lu frag_pct=%u\r\nOK\r\n",
+                (unsigned long)mem.total_size, (unsigned long)(mem.total_size - mem.free_size),
+                (unsigned long)mem.max_used, (unsigned long)mem.free_biggest_size,
+                (unsigned)mem.frag_pct);
     perf_since = lv_tick_get();
     perf_loops = perf_gap_max = perf_handler_max = 0;
     disp_flush_ms = disp_flush_px = 0;
+    return true;
+}
+
+// HELP (or ?): every command the link takes. Keep in step with README.md.
+static bool help_command(const char *line)
+{
+    static const char *const lines[] = {
+        "Commands (upper case, one per line, CR or LF ends a line):",
+        "  HELP or ?                  this list",
+        "  VER?                       firmware version and build time",
+        "  DATA ON | DATA OFF         once-a-second DATA lines and status lines on or off",
+        "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+        "  LIM?                       valve limit switch state",
+        "  UNC?                       pressure uncertainty budget",
+        "  TOUCH?                     touch controller counters",
+        "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+#if PMC_PM_DIAG
+        "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
+#endif
+        "Calibration:",
+        "  CAL?                       active cal and bench points",
+        "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
+        "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+        "  CAL SAVE                   write the active cal to flash",
+        "  CAL ERASE                  erase the saved cal, use nominal",
+        "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
+        "Valve motor:",
+        "  MOT?                       position, settings, limit",
+        "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
+        "  MOT STOP | MOT OFF         stop / stop and de-energise",
+        "  MOT ZERO                   call this position 0",
+        "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
+        "  MOT RATE <16-1000>         run rate, steps/s",
+        "  MOT START <16-1000>        start rate, steps/s",
+        "  MOT ACCEL <10-20000>       steps/s^2",
+        "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
+    };
+
+    if (strcmp(line, "HELP") != 0 && strcmp(line, "?") != 0)
+        return false;
+    for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++)
+        link_printf("%s\r\n", lines[i]);
+    link_printf("OK\r\n");
     return true;
 }
 
@@ -94,6 +145,7 @@ void application_init()
     // Click boards on the shield. Stepper coils off; the motor only moves
     // on a MOT MOVE command.
     clicks_init();
+    limit_init();
 
     // Initialize all available screens.
     init_screens();
@@ -155,8 +207,9 @@ int main(void)
         link_task();
         touch_poll();
         rtclock_poll();
-        if (link_getline(line, sizeof line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !stepper3_command(line) && !clicks_command(line) &&
+        limit_poll();
+        if (link_getline(line, sizeof line) && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+            !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

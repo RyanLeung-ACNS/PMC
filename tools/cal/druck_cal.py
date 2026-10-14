@@ -16,6 +16,11 @@ against pressure (mbar), up to 32 points, linear between points. It is
 stored in the on-board serial flash with a CRC and loaded at start-up; if
 nothing valid is stored the board uses the nominal 0-10 mV/V = 0-15 psia.
 
+The normal cal is now the bench two-point, typed on the board's link
+(CAL VAC with the sensor pumped down, CAL AIR <room mbar> vented, CAL SAVE).
+zs and load enter a table directly; a cert table ignores the INA228 input
+loading and reads about 5 % low.
+
 zs     two-point table from a zero/span cert: zero = output at 0 psia, span =
        output at full scale (15 psia) minus zero, both in mV, at --exc volts.
 load   table from a text file: any line without two numbers is skipped

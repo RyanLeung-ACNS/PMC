@@ -14,13 +14,13 @@
 static clicks_state_t st;
 static bool fake_wdt;
 static char value[24];
-static bool fake_saved, fake_atm;
+static bool fake_saved, fake_bench;
 
 void fake_hw_set_scenario(const char *name)
 {
     memset(&st, 0, sizeof st);
     fake_wdt = false;
-    fake_saved = fake_atm = false;
+    fake_saved = fake_bench = false;
     st.cal_nominal = true;
     st.boost_set_mv = 9999;
     st.pm_found = true;
@@ -43,9 +43,16 @@ void fake_hw_set_scenario(const char *name)
         strcpy(value, "----");
     } else if (!strcmp(name, "cal")) {
         st.cal_nominal = false;
-        fake_saved = fake_atm = true;
+        fake_saved = fake_bench = true;
         st.p_mmbar = 1013200;
         strcpy(value, "1013.20");
+    } else if (!strcmp(name, "neg")) {
+        // Pumped below the vacuum point after drift: reads below zero.
+        st.cal_nominal = false;
+        fake_saved = fake_bench = true;
+        st.r_ppb = 127100;
+        st.p_mmbar = -123;
+        strcpy(value, "-0.12");
     } else if (!strcmp(name, "nodruck")) {
         st.reading_ok = false;
         st.druck_absent = true;
@@ -74,12 +81,20 @@ const char *clicks_druck_value(void) { return value; }
 bool clicks_druck_cal_nominal(void) { return st.cal_nominal; }
 const clicks_state_t *clicks_state(void) { return &st; }
 bool cal_is_default(void) { return st.cal_nominal; }
-const char *cal_id(void) { return fake_atm ? "5880156+atm" : "5880156"; }
-int32_t cal_atm_ppm(void) { return fake_atm ? 957300 : 1000000; }
-int32_t cal_zero_ppb(void) { return st.cal_nominal ? 0 : 133700; }
-int32_t cal_span_ppb(void) { return st.cal_nominal ? 10000000 : 10099600; }
+const char *cal_id(void) { return fake_bench ? "5880156 bench" : "5880156"; }
 bool cal_saved(void) { return fake_saved; }
-bool cal_atm_applied(void) { return fake_atm; }
+void cal_update(const clicks_state_t *s) { (void)s; }
+uint32_t cal_old_version(void) { return 0; }
+int cal_capture_left(void) { return 0; }
+int32_t cal_vac_unc_mmbar(void) { return 10; }
+int32_t cal_air_unc_mmbar(void) { return 1000; }
+bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
+{
+    if (!fake_bench) return false;
+    *r_vac = 127900; *p_vac = 0;
+    *r_air = 9798300; *p_air = 1013250;
+    return true;
+}
 int32_t clicks_boost10_set_mv(int32_t mv) { return st.boost_tripped ? -1 : mv; }
 
 void link_init(void) {}
@@ -112,6 +127,7 @@ const char *uncert_screen_text(bool *warn)
 
 /* Stepper 3: settings only, a move completes at once. */
 #include "stepper3.h"
+#include "limit.h"
 static int32_t m_pos;
 static uint32_t m_rate = 400, m_start = 200, m_accel = 3200;
 static stepper3_mode_t m_mode = STEPPER3_FULL;
@@ -126,8 +142,10 @@ bool stepper3_busy(void) { return false; }
 int32_t stepper3_position(void) { return m_pos; }
 void stepper3_zero(void) { m_pos = 0; }
 stepper3_stop_t stepper3_last_stop(void) { return m_stop; }
-bool stepper3_limit_open(void) { return false; }
-bool stepper3_limit_fitted(void) { return false; }
+bool stepper3_limit_open(void) { return limit_state() != LIMIT_CLOSED; }
+bool stepper3_limit_fitted(void) { return true; }
+bool stepper3_override(void) { return false; }
+void stepper3_override_arm(void) {}
 bool stepper3_set_rate(uint32_t v) { m_rate = v; return true; }
 bool stepper3_set_start(uint32_t v) { m_start = v; return true; }
 bool stepper3_set_accel(uint32_t v) { m_accel = v; return true; }
@@ -146,3 +164,7 @@ int8_t stepper3_direction(void) { return 0; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
 const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? "WAVE" : m == STEPPER3_FULL ? "FULL" : "HALF"; }
 const char *stepper3_stop_name(stepper3_stop_t s) { return s == STEPPER3_STOP_DONE ? "done" : s == STEPPER3_STOP_CMD ? "stopped" : s == STEPPER3_STOP_LIMIT ? "LIMIT" : "none"; }
+
+/* Limit switch: closed, except in the trip scenario. */
+limit_state_t limit_state(void) { return st.boost_tripped ? LIMIT_OPEN : LIMIT_CLOSED; }
+const char *limit_text(void) { return limit_state() == LIMIT_OPEN ? "OPEN" : "closed"; }

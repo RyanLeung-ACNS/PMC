@@ -2,8 +2,100 @@
 
 Open `index.html` directly in a browser. No build or server is required. Google Fonts is optional; system fonts are used when unavailable.
 
-This is the standalone browser simulator reviewed on 9 October 2026. It models the proposed 480 × 272 controller interface, motor, pressure control, and cryostat flow line. It does not communicate with hardware and is not the firmware implementation.
+Live view of the working branch: https://raw.githack.com/ryanlleung/PMC/claude/project-thread-8yhtvn/simulator/index.html
 
-The surrounding bench controls, serial console, and physics model are simulation tools. The exported hosting script has been removed; simulator behaviour is otherwise preserved. The UX review recommendations have not been applied.
+The simulator models the proposed 480 x 272 controller interface, the motor, pressure control and the cryostat flow line. It does not communicate with hardware and is not the firmware implementation. The bench controls, laptop configuration tool, serial console and physics model below the screen are simulation tools.
 
-This folder is independent of `InitialTesting/` and `tools/ui-preview/` and is not part of the firmware build.
+## UI/UX review, 9 October 2026 (v46 to v52)
+
+- v46, operator screens and navigation: Target marked inactive or paused outside AUTO; valve card "Valve position" with Opening / Closing / Stationary and Requested; AUTO status Approaching target / Within target band / Stable; Home renamed Reference valve; Valve page without presets or the 100 % travel setting; task menu (Trend, Alarms and events, Reference valve, System information, Commissioning); Back returns one level.
+- v47, commissioning access and configuration: one commissioning session (PIN 2468 in the simulator, 10 min idle timeout, shared with serial `ACCESS`); Sensor, Valve setup, Control tuning, Diagnostics and Configuration pages; every setting goes draft, Apply, Save for restart; configuration name and revision; laptop import as a draft; Target max and low alarm separate from sensor range and Target min; readings go through zero, span, cal factor or an imported table.
+- v48, STOP and faults: STOPPED / FAULT in the header; STOP says the valve was not commanded closed; Reset fault replaces ACK and never starts AUTO; fault detail with what happened, controller action, what to check and reset condition. Simulator fixes: reboot loads the saved configuration and starts not referenced; device trend without the true mechanism series; event list keeps updating with 200 events stored.
+- v49, follow-up review: limit changes that exclude the target move it after one confirmation; Configuration shows Not applied and Not saved lists with labels and units; calibration identity and saved state on Sensor and System information.
+- v50, review of 526edf9: STOP between referencing stages ends referencing (no further move); no move starts while any fault is latched, and STOP always stops even with F-12 already latched; a revised calibration for a known sensor serial is imported as a draft and listed per serial; Apply, import and serial settings check the resulting configuration (ranges, Target min below Target max, low alarm, sensor range, start speed, profiles); a failed flash write is reported and nothing is marked saved (bench toggle "Flash write fails").
+- v51, review of f2f1c1d (UI/UX, native 480 x 272):
+  - Commissioning changes: drafts stay while moving between pages (no Apply/Discard question on Back); one change set, reviewed on Configuration with Unapplied changes and Applied, not saved shown separately; the same side column on every settings page (Review, Apply changes, Save all settings), Apply never turns into Save; Save asks first and says it writes the whole configuration; Discard and Exit ask first; the idle timeout closes access only, keeps drafts for the next entry and does not touch mode or valve; Apply is all or nothing.
+  - Navigation: Pressure limits has its own page and tile; Valve setup groups are a labelled Valve / Reference / Drive choice; Motor direction Normal / Reversed and Pressure response Opening raises / lowers pressure (no +1 / -1 on screen); optional Setup guide (Sensor, Valve setup, Reference, Pressure limits, Tuning, Review and save); Sensor page says profiles and tables come from the PC and where an import is reviewed.
+  - Operator: Switch to MANUAL on the Valve page in AUTO and paused; paused home shows Resume AUTO and Switch to MANUAL; Regulating (not Approaching) outside the band; Valve position / Requested position / Target position wording, estimated-from-steps note once; Reference valve "Find closed position"; page load labelled as a demo starting condition, Reboot board (real start) for an unreferenced boot; 1:1 size button.
+  - Text fit: measured fit (16 px, 12 px, two lines, then ... with a detail view) instead of character counts; calibration identity, date and saved state in separate cards; keypad errors use both lines; keypad side panel shows In use and Saved; dialogs sized to their wrapped text; header title narrowed so NOT REFERENCED has a margin; long lists scroll by drag with a hint.
+  - Icons: Back, backspace, chevrons and warning drawn as LVGL symbols (LV_SYMBOL_LEFT, RIGHT, BACKSPACE, WARNING); lock is a planned image asset. All device text is ASCII plus degree and bullet (the built-in Montserrat range).
+- v52, visual pass on 14903e7 (no new features):
+  - Header: one arrangement on every page, Back | title | mode, one baseline, normal colour. No countdown and no half-row header. A small static open-lock mark (planned image asset) shows while commissioning is open. Entry says once that access locks after 10 min without a touch; the idle lock shows "Commissioning locked".
+  - Labels: the complete action is the main label (Apply changes, Save settings, Import from PC, Set target, Start AUTO, Switch to MANUAL, Reference valve, Enter position, Reset fault, Start reference, Discard changes, Restore saved, Load defaults). A 12 px second line only for state (Reset fault / 3 faults, Next fault / 1 of 3, Referencing / 2 of 3, setup guide step state).
+  - Hints: no permanent subtitles, instruction cards, tutorial footers or colour explanations. Settings pages, Reference valve and Valve have a Help button (slot 1 of the side column, or beside the status on Valve) that opens the longer text; settings Help is built from each field's description. The status strip beside STOP stays on every screen (Ryan): faults, change counts, link and firmware, otherwise the controller status line as on home. Home button row: mode button far left, Menu above STOP (Ryan; superseded in v53).
+  - Layout: operator Menu is five navigation buttons on two columns; Commissioning is six equal task buttons with Setup guide and Exit in the side column; every settings page has Help, Apply changes, Save settings in the same slots (Configuration: Discard changes in slot 1); the Setup guide uses the same grid and page names as Commissioning. The Sensor page lost the Range card (Sensor in use names it); System information drops Targets (the Set target keypad shows the allowed range).
+  - Components: secondary action (white, raised, centred), primary action (filled blue), navigation (white, raised, label left, grey chevron), editable field (white, outlined, grey chevron), read-only value (flat, no edge), status strip, help panel. Values are one 16 px line, cut with "..." and opened in full on a tap; no switching between 16 px, 12 px and two lines.
+  - Colour roles: blue for actions only; amber for warnings only; violet for unapplied changes; grey for movement, the valve bar and applied-but-not-saved; green good; red fault.
+
+## Home screen from layout options, 10-11 October 2026 (v53)
+
+Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-home-final.png`):
+- Two tiles, Pressure and Valve, each with the unit right-aligned in the caption, the reading right-aligned at 26 px, a bar and a setpoint box. Actions stacked above STOP: mode button, Valve, Menu.
+- Pressure bar: log scale 0.1 to 1000 mbar with lines at each decade, labels 0.1, 10, 1000 centred on their lines, and a margin at each end of half the width of "1000". Valve bar: 0 to 100 % with lines at 0, 50 and 100. Both show the low-high band over the last 30 s (lighter grey where it lies over the valve fill) and a direction arrow; the pressure bar marks the target in AUTO.
+- Setpoint boxes: Target (mbar) and Go to (%). Only the box for the present mode is editable (tinted, blue underline, chevron); the other is flat grey and reads "auto" or the last target.
+- No default target. The first Start AUTO opens the keypad and starts AUTO on Set; after that Start AUTO confirms the remembered target or offers New target. Serial and toAuto refuse AUTO with no target set.
+- Nothing is called flow: the pressure is the operator's chosen value for that cryostat.
+
+## Ryan's batch, 13 October 2026 (v54)
+- Home: pressure shown to 1 dp everywhere on screen; worst cases (1034.9 mB, target 1034.0, 100.0 %, two-line status) checked by the audit in MANUAL and AUTO. The pressure bar is filled like the valve bar. The Target box says "Not set" before the first target (taken from the Mercury iTC).
+- Units and symbols: mB for mbar abs on screen, @ for "at" in status and confirms (Stable @ 5.0 mB ±0.1 for 60 s), ± for plus or minus and the keypad sign key. The serial console keeps mbar. **± (U+00B1) is not in LVGL's built-in Montserrat fonts: the firmware font must be converted with U+00B1 added** (the audit allows it).
+- Valve page: Fully close (0 %) and Fully open (100 %) replace the what-the-valve-is-doing card (it repeated the status strip); each asks first.
+- Diagnostics: three rows named at the left (Pressure sensor, Valve motor, Last move); Closed switch reads Pressed / Not pressed; board temperature and link in the footer.
+- Names in operator terms: Reference valve is Zero valve (Zeroing, Zeroed, NOT ZEROED); Trend is Pressure trend; Alarms and events is Faults and log; System information is About this unit; Commissioning is Engineer settings (Engineer PIN, Lock settings); Configuration is Review and save; Sensor is Pressure sensor.
+- A message in the status strip has an OK button that dismisses it.
+- Stage then Apply (liked in the iTC screens) was already how Engineer settings work: changes are drafts until Apply changes.
+
+## HMI style guide review ported, 13 October 2026 (v55)
+- All WP023 review changes S1 to S23 from the proposal copy (thread "Simulator review against HMI style guide", 9f7372e) are in, listed in `WP023-CHANGES.md`. HMI philosophy, style guide and operator test are `HMI-PHILOSOPHY.md`, `STYLE-GUIDE.md`, `OPERATOR-TEST.md`; the S-item checks are `tests/wp023.js`.
+- Reversals of earlier decisions taken with it (Ryan to veto): 30 s band and arrow replaced by a 10 min sparkline; home tile rearranged (sparkline, slimmer bar, label-left setpoint row); header dot grey (filled AUTO, ring otherwise); tap acknowledges a fault, separate from Reset fault; a target above 999.9 drops to 16 px. Pressure at 0.1 mbar was already v54.
+- Home Target and Go to boxes (Ryan, 13 Oct): everything in them is 16 px, the size of "Not set", and the box is 82 px (a little over "Not set" plus the chevron); 1034.0 fits. The OK on status messages is one narrow 60 px button everywhere.
+- Where the review and v54 clash, v54 holds (names, mB/@/±, Diagnostics layout, Fully close/open, filled pressure bar, Not set, OK button).
+
+## Live calibration, 13 October 2026 (v56)
+- Engineer settings has a Live calibration page in line with firmware 0.3.30 (`CAL VAC`, `CAL AIR`): Capture vacuum (pumped down, 0 mB unless typed, ±0.01) and Capture air (vented, room barometer reading 500 to 1100 mB, ±1.0) each average 10 live readings through the board. Either point can be redone alone. Once both are held the two-point table is an unapplied change; the page shows the signal, the reading now and the reading with the new calibration, then Apply changes and Save settings as on every settings page.
+- Certificate zero, span and the cal factor are removed (inaccurate: the INA228 loads the Druck output). Pressure sensor keeps Sensor in use, the calibration detail (kind, points, state) and Import from PC. About this unit shows Cal type instead of Cal factor. Saved config key is now v6, so older saved settings are dropped.
+- Duplications removed from Engineer settings: the Diagnostics tile (Diagnostics is on the Menu without the PIN) and the Setup guide (it repeated the six tiles). Each tile now shows where it stands; Review and save shows no count because the status strip carries it.
+
+## Ryan's batch, 14 October 2026 (v57)
+- Pressure limits removed: the target is 0 to the sensor range, F-02 only above the range, no low alarm. Target band moved to Control tuning.
+- A reading a little below 0 (calibration drift) is shown as it is (for example -0.4), with no fault; the target can be 0.
+- No engineer mode: no PIN, no Lock, no idle lock, no ACCESS commands. Menu > Settings has four tiles (Pressure sensor, Valve setup, Control tuning, Review and save).
+- Review and save keeps the previous saved revision. v60: Restore saved, Load defaults and Revert are one Load settings button listing Last save, Previous save and Factory defaults; any of them comes in as unapplied changes (Apply, then Save). Saved config key is now v7.
+- Date and time on the home header (removed again the same day, Ryan 14 Oct).
+- Console: HELP lists one command per line under its group; ? queries give one value or related group per line; a refused import lists one reason per line.
+- Pressure sensor page: Sensor in use and Add sensor; Calibration and Remove sensor; Live calibration and Import from PC. Sensors are named by range in psi (15 psi, s/n 5880156); Add sensor asks for the serial, then the range (5 to 100 psi), and starts uncalibrated.
+- Live calibration opens from Pressure sensor. Capture vacuum asks nothing (0 mB; Not 0 mB if a gauge reads more). Capture air asks for the barometer reading and shows what the sensor reads now beside the keypad.
+
+## Limit question and time range, 14 October 2026 (v58)
+- Home tiles say "10 min" beside the reading: the time range of the sparkline.
+- The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). Every hit (v59) asks "Set this point as 0 %?" with Skip (count kept) or Set as 0 %. Closing stays blocked while the switch is pressed.
+- Settings > Limit override (v59) lets the valve close past a pressed switch, for a stuck switch. It asks first and covers the next move only, ending when that move stops (as firmware MOT OVERRIDE, 0.3.32); while armed the status strip says so on every page.
+
+## Trend, 14 October 2026 (v60)
+- Pressure trend renamed Trend (it shows the valve too). The range is up and down buttons either side of a Range card, cycling 1, 2, 5, 10, 30 min and 1 hour; one hour of samples is kept.
+- Diagnostics "Past switch" renamed "Beyond switch": closing steps taken after the valve passed the closed-switch point (the switch did not stop it, or Limit override). Should stay 0.
+
+## One-step save, 14 October 2026 (v61)
+- Ryan chose one step (decision card): Apply changes is gone. Edits are violet until Save settings, which checks them together (all or nothing), puts them in use and writes the whole configuration to flash as the next revision. The revision before stays as Load settings > Previous save, the undo.
+- Settings pages: Help, Save settings, Discard changes. Review and save: Unsaved changes (one list), Last saved, Configuration, Load settings. The strip says "N unsaved changes. Save settings to use."
+- Changes that take effect at once (serial PID/VALVE commands, Add/Remove sensor) count as unsaved changes until Save settings.
+
+## Menu tidy, 14 October 2026 (v62)
+- Menu: Trend, Faults and log, Calibrate valve, Calibrate sensor, Diagnostics, Settings. About this unit removed (firmware version moved to the Diagnostics strip); Live calibration renamed Calibrate sensor and opened from the Menu.
+- Zero valve renamed Calibrate valve (closes to the seat switch to find 0 %); NOT ZEROED / ZEROING / Zeroed read NOT CALIBRATED / CALIBRATING / Calibrated. Valve setup tab Zero renamed Calibrate.
+- Pressure sensor page: Import from PC removed.
+
+## Tests
+
+`tests/` drives the page with Playwright at 1:1 and writes native 480 x 272 screenshots to `tests/shots/`:
+
+    node tests/run.js tests/workflows.js    # the seven review workflows
+    node tests/run.js tests/regression.js   # earlier findings that must stay fixed, fixed header
+    node tests/run.js tests/audit.js        # every screen, keypad, dialog and fault state
+    node tests/run.js tests/wp023.js        # the HMI style guide review items S1 to S23
+
+The audit flags clipped or cut text, text overlapping text or buttons, text outside its card, glyphs outside the LVGL font range, touch targets under 40 px and font sizes other than 12, 16, 26 and 40. It runs in Chromium with the Google Montserrat font: it does not prove rendering on the Mikromedia (LVGL glyph metrics, anti-aliasing, touch accuracy and readability on the panel still need checking there).
+
+Page load starts referenced at 0 % in MANUAL as a demo starting condition (labelled under the screen); Reboot board (real start) boots not referenced, as the firmware will. Settings saved in the simulator are kept in the browser's local storage; the laptop panel has Erase simulated flash.
+
+This folder is independent of `InitialTesting/` and `tools/ui-preview/` and is not part of the firmware build. Firmware has not been changed to match.

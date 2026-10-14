@@ -302,13 +302,16 @@ static void powermonitor_init(void)
  * ------------------------------------------------------------------------ */
 #define DRUCK_VEXC_MIN_MV    7000      // datasheet supply range 7-12 V
 
-/* A connected Druck gives about 0.13 mV/V at vacuum (cert zero 1.337 mV at
- * 10 V, less the ~4 % input loading) up to about 10.2 mV/V at 15 psia. Well
- * outside that, the sensor is unplugged or faulty. The limits leave room
- * for other sensors' zero spread and some overrange. Not tested with the
- * Druck unplugged yet: if the open inputs happen to float inside this
- * window, the check will not catch it. */
-#define DRUCK_R_MIN_PPB      50000     // 0.05 mV/V
+/* A connected Druck gives about 0.01-0.13 mV/V at vacuum (cert 13825224
+ * zero 1.337 mV at 10 V; the bench unit 5880156 gives 0.13 mV, 0.013 mV/V)
+ * up to about 10.2 mV/V at 15 psia. Unplugged, the open inputs read about
+ * 0 mV (bench, 14 Oct 2026), so anything under 0.005 mV/V is taken as no
+ * sensor. That leaves 5880156 about 0.9 mbar of zero drift at vacuum
+ * (spec +/-0.41 mbar); a sensor whose zero is under 0.005 mV/V would read
+ * as unplugged at vacuum. A shorted output also reads 0 mV and is caught
+ * the same way. The check is on the raw ratio, not the pressure, so it
+ * does not depend on the cal and CAL VAC still works with a wrong cal. */
+#define DRUCK_R_MIN_PPB      5000      // 0.005 mV/V
 #define DRUCK_R_MAX_PPB      11000000  // 11 mV/V
 
 // The ratio-to-pressure table lives in cal.c (stored in serial flash).
@@ -340,8 +343,8 @@ static void druck_update(int32_t raw_shunt, int32_t raw_bus, int32_t bus_mv)
         state.druck_absent = true;
         lv_snprintf(druck_value, sizeof druck_value, "----");
         lv_snprintf(druck_status, STATUS_LEN,
-                    "Druck: signal %s mV/V, outside 0.05-11 mV/V (not connected?)",
-                    fixed_fmt(r, sizeof r, r_ppb / 1000, 3));
+                    "Druck: signal %s mV/V, outside 0.005-11 mV/V (not connected?)",
+                    fixed_fmt(r, sizeof r, r_ppb / 100, 4));
         return;
     }
     state.reading_ok = true;

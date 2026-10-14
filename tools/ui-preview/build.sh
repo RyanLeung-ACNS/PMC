@@ -26,7 +26,7 @@ gcc $CFLAGS -o "$OUT/ui_preview" \
   "$PROJ/build-MM4/generated/screens.c" \
   "$OUT/liblvgl.a" -lm
 
-for s in ok nopm lowexc trip cal unsaved nodruck; do
+for s in ok nopm lowexc trip cal unsaved nodruck neg; do
   "$OUT/ui_preview" "$s" "$OUT/$s.raw"
   python3 "$HERE/render.py" "$OUT/$s.raw" "$OUT/$s.png"
   rm "$OUT/$s.raw"
@@ -35,6 +35,9 @@ for s in ok nopm lowexc trip cal unsaved nodruck; do
   rm "$OUT/$s-chip.raw"
 done
 "$OUT/ui_preview" ok "$OUT/motor.raw" motor
+"$OUT/ui_preview" trip "$OUT/motor-trip.raw" motor
+python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"
+rm "$OUT/motor-trip.raw"
 python3 "$HERE/render.py" "$OUT/motor.raw" "$OUT/motor.png"
 rm "$OUT/motor.raw"
-echo "Wrote calibration and chip-reading previews for all six scenarios to $OUT"
+echo "Wrote calibration and chip-reading previews for all scenarios to $OUT"

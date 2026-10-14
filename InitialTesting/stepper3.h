@@ -26,6 +26,8 @@
  *   MOT STOP              stop now (coils as per MOT HOLD)
  *   MOT OFF               stop now and switch all coils off
  *   MOT ZERO              set the position count to 0
+ *   MOT OVERRIDE          let the next move close past an open limit
+ *                         (one move only, RAM only); MOT OVERRIDE OFF cancels
  *   MOT RATE <sps>        run rate, steps/s
  *   MOT START <sps>       start/stop rate of the ramp, steps/s
  *   MOT ACCEL <sps/s>     ramp acceleration
@@ -69,6 +71,9 @@ stepper3_stop_t stepper3_last_stop(void);
 
 // Limit input state: true if fitted and the NC contact is open.
 bool stepper3_limit_open(void);
+// Closing override armed or in use (MOT OVERRIDE).
+bool stepper3_override(void);
+void stepper3_override_arm(void);
 bool stepper3_limit_fitted(void);
 
 // Settings (RAM only). Setters return false while a move is running or for
