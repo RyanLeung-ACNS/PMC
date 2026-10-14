@@ -21,7 +21,7 @@ lvgl_main_screen_ui_t lvgl_main_screen_ui;
  * Screen layout, 480 x 272:
  *   y   0-30   header: PMC, clock (RTC), Druck ADC (Power Monitor) / excitation (Boost 10) / link
  *   y  38-130  pressure card: calibrated value (48 px), unit, ratio, sensor / fault line;
- *              on the right the 10 min pressure history line and the valve bar
+ *              on the right the 1 min pressure history line and the pressure bar
  *   y 138-252  Chip readings / Calibration panels (2 x 2 fields), tab buttons
  *              along the bottom; Chip readings shown at start-up. The third
  *              button, Motor, opens the motor screen (motor_screen.c).
@@ -51,36 +51,37 @@ static lv_obj_t *pressure_unc;
 static lv_obj_t *cal_table, *cal_vac, *cal_air, *cal_kind, *cal_store;
 
 /*
- * Pressure history line and valve bar, as the simulator's home tiles
+ * Pressure history line and pressure bar, as the simulator's pressure tile
  * (simulator/index.html, homeTile, drawSpark; STYLE-GUIDE.md section 6), in
  * the right of the pressure card:
- *   history line 112 x 32, one pen, no axes, the last 10 min at one point
- *   every 5 s (120 points), a dot on the newest point. The scale never
- *   clips: linear over the window's readings, at least 1 mbar tall; log
- *   when the readings span more than a decade (pump-down). No reading
- *   (shown as ----) leaves a gap.
- *   valve bar 8 px, 0 to 100 % filled, lines at 0, 50 and 100, a 3 x 14
- *   marker, with "Valve" and the % open above it. Empty with ---- until
- *   the valve is calibrated.
+ *   history line 112 x 32, one pen, no axes, the last 1 min at one point a
+ *   second, a dot on the newest point. The scale never clips: linear over
+ *   the window's readings, at least 1 mbar tall; log when the readings span
+ *   more than a decade (pump-down). No reading (shown as ----) leaves a gap.
+ *   pressure bar 8 px, log 0.1 to 1000 mbar, filled to the reading, lines at
+ *   each decade, labels 0.1, 10 and 1000 centred on their lines, a margin of
+ *   half the width of "1000" at each end, a 3 x 14 marker. Empty with no
+ *   reading.
  * The LVGL heap is nearly full, so both are one object that draws itself
  * (side_draw_event); the points are kept here as pixel rows.
  */
-#define SIDE_X        336    // left of the history line and valve bar, in the card
-#define SIDE_CAP_W    44     // "10 min", left of the history line
-#define HIST_POINTS   120
-#define HIST_EVERY_S  5
+#define SIDE_X        336    // left of the history line and pressure bar, in the card
+#define SIDE_CAP_W    44     // "1 min", left of the history line
+#define HIST_POINTS   60
+#define HIST_EVERY_S  1
 #define HIST_W        112
 #define HIST_H        32
 #define HIST_PAD      2      // top and bottom, as the simulator
 #define HIST_PAD_R    3      // room for the dot on the newest point
-#define VBAR_W        112
-#define VBAR_Y        36     // caption row; the bar is 18 px below it
-#define VBAR_H        30     // down to the bottom of the marker
+#define PBAR_W        112
+#define PBAR_Y        38     // top of the bar; the marker is 3 px above and below
+#define PBAR_PAD      15     // half the width of "1000" at 12 px
+#define SIDE_H        62     // down to the bottom of the bar labels
 #define COL_PEN       lv_color_make(45, 88, 119)     // #2D5877
 #define COL_SPARK_BG  lv_color_make(243, 246, 248)   // #F3F6F8
 #define COL_PAGE      lv_color_make(232, 238, 244)
-#define COL_VFILL     lv_color_make(123, 135, 148)   // #7B8794
-#define COL_VTICK     lv_color_make(163, 175, 187)   // #A3AFBB
+#define COL_PFILL     lv_color_make(123, 135, 148)   // #7B8794
+#define COL_PTICK     lv_color_make(163, 175, 187)   // #A3AFBB
 
 static int32_t hist_mmbar[HIST_POINTS];   // oldest first, in 0.001 mbar
 static bool hist_ok[HIST_POINTS];
@@ -88,9 +89,7 @@ static int8_t hist_y[HIST_POINTS];        // pixel row in the line, -1 = gap
 static int hist_tick;                     // status ticks since the last point
 
 static lv_obj_t *side;
-static char vbar_text[16] = "----";
-static lv_color_t vbar_text_col;
-static int32_t vbar_x = -1;               // fill width in px, -1 = no marker
+static int32_t pbar_x = -1;               // fill width in px, -1 = no reading
 
 #define STATUS_LINES 6
 static const char *last_line[STATUS_LINES];
@@ -439,7 +438,13 @@ static int32_t hist_x(int i)
     return (HIST_W - 1 - HIST_PAD_R) * i / (HIST_POINTS - 1);
 }
 
-/* Draws "10 min", the history line, and the valve bar. Each draw call is
+// Pressure bar, x of a decade line: k = 0 for 0.1 mbar to 4 for 1000 mbar.
+static int32_t pbar_decade(int k)
+{
+    return PBAR_PAD + k * (PBAR_W - 2 * PBAR_PAD) / 4;
+}
+
+/* Draws "1 min", the history line, and the pressure bar. Each draw call is
  * done before the next is made (no OS), so the LVGL heap holds one at a time. */
 static void side_draw_event(lv_event_t *e)
 {
@@ -454,7 +459,8 @@ static void side_draw_event(lv_event_t *e)
 
     // History line.
     text.color = COL_MUTED;
-    text.text = "10 min";
+    text.text = "1 min";
+    text.align = LV_TEXT_ALIGN_RIGHT;
     lv_area_t cap = { a.x1, a.y1, a.x1 + SIDE_CAP_W - 5, a.y1 + 15 };
     lv_draw_label(layer, &text, &cap);
     int32_t hx = a.x1 + SIDE_CAP_W, hy = a.y1;
@@ -489,67 +495,56 @@ static void side_draw_event(lv_event_t *e)
         r.radius = 0;
     }
 
-    // Valve bar.
-    int32_t vx = a.x1 + SIDE_CAP_W, vy = a.y1 + VBAR_Y;
-    lv_area_t row = { vx, vy, vx + VBAR_W - 1, vy + 15 };
-    text.text = "Valve";
-    lv_draw_label(layer, &text, &row);
-    text.color = vbar_text_col;
-    text.text = vbar_text;
-    text.align = LV_TEXT_ALIGN_RIGHT;
-    lv_draw_label(layer, &text, &row);
-    int32_t y1 = vy + 18, y2 = y1 + 7;
-    lv_area_t bar = { vx, y1, vx + VBAR_W - 1, y2 };
+    // Pressure bar.
+    int32_t bx = a.x1 + SIDE_CAP_W, y1 = a.y1 + PBAR_Y, y2 = y1 + 7;
+    lv_area_t bar = { bx, y1, bx + PBAR_W - 1, y2 };
     r.bg_color = COL_PAGE;
     lv_draw_rect(layer, &r, &bar);
-    if (vbar_x > 0) {
-        bar.x2 = vx + vbar_x - 1;
-        r.bg_color = COL_VFILL;
+    if (pbar_x > 0) {
+        bar.x2 = bx + pbar_x - 1;
+        r.bg_color = COL_PFILL;
         lv_draw_rect(layer, &r, &bar);
     }
-    r.bg_color = COL_VTICK;                       // lines at 0, 50, 100 %
-    for (int i = 0; i <= 2; i++) {
-        int32_t x = vx + (i == 2 ? VBAR_W - 1 : i * VBAR_W / 2);
+    r.bg_color = COL_PTICK;                       // a line at each decade
+    for (int k = 0; k <= 4; k++) {
+        int32_t x = bx + pbar_decade(k);
         lv_area_t tick = { x, y1, x, y2 };
         lv_draw_rect(layer, &r, &tick);
     }
-    if (vbar_x >= 0) {
-        int32_t x = vbar_x - 1 < 0 ? 0 : vbar_x - 1 > VBAR_W - 3 ? VBAR_W - 3 : vbar_x - 1;
-        lv_area_t mark = { vx + x, y1 - 3, vx + x + 2, y1 + 10 };
+    static const char *const labels[3] = { "0.1", "10", "1000" };
+    text.align = LV_TEXT_ALIGN_CENTER;
+    for (int k = 0; k < 3; k++) {
+        int32_t x = bx + pbar_decade(2 * k);
+        lv_area_t l = { x - 20, y2 + 2, x + 20, y2 + 16 };
+        text.text = labels[k];
+        lv_draw_label(layer, &text, &l);
+    }
+    if (pbar_x >= 0) {
+        int32_t x = pbar_x - 1 < 0 ? 0 : pbar_x - 1 > PBAR_W - 3 ? PBAR_W - 3 : pbar_x - 1;
+        lv_area_t mark = { bx + x, y1 - 3, bx + x + 2, y1 + 10 };
         r.bg_color = COL_TEXT;
         lv_draw_rect(layer, &r, &mark);
     }
 }
 
-/* Valve bar, 10 times a second while the main screen shows, so it follows a
- * move. Redrawn only when the text or the bar changes. */
-static void vbar_timer_cb(lv_timer_t *t)
+/* Pressure bar, from the status timer: log 0.1 to 1000 mbar between the
+ * margins. Redrawn only when the fill moves a pixel. */
+static void pbar_update(const clicks_state_t *s)
 {
-    (void)t;
-    if (lv_screen_active() != lvgl_main_screen_ui.main_screen)
-        return;
-    char txt[sizeof vbar_text];
-    lv_color_t col = COL_TEXT;
     int32_t x = -1;
-    if (valve_calibrated()) {
-        char v[16];
-        int32_t p = valve_pct10();
-        lv_snprintf(txt, sizeof txt, "%s %%", fixed_fmt(v, sizeof v, p, 1));
-        x = (p < 0 ? 0 : p > 1000 ? 1000 : p) * VBAR_W / 1000;
-    } else if (valve_mode() == VALVE_CALIBRATING) {
-        lv_strlcpy(txt, "Calibrating", sizeof txt);
-    } else {
-        lv_strlcpy(txt, "----", sizeof txt);
-        col = COL_IDLE;
+    if (s->reading_ok && !s->boost_tripped) {
+        const int32_t l_lo = log2_q8(100), l_hi = log2_q8(1000000);   // 0.1, 1000 mbar
+        int32_t l = log2_q8(s->p_mmbar > 1 ? (uint32_t)s->p_mmbar : 1);
+        x = pbar_decade(0) + (l - l_lo) * (pbar_decade(4) - pbar_decade(0)) / (l_hi - l_lo);
+        x = x < 0 ? 0 : x > PBAR_W ? PBAR_W : x;
     }
-    if (x != vbar_x || !lv_color_eq(col, vbar_text_col) || strcmp(txt, vbar_text) != 0) {
-        vbar_x = x;
-        vbar_text_col = col;
-        lv_strlcpy(vbar_text, txt, sizeof vbar_text);
+    if (x != pbar_x) {
+        pbar_x = x;
         lv_area_t a;
         lv_obj_get_coords(side, &a);
         a.x1 += SIDE_CAP_W;
-        a.y1 += VBAR_Y;
+        a.y1 += PBAR_Y - 3;
+        a.y2 = a.y1 + 13;
         lv_obj_invalidate_area(side, &a);
     }
 }
@@ -607,6 +602,7 @@ static void status_timer_cb(lv_timer_t *t)
                                 (!s->pm_found || s->boost_tripped || !s->reading_ok) ? COL_FAULT :
                                 s->cal_nominal ? COL_WARN : COL_MUTED);
     hist_sample(s);
+    pbar_update(s);
 
     // Readouts, 2 decimals (the DATA lines keep full resolution).
     if (s->pm_found) {
@@ -742,10 +738,12 @@ void init_main_screen()
     lv_obj_set_style_text_font(pressure_label, &pressure_font, 0);
     lv_obj_set_style_text_align(pressure_label, LV_TEXT_ALIGN_RIGHT, 0);
     // Tabular digits and right alignment fix the decimal position; value and
-    // unit sit at the left, the history line and valve bar at the right.
+    // unit sit at the left, the history line and pressure bar at the right.
+    // The label box starts left of the card; the widest reading (1034.00)
+    // still starts inside it.
     lv_obj_set_width(pressure_label, 250);
-    lv_obj_align(pressure_label, LV_ALIGN_TOP_LEFT, 0, -4);
-    lv_obj_t *unit = make_label(pc, "mbar abs", COL_MUTED);
+    lv_obj_align(pressure_label, LV_ALIGN_TOP_LEFT, -40, -4);
+    lv_obj_t *unit = make_label(pc, "mB", COL_MUTED);   // mbar abs, as the simulator
     // Unit sits on the digits' baseline (the label box includes descender room).
     lv_obj_align_to(unit, pressure_label, LV_ALIGN_OUT_RIGHT_BOTTOM, 12, -7);
     // Uncertainty of the reading (uncert.c), under the unit.
@@ -755,18 +753,17 @@ void init_main_screen()
     lv_obj_add_flag(pressure_unc, LV_OBJ_FLAG_HIDDEN);   // UNC? still works
 #endif
     pressure_sub = make_label(pc, "", COL_MUTED);
-    lv_obj_set_width(pressure_sub, SIDE_X - 8);   // clear of the valve bar
+    lv_obj_set_width(pressure_sub, SIDE_X - 8);   // clear of the pressure bar
     lv_label_set_long_mode(pressure_sub, LV_LABEL_LONG_DOT);
     lv_obj_align(pressure_sub, LV_ALIGN_BOTTOM_LEFT, 4, 0);
 
-    // Pressure history line (last 10 min) and valve bar, drawn by side_draw_event.
+    // Pressure history line (last 1 min) and pressure bar, drawn by side_draw_event.
     memset(hist_y, -1, sizeof hist_y);
     side = lv_obj_create(pc);
     lv_obj_remove_style_all(side);
     lv_obj_remove_flag(side, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(side, SIDE_X - SIDE_CAP_W, 0);
-    lv_obj_set_size(side, SIDE_CAP_W + HIST_W, VBAR_Y + VBAR_H);
-    vbar_text_col = COL_IDLE;
+    lv_obj_set_size(side, SIDE_CAP_W + HIST_W, SIDE_H);
     lv_obj_add_event_cb(side, side_draw_event, LV_EVENT_DRAW_MAIN, NULL);
 
     // Dedicated footer: firmware/reset information cannot obscure a fault.
@@ -813,7 +810,6 @@ void init_main_screen()
 
     lv_timer_create(status_timer_cb, 1000, NULL);
     lv_timer_create(limit_timer_cb, 50, NULL);
-    lv_timer_create(vbar_timer_cb, 100, NULL);
     motor_screen_init(scr);
 }
 

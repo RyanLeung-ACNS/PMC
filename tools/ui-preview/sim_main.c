@@ -26,11 +26,11 @@ void fake_hw_pumpdown(int t);
 
 static lv_obj_t *find_label(lv_obj_t *obj, const char *text);
 
-// The history line and valve bar: the one plain object in the pressure card
+// The history line and pressure bar: the one plain object in the pressure card
 // (the parent of the unit label); the rest are labels.
 static lv_obj_t *find_side(void)
 {
-    lv_obj_t *card = lv_obj_get_parent(find_label(lv_screen_active(), "mbar abs"));
+    lv_obj_t *card = lv_obj_get_parent(find_label(lv_screen_active(), "mB"));
     for (uint32_t i = 0; i < lv_obj_get_child_count(card); i++) {
         lv_obj_t *o = lv_obj_get_child(card, i);
         if (lv_obj_get_class(o) == &lv_obj_class)
@@ -42,7 +42,7 @@ static lv_obj_t *find_side(void)
 static long flushed_px;   // pixels sent to the display, for the redraw check
 // The pressure history line gains a point every 5 s, so it redraws on a
 // steady screen. The main screen check counts invalidated areas outside it
-// and the valve bar beside it
+// and the pressure bar beside it
 // (the full-frame render here always flushes the whole screen).
 static lv_area_t hist_area;
 static long invalid_px;
@@ -259,9 +259,9 @@ int main(int argc, char **argv)
         goto render;
     }
     if (argc == 4 && !strcmp(argv[3], "hist")) {
-        // 10 min of pump-down, one status tick a second.
-        for (int t = 0; t < 600; t++) {
-            fake_hw_pumpdown(t);
+        // A pump-down over the history line's 1 min, one status tick a second.
+        for (int t = 0; t < 60; t++) {
+            fake_hw_pumpdown(t * 10);
             lv_tick_inc(1000);
             lv_timer_handler();
         }
