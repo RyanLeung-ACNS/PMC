@@ -22,8 +22,37 @@ static uint16_t fb[W * H];
 static uint8_t draw_buf[W * H * 2] __attribute__((aligned(4)));
 
 void fake_hw_set_scenario(const char *name);
+void fake_hw_pumpdown(int t);
+
+static lv_obj_t *find_label(lv_obj_t *obj, const char *text);
+
+// The history line and valve bar: the one plain object in the pressure card
+// (the parent of the unit label); the rest are labels.
+static lv_obj_t *find_side(void)
+{
+    lv_obj_t *card = lv_obj_get_parent(find_label(lv_screen_active(), "mbar abs"));
+    for (uint32_t i = 0; i < lv_obj_get_child_count(card); i++) {
+        lv_obj_t *o = lv_obj_get_child(card, i);
+        if (lv_obj_get_class(o) == &lv_obj_class)
+            return o;
+    }
+    return NULL;
+}
 
 static long flushed_px;   // pixels sent to the display, for the redraw check
+// The pressure history line gains a point every 5 s, so it redraws on a
+// steady screen. The main screen check counts invalidated areas outside it
+// and the valve bar beside it
+// (the full-frame render here always flushes the whole screen).
+static lv_area_t hist_area;
+static long invalid_px;
+
+static void invalidate_cb(lv_event_t *e)
+{
+    const lv_area_t *a = lv_event_get_param(e);
+    if (a->x1 < hist_area.x1 || a->x2 > hist_area.x2 || a->y1 < hist_area.y1 || a->y2 > hist_area.y2)
+        invalid_px += (long)(a->x2 - a->x1 + 1) * (a->y2 - a->y1 + 1);
+}
 
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
@@ -195,6 +224,7 @@ int main(int argc, char **argv)
     lv_display_set_color_format(d, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(d, draw_buf, NULL, sizeof draw_buf, LV_DISPLAY_RENDER_MODE_FULL);
     lv_display_set_flush_cb(d, flush_cb);
+    lv_display_add_event_cb(d, invalidate_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
     clicks_init();
     init_screens();
@@ -205,15 +235,18 @@ int main(int argc, char **argv)
         lv_tick_inc(1100);
         lv_timer_handler();
     }
+    lv_obj_t *side = find_side();
+    assert(side);
+    lv_obj_get_coords(side, &hist_area);
     // Readings that do not change must not redraw anything: on the board
     // every redrawn pixel is written to the SSD1963 one at a time.
-    flushed_px = 0;
+    invalid_px = 0;
     for (int i = 0; i < 3; i++) {
         lv_tick_inc(1100);
         lv_timer_handler();
     }
-    if (flushed_px != 0) {
-        fprintf(stderr, "steady-state redraw: %ld px\n", flushed_px);
+    if (invalid_px != 0) {
+        fprintf(stderr, "steady-state redraw: %ld px\n", invalid_px);
         return 1;
     }
 
@@ -224,6 +257,14 @@ int main(int argc, char **argv)
     if (argc == 4 && !strcmp(argv[3], "motor")) {
         check_motor_screen();
         goto render;
+    }
+    if (argc == 4 && !strcmp(argv[3], "hist")) {
+        // 10 min of pump-down, one status tick a second.
+        for (int t = 0; t < 600; t++) {
+            fake_hw_pumpdown(t);
+            lv_tick_inc(1000);
+            lv_timer_handler();
+        }
     }
     check_detail_tabs(argc == 4 && !strcmp(argv[3], "raw"));
     lv_obj_update_layout(lv_screen_active());

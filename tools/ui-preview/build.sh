@@ -34,6 +34,9 @@ for s in ok nopm lowexc trip cal unsaved nodruck neg; do
   python3 "$HERE/render.py" "$OUT/$s-chip.raw" "$OUT/$s-chip.png"
   rm "$OUT/$s-chip.raw"
 done
+"$OUT/ui_preview" ok "$OUT/hist.raw" hist
+python3 "$HERE/render.py" "$OUT/hist.raw" "$OUT/hist.png"
+rm "$OUT/hist.raw"
 "$OUT/ui_preview" ok "$OUT/motor.raw" motor
 "$OUT/ui_preview" trip "$OUT/motor-trip.raw" motor
 python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"

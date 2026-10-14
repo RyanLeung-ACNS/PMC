@@ -10,6 +10,7 @@
 #include "cal.h"
 #include "rtclock.h"
 #include "uncert.h"
+#include "fixed.h"
 
 static clicks_state_t st;
 static bool fake_wdt;
@@ -168,3 +169,27 @@ const char *stepper3_stop_name(stepper3_stop_t s) { return s == STEPPER3_STOP_DO
 /* Limit switch: closed, except in the trip scenario. */
 limit_state_t limit_state(void) { return st.boost_tripped ? LIMIT_OPEN : LIMIT_CLOSED; }
 const char *limit_text(void) { return limit_state() == LIMIT_OPEN ? "OPEN" : "closed"; }
+
+/* Valve layer: calibrated at 37.5 % open, except in the nopm and trip
+ * scenarios (not calibrated). */
+#include "valve.h"
+const char *stepper3_locked(void) { return NULL; }
+void valve_sense(const clicks_state_t *s) { (void)s; }
+const char *valve_status(void) { return "Valve: MANUAL"; }
+bool valve_calibrated(void) { return st.pm_found && !st.boost_tripped; }
+int32_t valve_pct10(void) { return 375; }
+valve_mode_t valve_mode(void) { return valve_calibrated() ? VALVE_MANUAL : VALVE_NOT_CAL; }
+
+/* Pump-down over the history line's 10 min (sim_main.c "hist"): sets the
+ * reading for second t of 600. */
+void fake_hw_pumpdown(int t)
+{
+    static const int32_t mmbar[] = { 967819, 961000, 640000, 210000, 52000, 9100, 2100, 812, 305, 240, 236 };
+    int i = t / 60, f = t % 60;
+    st.p_mmbar = mmbar[i] + (mmbar[i + 1] - mmbar[i]) * f / 60;
+    st.reading_ok = st.pm_found && !(t > 250 && t < 262);   // a short loss shows as a gap
+    if (st.reading_ok)
+        fixed_fmt(value, sizeof value, fixed_round(st.p_mmbar, 1), 2);
+    else
+        strcpy(value, "----");
+}
