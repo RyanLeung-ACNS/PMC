@@ -21,8 +21,8 @@ module.exports = async (p, h) => {
   ok(r.d && r.tab === 0.004756, 'revised calibration for a known serial is a draft, not applied');
   r = await ev(() => { DRAFT.clear(); P.Kp = 5; SIM_FLASH_FAIL = true; const rev = SAVED.rev; const res = saveCfg(); SIM_FLASH_FAIL = false; return { res, same: rev === SAVED.rev, dirty: cfgDirty() }; });
   ok(r.res === false && r.same && r.dirty, 'failed flash write: not saved, reported');
-  r = await ev(() => { DRAFT.clear(); show('ctrl', false, true); updateUI(); const home = G.date.textContent; show('menu', false, true); updateUI(); const tile = [...document.querySelectorAll('#dev .b')].some(b => b.offsetParent && b.textContent.trim() === 'Settings'); show('comm'); return { home, tile, cur: current }; });
-  ok(/^\d\d [A-Z][a-z]{2} 2026 \d\d:\d\d$/.test(r.home) && r.tile && r.cur === 'comm', 'date on the home header (' + r.home + '); Settings opens with no PIN');
+  r = await ev(() => { DRAFT.clear(); show('ctrl', false, true); updateUI(); const home = G.h.textContent; show('menu', false, true); updateUI(); const tile = [...document.querySelectorAll('#dev .b')].some(b => b.offsetParent && b.textContent.trim() === 'Settings'); show('comm'); return { home, tile, cur: current }; });
+  ok(!/\d\d:\d\d/.test(r.home) && r.tile && r.cur === 'comm', 'no date or time on the home header (Ryan 14 Oct); Settings opens with no PIN');
   r = await ev(() => { const o = []; const keep = conLog; conLog = x => o.push(x); command('PID?'); command('HELP'); conLog = keep; return o; });
   ok(r.every(l => l.length <= 70), 'console replies broken into lines of 70 characters or less: longest ' + Math.max(...r.map(l => l.length)));
   r = await ev(() => { closeOverlay(); bootHomed(); M.pos = 5000; limitHit(); const t1 = overlay ? overlay.textContent : ''; [...overlay.querySelectorAll('.b')].find(b => /Skip/.test(b.textContent)).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
