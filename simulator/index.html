@@ -414,7 +414,7 @@ function cfgState() { return DRAFT.size ? 'draft' : cfgDirty() ? 'applied' : 'sa
 const CFG_STATE_WORDS = { saved: 'Saved', applied: 'Applied, not saved', draft: 'Draft, not applied' };
 const DRAFT = new Map();
 const BENCH = { druck: true, exc: true, coupled: true, air: 1013.4, plumb: 'line', link: 'usb' };
-const LIM = { force: 'NORMAL', hyst: 20, simPos: 3000, raw: false, active: false, clearSince: null, over: 0, deepest: 0 };
+const LIM = { force: 'NORMAL', hyst: 20, simPos: 3000, raw: false, active: false, clearSince: null, over: 0, deepest: 0, override: false };
 const M = { pos: 0, moving: false, dir: 0, v: 0, acc: 0, target: 0, vrun: 400, vstart: 200, lastStop: 'none', onDone: null };
 const C = { mv: 0, lastImport: null, mode: 'NOT HOMED', ref: false, SP: 5.0, spSet: false, manPos: 0, posCmd: 0, lastSent: 0, lastCorr: 0, I: 0, prevPV: null,
   homeStage: '', homeT0: 0, lastHome: null, faults: new Map(), events: [], msg: null,
@@ -587,7 +587,7 @@ function debounceTick() {
  * Stepper (stepper3.c with go-to and retarget)
  * ==================================================================== */
 function doStep() {
-  if (M.dir < 0 && LIM.active) { finish('LIMIT'); return false; }   // read before every closing step
+  if (M.dir < 0 && LIM.active && !LIM.override) { finish('LIMIT'); return false; }   // read before every closing step
   M.pos += M.dir;
   if (BENCH.coupled) {
     const ph = MOT.rev ? -M.dir : M.dir;   // v47: Motor direction setting; Normal is right for the bench wiring
@@ -624,7 +624,7 @@ function startMove(target, rate, onDone) {
     // v50 (review 9 Oct): no move starts while a fault is latched, whoever asks (homing stages included).
     if (C.faults.size) { M.onDone = null; if (onDone) later(0, () => onDone('FAULT')); return false; }
     if (target === M.pos) { if (onDone) { M.onDone = null; later(0, () => onDone('DONE')); } return true; }
-    if (target < M.pos && LIM.active) { M.onDone = null; M.lastStop = 'LIMIT'; if (onDone) later(0, () => onDone('LIMIT')); return false; }
+    if (target < M.pos && LIM.active && !LIM.override) { M.onDone = null; M.lastStop = 'LIMIT'; if (onDone) later(0, () => onDone('LIMIT')); return false; }
     M.from = M.pos; M.t0 = t;   // v45: start of the move, for the Motor screen
     M.moving = true; M.dir = sgn(target - M.pos); M.vstart = Math.min(MOT.start, M.vrun); M.v = M.vstart; M.acc = 0;
   }
@@ -640,24 +640,30 @@ function stopMotor() { if (M.moving) { M.target = M.pos; finish('STOP'); } }
 
 // Switch opened outside homing (Control Logic 4.2): stop, set zero, W-01 if far from zero.
 // Ryan (14 Oct): the switch is force-actuated and can open before the needle is seated (ice, mechanical fault). Only a
-// person can tell, so a hit away from 0 % asks before the count is reset; near 0 % (within 200 steps) it resets as before.
+// person can tell, so every hit asks: set this point as 0 %, or skip (count kept). Closing stays blocked while the
+// switch is pressed, unless the limit override is on (Settings).
 function limitHit() {
-  if (!C.ref) return;
+  if (!C.ref || (overlay && overlay.dataset.lim)) return;
   const at = M.pos;
-  if (Math.abs(at - P.Noffset) <= 200) { M.pos = P.Noffset; if (C.mode === 'MANUAL') C.manPos = Math.max(C.manPos, P.Noffset); return; }
-  ev('W-01', 'Closed switch pressed at count ' + fint(at) + ' (' + pctOf(at).toFixed(1) + ' %), asking whether the valve is seated');
-  confirmBox('Closed switch pressed at ' + pctOf(at).toFixed(1) + ' %. Is the valve seated, or is the switch stuck (ice)?', 'Seated, 0 %', 'act', () => {
+  ev('W-01', 'Closed switch pressed at count ' + fint(at) + ' (' + pctOf(at).toFixed(1) + ' %)');
+  confirmBox('Closed switch pressed at ' + pctOf(at).toFixed(1) + ' %. Set this point as 0 %?', 'Set as 0 %', 'act', () => {
     const d = M.pos - at; M.pos = P.Noffset + d; if (C.mode === 'MANUAL') C.manPos = C.posCmd = C.lastSent = M.pos;
-    ev('W-01', 'Operator: valve seated, count reset to ' + P.Noffset); msg('Valve seated, now 0 %.', 'info');
-  }, null, ['Stuck, keep', () => { ev('W-01', 'Operator: switch stuck, count kept at ' + fint(at)); msg('Count kept. Closing stays blocked while the switch is pressed.', 'info'); }]);
+    ev('W-01', 'Point set as 0 %, count ' + P.Noffset); msg('Set as 0 %.', 'info');
+  }, null, ['Skip', () => ev('W-01', 'Zero skipped, count kept at ' + fint(at))]);
+  overlay.dataset.lim = '1';
 }
-
+// Limit override (Ryan, 14 Oct): lets the valve close past a pressed switch, for a switch stuck on ice. Not saved; off at
+// restart. While on, the status strip says so on every page.
+function limOverrideAsk() {
+  if (LIM.override) { LIM.override = false; ev('LIM', 'Limit override off'); msg('Limit override off.', 'info'); return; }
+  confirmBox('Allow closing past the closed switch? Only for a stuck switch: the valve can be driven into the seat. Off at restart.', 'Override', '', () => { LIM.override = true; ev('LIM', 'Limit override on'); });
+}
 // Central permissive for manual, jog and auto moves.
 function requestMove(target, quiet) {
   if (C.mode === 'HOMING') return quiet ? false : refuse('Zeroing');
   if (C.faults.size) return quiet ? false : refuse('Reset the fault first');
   if (C.ref) target = clamp(Math.round(target), 0, P.POSMAX);
-  if (!M.moving && target < M.pos && LIM.active) return quiet ? false : refuse('At seat, cannot close');
+  if (!M.moving && target < M.pos && LIM.active && !LIM.override) return quiet ? false : refuse('At seat, cannot close');
   return startMove(target);
 }
 
@@ -969,7 +975,7 @@ function simTick() {
 function reboot() {
   timers = []; M.moving = false; M.onDone = null; M.v = 0; M.pos = 0; M.target = 0; M.lastStop = 'none';
   C.mode = 'NOT HOMED'; C.ref = false; C.faults.clear(); C.homeStage = ''; C.manPos = C.posCmd = C.lastSent = 0; C.I = 0; C.msg = null;
-  loadActive(SAVED); DRAFT.clear();   // a restart loads the saved configuration; drafts and applied changes are lost
+  loadActive(SAVED); DRAFT.clear(); LIM.override = false;   // a restart loads the saved configuration; drafts and applied changes are lost
   C.lastHome = null; C.inBandSince = null; navStack = [];
   ev('F-14', 'Power-up (event only)');
   // v48 (review item 8): a restart no longer invents a reference or moves the mechanism. The step count restarts
@@ -1178,6 +1184,7 @@ function updateGlobal() {
   // v48 (review item 6): a latched fault outranks messages; a refusal still shows while it is fresh, then the fault returns.
   else if (fl.length && current !== 'faults' && !(toastOn && C.msg.kind === 'warn' && !overlay)) { mode = 'fault'; text = (fl[0][0] === 'F-12' ? 'Stopped. Valve held, not closed.' : fl[0][0] + ' ' + faultShort(fl[0][0], fl[0][1])) + (fl.length > 1 ? ' (+' + (fl.length - 1) + ')' : ''); go = 'faults'; }
   else if (toastOn && !overlay) { mode = 'toast'; text = C.msg.text; }
+  else if (LIM.override) { mode = 'note'; text = 'Limit override on: closing ignores the closed switch.'; go = 'comm'; }
   else if (screens[current] && screens[current].foot) { mode = 'note'; text = screens[current].foot(); go = screens[current].footGo ? screens[current].footGo() : ''; }
   // Ryan (9 Oct): the status strip beside STOP stays on every screen. With nothing page-specific it shows the
   // controller status line, as on home.
@@ -1362,7 +1369,8 @@ function statusLine() {
   switch (C.mode) {
     case 'NOT HOMED': return { kind: 'prompt', text: 'Valve not zeroed' };   // S4: a prompt, not a warning (WP023 s9.8.1 p55)
     case 'HOMING': return { kind: 'info', dot: COL.grey, text: homeStep() };
-    case 'MANUAL': return { kind: 'info', dot: COL.muted, text: M.moving ? 'Moving to ' + pctOf(M.target).toFixed(1) + ' %' : 'Valve held' };
+    case 'MANUAL': if (LIM.override) return { kind: 'warn', text: 'Limit override on' };
+      return { kind: 'info', dot: COL.muted, text: M.moving ? 'Moving to ' + pctOf(M.target).toFixed(1) + ' %' : 'Valve held' };
     case 'AUTO': {
       const r = regulation(), sp = fmtOp(C.SP);
       if (r === 'stable') return { kind: 'info', dot: COL.ok, text: 'Stable @ ' + sp + ' mB ±' + fmtLim(P.band) };
@@ -1891,8 +1899,9 @@ function buildComm() {
     ['Control tuning', 'tune', () => 'Gain ' + P.Kp.toFixed(2)],
     ['Review and save', 'cfg', () => '']];
   const bs = tiles.map((t0, i) => navBtn(s, c2[i % 2][0], RY[Math.floor(i / 2)], c2[i % 2][1], RH, '', () => show(t0[1])));
+  const bo = btn(s, c2[0][0], RY[2], c2[0][1], RH, '', limOverrideAsk);
   cfgStatus('comm');
-  screens.comm.update = () => bs.forEach((b, i) => seth(b, navLab(tiles[i][0], tiles[i][2]())));
+  screens.comm.update = () => { bs.forEach((b, i) => seth(b, navLab(tiles[i][0], tiles[i][2]()))); seth(bo, lab('Limit override', LIM.override ? 'On: tap to turn off' : 'Off')); tog(bo, 'tile-alm', LIM.override); };
 }
 function profileList(f) {
   closeOverlay();

@@ -68,7 +68,8 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 
 ## Limit question and time range, 14 October 2026 (v58)
 - Home tiles say "10 min" beside the reading: the time range of the sparkline.
-- The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). A hit more than 200 steps from 0 % no longer resets the count: a question asks whether the valve is seated (Seated, 0 %) or the switch is stuck (Stuck, keep). Closing stays blocked while the switch is pressed. Within 200 steps of 0 % the count resets as before.
+- The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). Every hit (v59) asks "Set this point as 0 %?" with Skip (count kept) or Set as 0 %. Closing stays blocked while the switch is pressed.
+- Settings > Limit override (v59) lets the valve close past a pressed switch, for a stuck switch. It asks first, is not saved, turns off at restart, and while on the status strip says so on every page.
 
 ## Tests
 
