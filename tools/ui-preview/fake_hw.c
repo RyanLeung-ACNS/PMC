@@ -188,3 +188,12 @@ void fake_hw_pumpdown(int t)
     else
         strcpy(value, "----");
 }
+
+/* A fast rise from 0 (sim_main.c "rise"): 0 and a little below while pumped
+ * down, then up to atmosphere. Step t of 60. */
+void fake_hw_rise(int t)
+{
+    st.reading_ok = st.pm_found;
+    st.p_mmbar = t < 40 ? (t % 2 ? -400 : 0) : (t - 39) * (t - 39) * 2400;
+    fixed_fmt(value, sizeof value, fixed_round(st.p_mmbar, 1), 2);
+}

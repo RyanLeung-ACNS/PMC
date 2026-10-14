@@ -370,12 +370,14 @@ static void hist_scale(void)
         int32_t v = hist_mmbar[i];
         if (v < lo) lo = v;
         if (v > hi) hi = v;
-        if (v > 0 && v < plo) plo = v;
+        int32_t c = v > 1 ? v : 1;               // 0.001 mbar or below counts as 0.001
+        if (c < plo) plo = c;
         last = i;
     }
 
-    // Log when the readings span more than a decade; at or below 0.001 mbar
-    // counts as 0.001 mbar there.
+    // Log when the readings span more than a decade. A reading at or below
+    // 0.001 mbar (0, or a little negative from drift) counts as 0.001 mbar,
+    // for the bottom of the scale too, so a rise from 0 stays in the box.
     bool use_log = last >= 0 && plo != INT32_MAX && (int64_t)hi > 10 * (int64_t)plo;
     int64_t l0 = 0, l1 = 1;
     if (use_log) {
@@ -406,7 +408,8 @@ static void hist_scale(void)
         } else {
             f = ((int64_t)hist_mmbar[i] - lo) * 1000 / ((int64_t)hi - lo);
         }
-        hist_y[i] = (int8_t)(HIST_PAD + ch - (int32_t)(f * ch / 1000));
+        int32_t y = HIST_PAD + ch - (int32_t)(f * ch / 1000);
+        hist_y[i] = (int8_t)(y < 0 ? 0 : y > HIST_H - 1 ? HIST_H - 1 : y);
     }
 
     lv_area_t a;

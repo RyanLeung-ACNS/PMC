@@ -37,6 +37,9 @@ done
 "$OUT/ui_preview" ok "$OUT/hist.raw" hist
 python3 "$HERE/render.py" "$OUT/hist.raw" "$OUT/hist.png"
 rm "$OUT/hist.raw"
+"$OUT/ui_preview" ok "$OUT/rise.raw" rise
+python3 "$HERE/render.py" "$OUT/rise.raw" "$OUT/rise.png"
+rm "$OUT/rise.raw"
 "$OUT/ui_preview" ok "$OUT/motor.raw" motor
 "$OUT/ui_preview" trip "$OUT/motor-trip.raw" motor
 python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"

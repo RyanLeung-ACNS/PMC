@@ -23,6 +23,7 @@ static uint8_t draw_buf[W * H * 2] __attribute__((aligned(4)));
 
 void fake_hw_set_scenario(const char *name);
 void fake_hw_pumpdown(int t);
+void fake_hw_rise(int t);
 
 static lv_obj_t *find_label(lv_obj_t *obj, const char *text);
 
@@ -266,6 +267,15 @@ int main(int argc, char **argv)
             lv_timer_handler();
         }
     }
+    bool rise = argc == 4 && !strcmp(argv[3], "rise");
+    if (rise) {
+        // A fast rise from 0 (and a little below): the line must stay in its box.
+        for (int t = 0; t < 60; t++) {
+            fake_hw_rise(t);
+            lv_tick_inc(1000);
+            lv_timer_handler();
+        }
+    }
     check_detail_tabs(argc == 4 && !strcmp(argv[3], "raw"));
     lv_obj_update_layout(lv_screen_active());
     int pressure_labels = 0;
@@ -279,5 +289,15 @@ render:
     if (!f) { perror(argv[2]); return 1; }
     fwrite(fb, sizeof fb, 1, f);
     fclose(f);
+    if (rise) {
+        // No history pen (#2D5877) below the 32 px line box.
+        const uint16_t pen = (45 >> 3) << 11 | (88 >> 2) << 5 | (119 >> 3);
+        for (int32_t y = hist_area.y1 + 32; y <= hist_area.y2; y++)
+            for (int32_t x = hist_area.x1; x <= hist_area.x2; x++)
+                if (fb[y * W + x] == pen) {
+                    fprintf(stderr, "history line below its box at %ld,%ld\n", (long)x, (long)y);
+                    return 1;
+                }
+    }
     return 0;
 }
