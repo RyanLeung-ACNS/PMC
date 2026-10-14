@@ -97,7 +97,8 @@ static bool help_command(const char *line)
         "Valve motor:",
         "  MOT?                       position, settings, limit",
         "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
-        "  MOT STOP | MOT OFF         stop / stop and de-energise",
+        "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
+        "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
         "  MOT ZERO                   call this position 0",
         "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
         "  MOT RATE <16-1000>         run rate, steps/s",
@@ -208,6 +209,7 @@ int main(void)
         touch_poll();
         rtclock_poll();
         limit_poll();
+        stepper3_poll();
         if (link_getline(line, sizeof line) && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))

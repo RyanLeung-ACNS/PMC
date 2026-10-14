@@ -23,7 +23,9 @@
  * Commands over the link, one per line, replies end with OK or ERR:
  *   MOT?                  state, position and settings
  *   MOT MOVE <steps>      relative move, + open, - close
+ *   MOT GOTO <pos> [sps]  absolute move, optional rate; retargets a running move
  *   MOT STOP              stop now (coils as per MOT HOLD)
+ *   MOT STOP RAMP         ramp down, then stop
  *   MOT OFF               stop now and switch all coils off
  *   MOT ZERO              set the position count to 0
  *   MOT OVERRIDE          let the next move close past an open limit
@@ -48,19 +50,34 @@ typedef enum {
     STEPPER3_STOP_NONE,     // no move yet
     STEPPER3_STOP_DONE,     // reached the target
     STEPPER3_STOP_CMD,      // MOT STOP / MOT OFF / stepper3_stop()
-    STEPPER3_STOP_LIMIT     // limit input open during a closing move
+    STEPPER3_STOP_LIMIT,    // limit input open during a closing move
+    STEPPER3_STOP_TIMEOUT   // F-13: still moving after |distance| / rate + 2 s
 } stepper3_stop_t;
 
 // Pins low (coils off). Does not move the motor.
 void stepper3_init(void);
 
-// Starts a relative move in steps of the current mode. Returns false if a
-// move is running, steps is 0, or |steps| is over STEPPER3_MAX_MOVE.
+// Moves to an absolute position (steps of the current mode) at sps steps/s
+// (0 = the MOT RATE setting). During a move this retargets it: a target
+// further on extends it; a target behind ramps down to the start rate, then
+// turns. Returns false for a rate out of range, a target more than
+// STEPPER3_MAX_MOVE from here, or (from rest) a closing move with the limit
+// open. A target equal to the position returns true without moving.
 #define STEPPER3_MAX_MOVE 100000
+#define STEPPER3_TIMEOUT_MARGIN_MS 2000
+bool stepper3_goto_rate(int32_t target, uint32_t sps);
+bool stepper3_goto(int32_t target);
+// Relative move; during a move, relative to where that move ends.
 bool stepper3_move(int32_t steps);
+// Where the running move ends, or the position when idle.
+int32_t stepper3_target(void);
 
 // Stops at once. Coils stay on only if hold is set.
 void stepper3_stop(void);
+// Ramps down at the normal deceleration, then stops (last stop "stopped").
+void stepper3_stop_ramped(void);
+// From the main loop: F-13 motion timeout, stops at once.
+void stepper3_poll(void);
 // Stops at once and switches every coil off.
 void stepper3_off(void);
 

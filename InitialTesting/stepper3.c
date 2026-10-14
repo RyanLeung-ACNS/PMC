@@ -87,14 +87,17 @@ typedef enum { ST_IDLE, ST_MOVING, ST_SETTLE } run_state_t;
 
 static volatile run_state_t run_state = ST_IDLE;
 static volatile int32_t position;       // steps of the current mode
-static volatile uint32_t remaining;
+static volatile int32_t target;         // where the running move ends
+static volatile bool stop_ramp;         // ramp down to the start rate, then stop
 static volatile stepper3_stop_t last_stop = STEPPER3_STOP_NONE;
-static int8_t dir;                      // +1 open, -1 close
+static volatile int8_t dir;             // +1 open, -1 close
 static uint8_t phase;                   // index into seq[]
 static bool energised;
 static uint32_t v_fp;                   // current rate, steps/s * 256
-static uint32_t v_run_fp, v_start_fp;
+static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
+static uint32_t move_rate;              // run rate of this move, steps/s
+static uint32_t deadline_ms;            // F-13: lv_tick_get() past this = timeout
 
 static char status_text[160];
 
@@ -223,6 +226,7 @@ static void timer_start(uint32_t us)
 static void finish(stepper3_stop_t why)
 {
     override_active = false;
+    stop_ramp = false;
     last_stop = why;
     run_state = ST_SETTLE;
     TIM7->ARR = SETTLE_US - 1;
@@ -256,17 +260,37 @@ void TIM7_IRQHandler(void)
     write_coils(seq[phase]);
     position += dir;
 
-    if (--remaining == 0) {
+    // Steps still to go this way; 0 = on the target, negative = past it
+    // (the target was moved behind, or closer than the ramp-down needs).
+    int32_t ahead = (target - position) * dir;
+
+    // On the target and (all but) back at the start rate: done. Arriving
+    // faster, it overshoots and comes back.
+    if (ahead == 0 && n_acc <= 1 && !stop_ramp) {
         finish(STEPPER3_STOP_DONE);
         return;
     }
+    // Back at the start rate: stop, or turn round for a target behind.
+    // After a turn to closing, the limit is checked before the next step.
+    if (n_acc == 0) {
+        if (stop_ramp) {
+            finish(STEPPER3_STOP_CMD);
+            return;
+        }
+        if (ahead < 0) {
+            dir = (int8_t)-dir;
+            ahead = -ahead;
+        }
+    }
 
-    // Linear ramp: dv = a * dt = a / v per step. Decelerate once the steps
-    // left are no more than the steps it took to accelerate.
+    // Linear ramp: dv = a * dt = a / v per step. Slow down once the steps
+    // left are no more than the steps it took to speed up, when the target
+    // is behind, for a ramped stop, or after the rate was lowered.
     uint32_t dv = (uint32_t)(((uint64_t)accel << 16) / v_fp);
-    if (remaining <= n_acc) {
-        v_fp = (v_fp > v_start_fp + dv) ? v_fp - dv : v_start_fp;
-        n_acc--;
+    if (stop_ramp || ahead <= 0 || (uint32_t)ahead <= n_acc || v_fp > v_run_fp) {
+        if (n_acc > 0)
+            n_acc--;
+        v_fp = (n_acc == 0 || v_fp <= v_start_fp + dv) ? v_start_fp : v_fp - dv;
     } else if (v_fp < v_run_fp) {
         v_fp += dv;
         if (v_fp > v_run_fp)
@@ -290,21 +314,74 @@ void stepper3_init(void)
     coils_off();
 }
 
-bool stepper3_move(int32_t steps)
+// Holds off the step interrupt while a running move is changed. A step
+// that falls due meanwhile is taken as soon as it is released.
+static void step_irq_hold(void)    { TIM7->DIER = 0; }
+static void step_irq_release(void) { TIM7->DIER = TIM_DIER_UIE; }
+
+static int32_t abs32(int32_t v) { return v < 0 ? -v : v; }
+
+// F-13: the move should be done within |distance| / rate, plus the ramps
+// (counted twice over, for a turn round), plus 2 s.
+static void set_deadline(void)
 {
-    if (run_state != ST_IDLE || steps == 0 ||
-        steps > STEPPER3_MAX_MOVE || steps < -STEPPER3_MAX_MOVE)
+    uint32_t steps = (uint32_t)abs32(target - position) + 2 * n_acc;
+    uint32_t start = v_start_fp >> 8;
+    uint32_t ramp_ms = (uint32_t)((uint64_t)(move_rate - start) * 1000 / accel);
+    deadline_ms = lv_tick_get() + (uint32_t)((uint64_t)steps * 1000 / move_rate)
+                + 4 * ramp_ms + STEPPER3_TIMEOUT_MARGIN_MS;
+}
+
+bool stepper3_goto_rate(int32_t to, uint32_t sps)
+{
+    if (sps == 0)
+        sps = rate_run;
+    if (sps < RATE_MIN || sps > RATE_MAX)
         return false;
-    if (steps < 0 && stepper3_limit_open()) {
+    int32_t dist = to - position;
+    if (dist > STEPPER3_MAX_MOVE || dist < -STEPPER3_MAX_MOVE)
+        return false;
+
+    if (run_state == ST_MOVING) {
+        // Retarget: the interrupt carries on, turning round if needed.
+        step_irq_hold();
+        if (run_state != ST_MOVING) {
+            // The move ended just now; start a new one below.
+            step_irq_release();
+            goto from_rest;
+        }
+        target = to;
+        move_rate = sps;
+        v_run_fp = sps << 8;
+        v_start_fp = (rate_start < sps ? rate_start : sps) << 8;
+        stop_ramp = false;
+        set_deadline();
+        step_irq_release();
+        return true;
+    }
+from_rest:
+    if (run_state == ST_SETTLE) {
+        // Coils still on from the last move: start from here.
+        timer_stop();
+        run_state = ST_IDLE;
+    }
+
+    if (dist == 0) {
+        last_stop = STEPPER3_STOP_DONE;
+        if (!hold && energised)
+            coils_off();
+        return true;
+    }
+    if (dist < 0 && stepper3_limit_open()) {
         last_stop = STEPPER3_STOP_LIMIT;
         return false;
     }
     // An armed override is used up by this move, whichever way it goes.
     if (override_armed) {
         override_armed = false;
-        override_active = steps < 0;
+        override_active = dist < 0;
         if (override_active && LIMIT_FITTED && limit_open_now())
-            link_printf("MOT override: closing %ld steps with the limit switch open\r\n", (long)-steps);
+            link_printf("MOT override: closing %ld steps with the limit switch open\r\n", (long)-dist);
     }
 
     // Wave uses the one-coil entries, full the two-coil entries.
@@ -315,23 +392,58 @@ bool stepper3_move(int32_t steps)
     write_coils(seq[phase]);
     energised = true;
 
-    dir = steps > 0 ? 1 : -1;
-    remaining = (uint32_t)(steps > 0 ? steps : -steps);
-    v_start_fp = (rate_start < rate_run ? rate_start : rate_run) << 8;
-    v_run_fp = rate_run << 8;
+    dir = dist > 0 ? 1 : -1;
+    target = to;
+    move_rate = sps;
+    v_start_fp = (rate_start < sps ? rate_start : sps) << 8;
+    v_run_fp = sps << 8;
     v_fp = v_start_fp;
     n_acc = 0;
+    stop_ramp = false;
     last_stop = STEPPER3_STOP_NONE;
+    set_deadline();
     run_state = ST_MOVING;
     // First step one start-rate period after the coils are energised.
     timer_start(period_us(v_fp));
     return true;
 }
 
+bool stepper3_goto(int32_t to)
+{
+    return stepper3_goto_rate(to, 0);
+}
+
+bool stepper3_move(int32_t steps)
+{
+    if (steps == 0 || steps > STEPPER3_MAX_MOVE || steps < -STEPPER3_MAX_MOVE)
+        return false;
+    // During a move, relative to where that move ends.
+    return stepper3_goto((run_state == ST_MOVING ? target : position) + steps);
+}
+
+void stepper3_stop_ramped(void)
+{
+    if (run_state == ST_MOVING)
+        stop_ramp = true;
+}
+
+void stepper3_poll(void)
+{
+    if (run_state != ST_MOVING || (int32_t)(lv_tick_get() - deadline_ms) <= 0)
+        return;
+    stepper3_stop();
+    last_stop = STEPPER3_STOP_TIMEOUT;
+    link_printf("F-13 motion timeout: stopped at %ld, target %ld\r\n",
+                (long)position, (long)target);
+}
+
+int32_t stepper3_target(void) { return run_state == ST_MOVING ? target : position; }
+
 void stepper3_stop(void)
 {
     timer_stop();
     override_active = false;
+    stop_ramp = false;
     if (run_state == ST_MOVING)
         last_stop = STEPPER3_STOP_CMD;
     run_state = ST_IDLE;
@@ -359,9 +471,13 @@ const char *stepper3_status(void)
 {
     const char *st = run_state == ST_MOVING ? (dir > 0 ? "opening" : "closing")
                    : energised ? "idle, coils on" : "idle, coils off";
+    char to[24] = "";
+    if (run_state == ST_MOVING)
+        lv_snprintf(to, sizeof to, " to %ld", (long)target);
     lv_snprintf(status_text, sizeof status_text,
-                "S%d Stepper 3: %s, pos %ld, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
-                st, (long)position, stepper3_mode_name(mode), (unsigned long)rate_run,
+                "S%d Stepper 3: %s, pos %ld%s, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
+                st, (long)position, to, stepper3_mode_name(mode),
+                (unsigned long)(run_state == ST_MOVING ? move_rate : rate_run),
                 !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)"
                 : stepper3_override() ? (limit_open_now() ? "OPEN, override" : "ok, override armed")
                 : stepper3_limit_open() ? "OPEN" : "ok");
@@ -465,6 +581,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_DONE:  return "done";
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
+    case STEPPER3_STOP_TIMEOUT: return "F-13 timeout";
     default:                  return "none";
     }
 }
@@ -488,11 +605,52 @@ static bool parse_int(const char *s, long lo, long hi, long *out)
     return true;
 }
 
+// MOT GOTO <position> [rate]: absolute, also while a move runs.
+static void goto_command(const char *s)
+{
+    char *end;
+    while (*s == ' ')
+        s++;
+    long to = strtol(s, &end, 10);
+    long sps = 0;
+    bool ok = end != s;
+    s = end;
+    while (*s == ' ')
+        s++;
+    if (ok && *s) {
+        sps = strtol(s, &end, 10);
+        ok = end != s && sps >= RATE_MIN && sps <= RATE_MAX;
+        s = end;
+        while (*s == ' ')
+            s++;
+        ok = ok && !*s;
+    }
+    if (!ok || to < -10 * STEPPER3_MAX_MOVE || to > 10 * STEPPER3_MAX_MOVE) {
+        link_printf("ERR expected: MOT GOTO <position> [rate %d-%d]\r\n", RATE_MIN, RATE_MAX);
+        return;
+    }
+    bool moving = run_state == ST_MOVING;
+    if (!stepper3_goto_rate((int32_t)to, (uint32_t)sps)) {
+        if (to - position > STEPPER3_MAX_MOVE || position - to > STEPPER3_MAX_MOVE)
+            link_printf("ERR more than %d steps from %ld\r\n", STEPPER3_MAX_MOVE, (long)position);
+        else
+            link_printf("ERR limit open, closing move refused\r\n");
+        return;
+    }
+    if (moving)
+        link_printf("OK new target %ld, at %ld\r\n", to, (long)position);
+    else if (to == position)
+        link_printf("OK already at %ld\r\n", to);
+    else
+        link_printf("OK moving to %ld from %ld at %lu sps\r\n", to, (long)position, (unsigned long)move_rate);
+}
+
 static void show(void)
 {
-    link_printf("MOT state %s, pos %ld, remaining %lu, last stop %s\r\n",
-                run_state == ST_MOVING ? "moving" : run_state == ST_SETTLE ? "settling" : "idle",
-                (long)position, (unsigned long)remaining, stepper3_stop_name(last_stop));
+    link_printf("MOT state %s, pos %ld, target %ld, last stop %s\r\n",
+                run_state == ST_MOVING ? (stop_ramp ? "stopping" : "moving")
+                : run_state == ST_SETTLE ? "settling" : "idle",
+                (long)position, (long)stepper3_target(), stepper3_stop_name(last_stop));
     link_printf("MOT mode %s, rate %lu sps, start %lu sps, accel %lu sps/s\r\n",
                 stepper3_mode_name(mode), (unsigned long)rate_run, (unsigned long)rate_start,
                 (unsigned long)accel);
@@ -516,18 +674,26 @@ bool stepper3_command(const char *line)
     } else if (strcmp(a, " STOP") == 0) {
         stepper3_stop();
         link_printf("OK stopped at %ld\r\n", (long)position);
+    } else if (strcmp(a, " STOP RAMP") == 0) {
+        if (run_state == ST_MOVING) {
+            stepper3_stop_ramped();
+            link_printf("OK ramping down from %ld\r\n", (long)position);
+        } else {
+            link_printf("OK not moving, at %ld\r\n", (long)position);
+        }
     } else if (strcmp(a, " OFF") == 0) {
         stepper3_off();
         link_printf("OK coils off at %ld\r\n", (long)position);
     } else if (strncmp(a, " MOVE", 5) == 0) {
         if (!parse_int(a + 5, -STEPPER3_MAX_MOVE, STEPPER3_MAX_MOVE, &v) || v == 0)
             link_printf("ERR expected: MOT MOVE <steps>, 1 to %d either way\r\n", STEPPER3_MAX_MOVE);
-        else if (run_state != ST_IDLE)
-            link_printf("ERR busy, MOT STOP first\r\n");
         else if (!stepper3_move((int32_t)v))
-            link_printf("ERR limit open, closing move refused\r\n");
+            link_printf(run_state == ST_MOVING ? "ERR target more than %d steps away\r\n"
+                        : "ERR limit open, closing move refused\r\n", STEPPER3_MAX_MOVE);
         else
-            link_printf("OK moving %ld from %ld\r\n", v, (long)(position));
+            link_printf("OK moving to %ld from %ld\r\n", (long)stepper3_target(), (long)position);
+    } else if (strncmp(a, " GOTO", 5) == 0) {
+        goto_command(a + 5);
     } else if (strcmp(a, " OVERRIDE") == 0) {
         if (!LIMIT_FITTED) {
             link_printf("ERR limit stop is off (PMC_LIMIT_STOP 0), nothing to override\r\n");
