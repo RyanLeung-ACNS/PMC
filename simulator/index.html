@@ -634,6 +634,7 @@ function finish(reason) {
   M.moving = false; M.v = 0; M.acc = 0; M.lastStop = reason; M.tEnd = t;
   const cb = M.onDone; M.onDone = null;
   if (reason === 'LIMIT' && C.mode !== 'HOMING') limitHit();
+  if (LIM.override) { LIM.override = false; ev('LIM', 'Limit override ended with the move'); }
   if (cb) cb(reason);
 }
 function stopMotor() { if (M.moving) { M.target = M.pos; finish('STOP'); } }
@@ -652,11 +653,11 @@ function limitHit() {
   }, null, ['Skip', () => ev('W-01', 'Zero skipped, count kept at ' + fint(at))]);
   overlay.dataset.lim = '1';
 }
-// Limit override (Ryan, 14 Oct): lets the valve close past a pressed switch, for a switch stuck on ice. Not saved; off at
-// restart. While on, the status strip says so on every page.
+// Limit override (Ryan, 14 Oct): lets the next move close past a pressed switch, for a switch stuck on ice. It ends when
+// that move stops (as firmware MOT OVERRIDE, 0.3.32), or at restart. While armed, the status strip says so on every page.
 function limOverrideAsk() {
   if (LIM.override) { LIM.override = false; ev('LIM', 'Limit override off'); msg('Limit override off.', 'info'); return; }
-  confirmBox('Allow closing past the closed switch? Only for a stuck switch: the valve can be driven into the seat. Off at restart.', 'Override', '', () => { LIM.override = true; ev('LIM', 'Limit override on'); });
+  confirmBox('Let the next move close past the closed switch? Only for a stuck switch: the valve can be driven into the seat. Ends when that move stops.', 'Override', '', () => { LIM.override = true; ev('LIM', 'Limit override on'); });
 }
 // Central permissive for manual, jog and auto moves.
 function requestMove(target, quiet) {
@@ -1184,7 +1185,7 @@ function updateGlobal() {
   // v48 (review item 6): a latched fault outranks messages; a refusal still shows while it is fresh, then the fault returns.
   else if (fl.length && current !== 'faults' && !(toastOn && C.msg.kind === 'warn' && !overlay)) { mode = 'fault'; text = (fl[0][0] === 'F-12' ? 'Stopped. Valve held, not closed.' : fl[0][0] + ' ' + faultShort(fl[0][0], fl[0][1])) + (fl.length > 1 ? ' (+' + (fl.length - 1) + ')' : ''); go = 'faults'; }
   else if (toastOn && !overlay) { mode = 'toast'; text = C.msg.text; }
-  else if (LIM.override) { mode = 'note'; text = 'Limit override on: closing ignores the closed switch.'; go = 'comm'; }
+  else if (LIM.override) { mode = 'note'; text = 'Limit override on for the next move: closing ignores the switch.'; go = 'comm'; }
   else if (screens[current] && screens[current].foot) { mode = 'note'; text = screens[current].foot(); go = screens[current].footGo ? screens[current].footGo() : ''; }
   // Ryan (9 Oct): the status strip beside STOP stays on every screen. With nothing page-specific it shows the
   // controller status line, as on home.
@@ -1901,7 +1902,7 @@ function buildComm() {
   const bs = tiles.map((t0, i) => navBtn(s, c2[i % 2][0], RY[Math.floor(i / 2)], c2[i % 2][1], RH, '', () => show(t0[1])));
   const bo = btn(s, c2[0][0], RY[2], c2[0][1], RH, '', limOverrideAsk);
   cfgStatus('comm');
-  screens.comm.update = () => { bs.forEach((b, i) => seth(b, navLab(tiles[i][0], tiles[i][2]()))); seth(bo, lab('Limit override', LIM.override ? 'On: tap to turn off' : 'Off')); tog(bo, 'tile-alm', LIM.override); };
+  screens.comm.update = () => { bs.forEach((b, i) => seth(b, navLab(tiles[i][0], tiles[i][2]()))); seth(bo, lab('Limit override', LIM.override ? 'Next move: tap to cancel' : 'Off')); tog(bo, 'tile-alm', LIM.override); };
 }
 function profileList(f) {
   closeOverlay();

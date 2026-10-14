@@ -69,7 +69,7 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 ## Limit question and time range, 14 October 2026 (v58)
 - Home tiles say "10 min" beside the reading: the time range of the sparkline.
 - The closed switch is force-actuated and can trip before the needle seats (ice, mechanical fault). Every hit (v59) asks "Set this point as 0 %?" with Skip (count kept) or Set as 0 %. Closing stays blocked while the switch is pressed.
-- Settings > Limit override (v59) lets the valve close past a pressed switch, for a stuck switch. It asks first, is not saved, turns off at restart, and while on the status strip says so on every page.
+- Settings > Limit override (v59) lets the valve close past a pressed switch, for a stuck switch. It asks first and covers the next move only, ending when that move stops (as firmware MOT OVERRIDE, 0.3.32); while armed the status strip says so on every page.
 
 ## Tests
 
