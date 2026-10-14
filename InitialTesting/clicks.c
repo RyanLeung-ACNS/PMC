@@ -302,13 +302,14 @@ static void powermonitor_init(void)
  * ------------------------------------------------------------------------ */
 #define DRUCK_VEXC_MIN_MV    7000      // datasheet supply range 7-12 V
 
-/* A connected Druck gives about 0.13 mV/V at vacuum (cert zero 1.337 mV at
- * 10 V, less the ~4 % input loading) up to about 10.2 mV/V at 15 psia. Well
- * outside that, the sensor is unplugged or faulty. The limits leave room
- * for other sensors' zero spread and some overrange. Not tested with the
- * Druck unplugged yet: if the open inputs happen to float inside this
- * window, the check will not catch it. */
-#define DRUCK_R_MIN_PPB      50000     // 0.05 mV/V
+/* A connected Druck gives about 0.01-0.13 mV/V at vacuum (cert 13825224
+ * zero 1.337 mV at 10 V; the bench unit 5880156 reads 0.13 mV, 0.013 mV/V,
+ * 14 Oct 2026) up to about 10.2 mV/V at 15 psia. The lower limit sits below
+ * zero, about -50 mbar, so a sensor with a low or negative zero still reads
+ * at vacuum. Well outside the window, the sensor is unplugged or faulty.
+ * Not tested with the Druck unplugged yet: if the open inputs float inside
+ * this window, the check will not catch it. */
+#define DRUCK_R_MIN_PPB      (-500000) // -0.5 mV/V
 #define DRUCK_R_MAX_PPB      11000000  // 11 mV/V
 
 // The ratio-to-pressure table lives in cal.c (stored in serial flash).
@@ -340,7 +341,7 @@ static void druck_update(int32_t raw_shunt, int32_t raw_bus, int32_t bus_mv)
         state.druck_absent = true;
         lv_snprintf(druck_value, sizeof druck_value, "----");
         lv_snprintf(druck_status, STATUS_LEN,
-                    "Druck: signal %s mV/V, outside 0.05-11 mV/V (not connected?)",
+                    "Druck: signal %s mV/V, outside -0.5 to 11 mV/V (not connected?)",
                     fixed_fmt(r, sizeof r, r_ppb / 1000, 3));
         return;
     }
