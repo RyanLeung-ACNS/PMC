@@ -662,6 +662,16 @@ static void show(void)
     link_printf("OK\r\n");
 }
 
+// The MOT commands that change the step timing, sequence or count.
+static bool is_setting(const char *a)
+{
+    static const char *const names[] = { " ZERO", " RATE", " START", " ACCEL", " MODE", " HOLD", " DIR", " ORDER" };
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+        if (strncmp(a, names[i], strlen(names[i])) == 0)
+            return true;
+    return false;
+}
+
 bool stepper3_command(const char *line)
 {
     if (strncmp(line, "MOT", 3) != 0)
@@ -706,7 +716,7 @@ bool stepper3_command(const char *line)
     } else if (strcmp(a, " OVERRIDE OFF") == 0) {
         override_armed = false;
         link_printf("OK override cleared\r\n");
-    } else if (run_state != ST_IDLE) {
+    } else if (run_state != ST_IDLE && is_setting(a)) {
         // Settings below change the step timing or sequence mid-move.
         link_printf("ERR busy, MOT STOP first\r\n");
     } else if (strcmp(a, " ZERO") == 0) {

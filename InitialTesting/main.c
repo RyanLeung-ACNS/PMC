@@ -237,7 +237,10 @@ int main(void)
         rtclock_poll();
         limit_poll();
         stepper3_poll();
-        if (link_getline(line, sizeof line) && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+        bool got = link_getline(line, sizeof line);
+        if (got)
+            link_printf("> %s\r\n", line);   // echo, so the log shows what was received
+        if (got && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
