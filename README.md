@@ -19,7 +19,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | --- | --- |
 | `HELP` or `?` | List the commands |
 | `VER?` | Firmware version and build time |
-| `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines (handy while typing) |
+| `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
 | `LIM?` | Valve limit switch: state, raw pin level, change count |

@@ -220,7 +220,8 @@ static void set_chip(lv_obj_t *chip, const char *text, lv_color_t col)
  * Lines not starting with DATA are status text.
  */
 // DATA lines once a second; DATA OFF pauses them and the live status lines.
-static bool data_on = true;
+// Off at boot; DATA ON (the logger sends it) turns them on.
+static bool data_on = false;
 
 bool main_screen_data_command(const char *line)
 {
