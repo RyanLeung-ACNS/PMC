@@ -7,6 +7,11 @@ else()
 endif()
 
 include(mikroeUtils)
+
+# Release builds optimise for size (-Os) rather than CMake's -O3: about 400 KB
+# of flash against 580 KB at -O3 and 650 KB for Debug (0.3.33, tools/xbuild),
+# and the GUI port needs the room. Debug stays unoptimised (-O0).
+set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
 set(PROJECT_TYPE "lvgl_designer" CACHE STRING "" FORCE)

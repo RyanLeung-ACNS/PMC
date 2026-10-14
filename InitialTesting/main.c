@@ -53,11 +53,18 @@ static bool perf_command(const char *line)
     if (strcmp(line, "PERF?") != 0)
         return false;
     uint32_t span = lv_tick_elaps(perf_since);
+    lv_mem_monitor_t mem;
+    lv_mem_monitor(&mem);
     link_printf("PERF over %lu ms: loops=%lu longest_loop_ms=%lu longest_lvgl_ms=%lu "
-                "flush_ms=%lu flush_px=%lu\r\nOK\r\n",
+                "flush_ms=%lu flush_px=%lu\r\n",
                 (unsigned long)span, (unsigned long)perf_loops, (unsigned long)perf_gap_max,
                 (unsigned long)perf_handler_max, (unsigned long)disp_flush_ms,
                 (unsigned long)disp_flush_px);
+    // LVGL heap: peak is the most ever used since boot, not since the last PERF?.
+    link_printf("HEAP total=%lu used=%lu peak=%lu biggest_free=%lu frag_pct=%u\r\nOK\r\n",
+                (unsigned long)mem.total_size, (unsigned long)(mem.total_size - mem.free_size),
+                (unsigned long)mem.max_used, (unsigned long)mem.free_biggest_size,
+                (unsigned)mem.frag_pct);
     perf_since = lv_tick_get();
     perf_loops = perf_gap_max = perf_handler_max = 0;
     disp_flush_ms = disp_flush_px = 0;
@@ -76,7 +83,7 @@ static bool help_command(const char *line)
         "  LIM?                       valve limit switch state",
         "  UNC?                       pressure uncertainty budget",
         "  TOUCH?                     touch controller counters",
-        "  PERF?                      main loop and display timing (resets the maxima)",
+        "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
 #if PMC_PM_DIAG
         "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
