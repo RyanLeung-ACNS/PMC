@@ -28,6 +28,7 @@
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
+#include "valve.h"
 #include "limit.h"
 #include "main_screen.h"
 
@@ -78,7 +79,19 @@ static const char *const help_top[] = {
     "Commands (upper case, one per line, CR or LF ends a line). Groups:",
     "  HELP SYS     version, data lines, time, timing, diagnostics",
     "  HELP CAL     pressure calibration",
-    "  HELP MOT     valve motor and limit switch",
+    "  HELP VALVE   valve calibration, % position, STOP, faults, events",
+    "  HELP MOT     valve motor and limit switch (engineering)",
+};
+static const char *const help_valve[] = {
+    "Valve (nothing moves at boot; VALVE CAL first):",
+    "  VALVE?                     mode, position, settings, switch question",
+    "  VALVE CAL                  calibrate to the closed switch (0 %)",
+    "  VALVE GOTO <0-100>         go to % open, one decimal",
+    "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
+    "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (RAM only)",
+    "  CTRL STOP                  stop now, latch F-12",
+    "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
+    "  EVT? [1-200]               last events (default 20)",
 };
 static const char *const help_sys[] = {
     "System:",
@@ -105,7 +118,7 @@ static const char *const help_mot[] = {
     "Valve motor (+ opens, - closes):",
     "  MOT?                       position, target, settings, limit",
     "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
-    "  MOT MOVE <steps>           relative, 1 to 100000",
+    "  MOT MOVE <steps>           relative, 1 to 400000",
     "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
@@ -133,10 +146,12 @@ static bool help_command(const char *line)
         HELP_PRINT(help_sys);
     else if (strcmp(line, "HELP CAL") == 0)
         HELP_PRINT(help_cal);
+    else if (strcmp(line, "HELP VALVE") == 0 || strcmp(line, "HELP CTRL") == 0)
+        HELP_PRINT(help_valve);
     else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
         HELP_PRINT(help_mot);
     else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR expected: HELP, HELP SYS, HELP CAL or HELP MOT\r\n");
+        link_printf("ERR expected: HELP, HELP SYS, HELP CAL, HELP VALVE or HELP MOT\r\n");
     else
         return false;
     return true;
@@ -174,6 +189,7 @@ void application_init()
     // on a MOT MOVE command.
     clicks_init();
     limit_init();
+    valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
 
     // Initialize all available screens.
     init_screens();
@@ -230,6 +246,7 @@ int main(void)
 
     ////////////////////////// LVGL timing routine (DO NOT REMOVE) //////////////////////////
     char line[96];
+    uint32_t sense_ms = lv_tick_get();
     while (1)
     {
         link_task();
@@ -237,11 +254,18 @@ int main(void)
         rtclock_poll();
         limit_poll();
         stepper3_poll();
+        valve_task();
+        if (lv_tick_elaps(sense_ms) >= 1000) {
+            sense_ms += 1000;
+            if (lv_tick_elaps(sense_ms) >= 1000)   // fell behind: no catch-up burst
+                sense_ms = lv_tick_get();
+            main_screen_sense();
+        }
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
         if (got && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+            !limit_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

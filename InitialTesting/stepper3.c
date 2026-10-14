@@ -98,6 +98,8 @@ static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
 static uint32_t deadline_ms;            // F-13: lv_tick_get() past this = timeout
+static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
+static const char *lock_why;            // MOT and screen moves refused while set
 
 static char status_text[160];
 
@@ -228,6 +230,7 @@ static void finish(stepper3_stop_t why)
     override_active = false;
     stop_ramp = false;
     last_stop = why;
+    moves_ended++;
     run_state = ST_SETTLE;
     TIM7->ARR = SETTLE_US - 1;
 }
@@ -438,14 +441,29 @@ void stepper3_poll(void)
 }
 
 int32_t stepper3_target(void) { return run_state == ST_MOVING ? target : position; }
+uint32_t stepper3_move_seq(void) { return moves_ended; }
+
+bool stepper3_set_position(int32_t p)
+{
+    if (run_state != ST_IDLE)
+        return false;
+    position = p;
+    return true;
+}
+
+void stepper3_lock(const char *why) { lock_why = why; }
+const char *stepper3_locked(void)   { return lock_why; }
+void stepper3_override_cancel(void) { override_armed = false; }
 
 void stepper3_stop(void)
 {
     timer_stop();
     override_active = false;
     stop_ramp = false;
-    if (run_state == ST_MOVING)
+    if (run_state == ST_MOVING) {
         last_stop = STEPPER3_STOP_CMD;
+        moves_ended++;
+    }
     run_state = ST_IDLE;
     if (!hold)
         coils_off();
@@ -694,6 +712,9 @@ bool stepper3_command(const char *line)
     } else if (strcmp(a, " OFF") == 0) {
         stepper3_off();
         link_printf("OK coils off at %ld\r\n", (long)position);
+    } else if (lock_why && (strncmp(a, " MOVE", 5) == 0 || strncmp(a, " GOTO", 5) == 0 ||
+                            strncmp(a, " OVERRIDE", 9) == 0 || strcmp(a, " ZERO") == 0)) {
+        link_printf("ERR %s\r\n", lock_why);
     } else if (strncmp(a, " MOVE", 5) == 0) {
         if (!parse_int(a + 5, -STEPPER3_MAX_MOVE, STEPPER3_MAX_MOVE, &v) || v == 0)
             link_printf("ERR expected: MOT MOVE <steps>, 1 to %d either way\r\n", STEPPER3_MAX_MOVE);

@@ -13,6 +13,7 @@
 #include "limit.h"
 #include "stepper3.h"
 #include "fixed.h"
+#include "valve.h"
 
 lvgl_main_screen_ui_t lvgl_main_screen_ui;
 
@@ -48,7 +49,7 @@ static lv_obj_t *val_signal, *val_exc, *val_die, *val_pg;
 static lv_obj_t *pressure_unc;
 static lv_obj_t *cal_table, *cal_vac, *cal_air, *cal_kind, *cal_store;
 
-#define STATUS_LINES 5
+#define STATUS_LINES 6
 static const char *last_line[STATUS_LINES];
 static char line_copy[STATUS_LINES][192];
 
@@ -214,6 +215,11 @@ static void set_chip(lv_obj_t *chip, const char *text, lv_color_t col)
 }
 
 /*
+ * main_screen_sense(), from the main loop once a second: re-read the boards,
+ * update the cal, uncertainty and valve fault checks, print any changed
+ * status line and the DATA line. Run outside LVGL, so a slow screen redraw
+ * does not delay the reading or the fault checks.
+ *
  * Once a second, one CSV line on COM3 for logging (tools/logger):
  *   DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok
  * p_mbar and ratio are empty when there is no valid reading (ok = 0).
@@ -253,14 +259,14 @@ static void print_data_line(const clicks_state_t *s)
 static void print_changed_lines(void)
 {
     const char *line[STATUS_LINES] = { sysinfo_line(), clicks_stepper3_status(), clicks_boost10_status(),
-                                       clicks_powermonitor_status(), clicks_druck_status() };
+                                       clicks_powermonitor_status(), clicks_druck_status(), valve_status() };
 
     // A PC that connects later still gets every line once.
     bool resend = link_take_new_client();
 
     // The Power Monitor and Druck lines carry live readings and change every
     // second, so DATA OFF holds them back too.
-    const bool live[STATUS_LINES] = { false, false, false, true, true };
+    const bool live[STATUS_LINES] = { false, false, false, true, true, false };
 
     for (int i = 0; i < STATUS_LINES; i++) {
         if (!line[i][0] || (live[i] && !data_on))
@@ -291,20 +297,26 @@ static void limit_timer_cb(lv_timer_t *t)
 }
 
 /**
- * @brief Every second: re-read the boards, refresh the screen, and print any
- * changed status line to COM3.
+ * @brief Every second: refresh the screen from the last reading. The boards
+ * are read by main_screen_sense() in the main loop, not here.
  */
-static void status_timer_cb(lv_timer_t *t)
+void main_screen_sense(void)
 {
-    (void)t;
     clicks_poll();
     print_changed_lines();
 
     const clicks_state_t *s = clicks_state();
     uncert_update(s);
     cal_update(s);
+    valve_sense(s);
     if (s->pm_found && data_on && !s->pm_diag)
         print_data_line(s);
+}
+
+static void status_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    const clicks_state_t *s = clicks_state();
 
     // Header status.
     set_chip(chip_pm, s->pm_found ? "ADC OK" : "ADC OFF", s->pm_found ? COL_OK : COL_FAULT);

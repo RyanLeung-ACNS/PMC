@@ -1,0 +1,62 @@
+#ifndef _VALVE_H_
+#define _VALVE_H_
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "clicks.h"
+
+/**
+ * @brief Valve layer over stepper3.c: calibration to the closed switch,
+ * position in % of POS_MAX, fault latches, STOP and the event log.
+ * Ported from the simulator (stage 2 of the porting plan). Settings are RAM
+ * only until the settings store (stage 3).
+ *
+ * Modes: NOT CALIBRATED (boot, watchdog reset, after F-07/F-09 or an
+ * aborted calibration), CALIBRATING, MANUAL. Nothing moves at boot.
+ *
+ * Calibration (Control Logic 4): if the switch is pressed, an N_clear
+ * clearance move off it first (F-09 if still pressed); a fast close at
+ * f_home for up to 1.1 x POS_MAX (F-07 if the switch is not found); an
+ * N_backoff back-off (F-09 if still pressed); a creep close at f_creep
+ * (F-07 if not found); the switch point is N_offset (0 %).
+ *
+ * The switch pressed during any other move, once calibrated: the move stops
+ * (stepper3.c), a W-01 event, and a question waits for VALVE SETZERO (this
+ * point is 0 %) or VALVE SKIP (count kept).
+ *
+ * Faults latch, stop the motor and lock out MOT moves until CTRL RESET,
+ * which clears only the latches whose cause has gone:
+ *   F-01 no Druck signal, F-03 excitation outside 9.5-10.5 V or tripped,
+ *   F-07 switch not found while calibrating, F-09 switch still pressed
+ *   after moving off it, F-13 motion timeout, F-12 STOP (CTRL STOP).
+ *
+ * Commands:
+ *   VALVE?                       mode, position, settings, pending question
+ *   VALVE CAL                    calibrate (MANUAL or NOT CALIBRATED, no fault)
+ *   VALVE GOTO <0-100>           go to % open (one decimal), once calibrated
+ *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question
+ *   VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (idle)
+ *   CTRL STOP                    stop now, latch F-12, cancel calibration
+ *   CTRL RESET                   clear latches whose cause has gone
+ *   CTRL?                        latched faults, highest priority first
+ *   EVT? [n]                     the last n events (default 20, 200 kept)
+ * Each event is also sent when it happens as "EVT <s> <tag> <text>".
+ */
+
+typedef enum { VALVE_NOT_CAL, VALVE_CALIBRATING, VALVE_MANUAL } valve_mode_t;
+
+void valve_init(void);           // after stepper3_init(); logs F-14 power-up
+void valve_task(void);           // every main-loop pass: calibration, limit hits
+void valve_sense(const clicks_state_t *s);   // after each 1 s pressure read
+bool valve_command(const char *line);
+
+valve_mode_t valve_mode(void);
+const char *valve_mode_name(void);
+bool valve_calibrated(void);
+int32_t valve_pos_max(void);
+int32_t valve_pct10(void);       // position in 0.1 % of POS_MAX
+bool valve_fault_latched(void);
+const char *valve_status(void);  // one status line
+
+#endif // _VALVE_H_

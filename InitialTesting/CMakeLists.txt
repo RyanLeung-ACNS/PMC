@@ -38,6 +38,8 @@ add_executable(InitialTesting
     clicks.c
     stepper3.h
     stepper3.c
+    valve.h
+    valve.c
     extflash.h
     extflash.c
     cal.h

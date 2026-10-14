@@ -41,12 +41,28 @@ Calibration (Druck, through the INA228):
 
 A bench cal: pump down, `CAL VAC`; vent, `CAL AIR 1013.2` (your reference reading); check with `CAL?`; then `CAL SAVE`. Either point can be redone on its own.
 
-Valve motor (Stepper 3):
+Valve (calibration, position, STOP, faults). Nothing moves at power-up; the valve is NOT CALIBRATED until `VALVE CAL`:
+
+| Command | What it does |
+| --- | --- |
+| `VALVE?` | Mode, count and % open, settings, latched faults, any waiting switch question |
+| `VALVE CAL` | Calibrate: off the switch if pressed, fast close to the switch, back off, slow close; the switch point is 0 % |
+| `VALVE GOTO <0-100>` | Go to % open (one decimal), once calibrated |
+| `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
+| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (99072), calibration speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). RAM only for now |
+| `CTRL STOP` | Stop now and latch F-12; cancels calibration |
+| `CTRL RESET` | Clear the latched faults whose cause has gone |
+| `CTRL?` | Latched faults, highest priority first |
+| `EVT? [1-200]` | The last events (default 20). Each event is also sent as it happens: `EVT <s> <tag> <text>` |
+
+Faults latch, stop the motor and refuse VALVE and MOT moves until `CTRL RESET`: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while calibrating, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP. F-01 and F-03 only reset once the cause has gone, so with no Druck connected the motor cannot be moved.
+
+Valve motor (Stepper 3, engineering; refused while calibrating or with a fault latched, except `MOT STOP` and `MOT OFF`):
 
 | Command | What it does |
 | --- | --- |
 | `MOT?` | Position, rates, mode, coils, limit |
-| `MOT MOVE <steps>` | Move relative, 1 to 100000 steps; positive opens, negative closes. Closing is refused while the limit reads open. During a move, relative to where that move ends |
+| `MOT MOVE <steps>` | Move relative, 1 to 400000 steps; positive opens, negative closes. Closing is refused while the limit reads open. During a move, relative to where that move ends |
 | `MOT GOTO <pos> [sps]` | Move to an absolute position, at its own rate if given (16 to 1000). During a move it retargets: a target further on extends the move, one behind ramps down and turns round |
 | `MOT STOP` | Stop at once (coils stay on if hold is on) |
 | `MOT STOP RAMP` | Ramp down at the normal deceleration, then stop |

@@ -22,7 +22,7 @@
  *
  * Commands over the link, one per line, replies end with OK or ERR:
  *   MOT?                  state, position and settings
- *   MOT MOVE <steps>      relative move, + open, - close
+ *   MOT MOVE <steps>      relative move, + open, - close (1 to 400000)
  *   MOT GOTO <pos> [sps]  absolute move, optional rate; retargets a running move
  *   MOT STOP              stop now (coils as per MOT HOLD)
  *   MOT STOP RAMP         ramp down, then stop
@@ -63,7 +63,7 @@ void stepper3_init(void);
 // turns. Returns false for a rate out of range, a target more than
 // STEPPER3_MAX_MOVE from here, or (from rest) a closing move with the limit
 // open. A target equal to the position returns true without moving.
-#define STEPPER3_MAX_MOVE 100000
+#define STEPPER3_MAX_MOVE 400000   // > 1.1 x the largest POS_MAX (300000)
 #define STEPPER3_TIMEOUT_MARGIN_MS 2000
 bool stepper3_goto_rate(int32_t target, uint32_t sps);
 bool stepper3_goto(int32_t target);
@@ -78,6 +78,17 @@ void stepper3_stop(void);
 void stepper3_stop_ramped(void);
 // From the main loop: F-13 motion timeout, stops at once.
 void stepper3_poll(void);
+// Goes up by one each time a move ends (done, stopped, limit, timeout);
+// stepper3_last_stop() then says why.
+uint32_t stepper3_move_seq(void);
+// Sets the position count (idle only).
+bool stepper3_set_position(int32_t p);
+// While set (non-NULL), MOT MOVE/GOTO/OVERRIDE/ZERO and the motor screen
+// moves are refused with this text. MOT STOP and MOT OFF always work. The
+// valve layer uses it while calibrating or with a fault latched.
+void stepper3_lock(const char *why);
+const char *stepper3_locked(void);
+void stepper3_override_cancel(void);
 // Stops at once and switches every coil off.
 void stepper3_off(void);
 
