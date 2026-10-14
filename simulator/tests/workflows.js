@@ -76,8 +76,8 @@ module.exports = async (p, h) => {
   await tap('Integral time, min', true); await keys('0.4'); await tap('Set');
   await tap('Apply changes'); const kp = await ev(() => P.Kp); await tap('Save settings'); await tap('Save settings');
   await ev(() => { P.Kp = 3; updateUI(); }); await tap('Save settings'); await tap('Save settings'); o = await st();
-  await ev(() => show('cfg', false, true)); await tap('Revert', true); await shot('wf7-2-revert'); await tap('Apply changes'); o = await st();
-  const kpNow = await ev(() => P.Kp); ok(kpNow === kp && o.dirty, 'WF7 Revert loads the previous rev (gain ' + kp + '), applied, not saved');
+  await ev(() => show('cfg', false, true)); await tap('Load settings', true); await shot('wf7-2-load-list'); await tap('Previous save', true); await shot('wf7-2-revert'); await tap('Apply changes'); o = await st();
+  const kpNow = await ev(() => P.Kp); ok(kpNow === kp && o.dirty, 'WF7 Load settings > Previous save loads the previous rev (gain ' + kp + '), applied, not saved');
   // 8. Live calibration: capture vacuum and air through the board, check New cal, apply and save
   await ev(() => { DRAFT.clear(); toManual(); BENCH.plumb = 'air'; BENCH.air = 0.01; show('comm'); updateUI(); });
   await tap('Pressure sensor', true); await tap('Live calibration', true); await shot('wf8-1-cal');

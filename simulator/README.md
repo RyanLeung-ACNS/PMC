@@ -60,7 +60,7 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Pressure limits removed: the target is 0 to the sensor range, F-02 only above the range, no low alarm. Target band moved to Control tuning.
 - A reading a little below 0 (calibration drift) is shown as it is (for example -0.4), with no fault; the target can be 0.
 - No engineer mode: no PIN, no Lock, no idle lock, no ACCESS commands. Menu > Settings has four tiles (Pressure sensor, Valve setup, Control tuning, Review and save).
-- Review and save keeps the previous saved revision; Revert loads it as unapplied changes (Apply, then Save). Saved config key is now v7.
+- Review and save keeps the previous saved revision. v60: Restore saved, Load defaults and Revert are one Load settings button listing Last save, Previous save and Factory defaults; any of them comes in as unapplied changes (Apply, then Save). Saved config key is now v7.
 - Date and time on the home header (removed again the same day, Ryan 14 Oct).
 - Console: HELP lists one command per line under its group; ? queries give one value or related group per line; a refused import lists one reason per line.
 - Pressure sensor page: Sensor in use and Add sensor; Calibration and Remove sensor; Live calibration and Import from PC. Sensors are named by range in psi (15 psi, s/n 5880156); Add sensor asks for the serial, then the range (5 to 100 psi), and starts uncalibrated.

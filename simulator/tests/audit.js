@@ -63,7 +63,8 @@ module.exports = async (p, h) => {
   await p.evaluate(() => { LIM.override = false; });
   await check('cfg-pending', 'closeOverlay(); P.Kp = 5; ' + go('cfg'));
   await check('cfg-revert', 'PREV = JSON.parse(JSON.stringify(SAVED)); PREV.rev = 41; SAVED.rev = 42; ' + go('cfg'));
-  await p.evaluate(() => { PREV = null; SAVED = defaultCfg(); });
+  await h.tap('Load settings', true); await check('cfg-load-list', 'updateUI()');
+  await p.evaluate(() => { closeOverlay(); PREV = null; SAVED = defaultCfg(); });
   await check('sensor-import', go('sensor') + ' DRAFT.clear();'); await h.tap('Import from PC'); await check('import-info', 'updateUI()');
   console.log(n ? n + ' states with findings' : 'no findings');
 };

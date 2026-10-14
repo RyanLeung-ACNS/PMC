@@ -2134,20 +2134,15 @@ function buildCfg() {
   const nSav = editCard(s, c2[1][0], RY[0], c2[1][1], RH, 'Applied, not saved', () => diffList('Applied, not saved', cfgDiffs().ns, 'In use now; lost at restart until saved.'));
   const name = infoCard(s, c2[0][0], RY[1], c2[0][1], 'Configuration in use');
   const saved = infoCard(s, c2[1][0], RY[1], c2[1][1], 'Last saved');
-  const bRes = btn(s, 10, RY[2], 109, RH, lab('Restore saved'), () => {
-    let n = 0; allFields().forEach(f => { if (f.saved() !== undefined && !same(fv(f), f.saved())) { setDraft(f, f.saved()); n++; } });
-    return n ? (msg('Saved settings loaded as ' + plural(n, 'unapplied change') + '.', 'info'), true) : refuse('Already the saved settings');
-  });
-  const bDef = btn(s, 127, RY[2], 109, RH, lab('Load defaults'), () => {
-    let n = 0; allFields().forEach(f => { if (f.def && !same(fv(f), f.def())) { setDraft(f, f.def()); n++; } });
-    return n ? (msg('Defaults loaded as ' + plural(n, 'unapplied change') + '.', 'info'), true) : refuse('Already the defaults');
-  });
-  // Ryan (14 Oct): the previous saved revision is kept; Revert loads it as unapplied changes, like Restore saved.
-  const bPrev = btn(s, 244, RY[2], 109, RH, '', () => {
-    if (!PREV) return refuse('No earlier revision kept yet');
-    let n = 0; allFields().forEach(f => { const v = f === PROF_FIELD ? PREV.sens.prof : f.fromCfg && f.fromCfg(PREV); if (v !== undefined && v !== null && !same(fv(f), v)) { setDraft(f, JSON.parse(JSON.stringify(v))); n++; } });
-    return n ? (msg('Rev ' + PREV.rev + ' loaded as ' + plural(n, 'unapplied change') + '. Apply, then Save.', 'info'), true) : refuse('Already the same as rev ' + PREV.rev);
-  });
+  // Ryan (14 Oct): Restore saved, Load defaults and Revert were unclear side by side. One Load settings button lists the
+  // three sources by what they are; any of them comes in as unapplied changes (review, Apply, Save).
+  const loadFrom = (name, val) => {
+    let n = 0; allFields().forEach(f => { const v = val(f); if (v !== undefined && v !== null && !same(fv(f), v)) { setDraft(f, JSON.parse(JSON.stringify(v))); n++; } });
+    return n ? msg(name + ' loaded as ' + plural(n, 'unapplied change') + '. Apply changes to use them.', 'info') : refuse('Already the same as ' + name.toLowerCase());
+  };
+  const bLoad = btn(s, 10, RY[2], 226, RH, lab('Load settings', 'saved, previous or defaults'), () => pickList('Load which settings? (as unapplied changes)',
+    [['Last save, rev ' + SAVED.rev, 'saved']].concat(PREV ? [['Previous save, rev ' + PREV.rev, 'prev']] : []).concat([['Factory defaults', 'def']]), null, k =>
+      k === 'saved' ? loadFrom('Rev ' + SAVED.rev, f => f.saved()) : k === 'prev' ? loadFrom('Rev ' + PREV.rev, f => f === PROF_FIELD ? PREV.sens.prof : f.fromCfg && f.fromCfg(PREV)) : loadFrom('Factory defaults', f => f.def && f.def())));
   const bDis = side(s, 0, lab('Discard changes'), () => confirmDiscard());
   const u = cfgButtons(s, bDis);
   cfgStatus('cfg', true);
@@ -2158,7 +2153,6 @@ function buildCfg() {
     set(nApp.v, d.nd.length ? plural(d.nd.length, 'change') : 'None'); setc(nApp.v, d.nd.length ? COL.draft : COL.text);
     set(nSav.v, ns ? plural(ns, 'change') : 'None');
     saved.set('rev ' + SAVED.rev + (SAVED.savedAt ? ', ' + stamp(SAVED.savedAt).slice(0, 6) + ' ' + clock(SAVED.savedAt).slice(0, 5) : ''));
-    seth(bPrev, lab('Revert', PREV ? 'to rev ' + PREV.rev : 'none kept')); tog(bPrev, 'dis', !PREV);
     tog(bDis, 'dis', !DRAFT.size);
   };
 }
