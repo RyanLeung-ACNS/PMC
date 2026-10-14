@@ -72,46 +72,73 @@ static bool perf_command(const char *line)
 }
 
 // HELP (or ?): every command the link takes. Keep in step with README.md.
-static bool help_command(const char *line)
-{
-    static const char *const lines[] = {
-        "Commands (upper case, one per line, CR or LF ends a line):",
-        "  HELP or ?                  this list",
-        "  VER?                       firmware version and build time",
-        "  DATA ON | DATA OFF         once-a-second DATA lines and status lines on or off",
-        "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-        "  LIM?                       valve limit switch state",
-        "  UNC?                       pressure uncertainty budget",
-        "  TOUCH?                     touch controller counters",
-        "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+// HELP prints the groups; HELP <group> prints one group, short enough to
+// read in the terminal without scrolling.
+static const char *const help_top[] = {
+    "Commands (upper case, one per line, CR or LF ends a line). Groups:",
+    "  HELP SYS     version, data lines, time, timing, diagnostics",
+    "  HELP CAL     pressure calibration",
+    "  HELP MOT     valve motor and limit switch",
+};
+static const char *const help_sys[] = {
+    "System:",
+    "  VER?                       firmware version and build time",
+    "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
+    "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+    "  UNC?                       pressure uncertainty budget",
+    "  TOUCH?                     touch controller counters",
+    "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
 #if PMC_PM_DIAG
-        "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
+    "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
-        "Calibration:",
-        "  CAL?                       active cal and bench points",
-        "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
-        "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
-        "  CAL SAVE                   write the active cal to flash",
-        "  CAL ERASE                  erase the saved cal, use nominal",
-        "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
-        "Valve motor:",
-        "  MOT?                       position, settings, limit",
-        "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
-        "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
-        "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
-        "  MOT ZERO                   call this position 0",
-        "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
-        "  MOT RATE <16-1000>         run rate, steps/s",
-        "  MOT START <16-1000>        start rate, steps/s",
-        "  MOT ACCEL <10-20000>       steps/s^2",
-        "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
-    };
+};
+static const char *const help_cal[] = {
+    "Calibration:",
+    "  CAL?                       active cal and bench points",
+    "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
+    "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+    "  CAL SAVE                   write the active cal to flash",
+    "  CAL ERASE                  erase the saved cal, use nominal",
+    "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
+};
+static const char *const help_mot[] = {
+    "Valve motor (+ opens, - closes):",
+    "  MOT?                       position, target, settings, limit",
+    "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
+    "  MOT MOVE <steps>           relative, 1 to 100000",
+    "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
+    "  MOT ZERO                   call this position 0",
+    "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
+    "  LIM?                       limit switch state",
+    "Motor settings (refused during a move):",
+    "  MOT RATE <16-1000>         run rate, steps/s",
+    "  MOT START <16-1000>        start rate, steps/s",
+    "  MOT ACCEL <10-20000>       steps/s^2",
+    "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
+};
 
-    if (strcmp(line, "HELP") != 0 && strcmp(line, "?") != 0)
-        return false;
-    for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++)
+static void help_print(const char *const *lines, size_t n)
+{
+    for (size_t i = 0; i < n; i++)
         link_printf("%s\r\n", lines[i]);
     link_printf("OK\r\n");
+}
+#define HELP_PRINT(a) help_print(a, sizeof a / sizeof a[0])
+
+static bool help_command(const char *line)
+{
+    if (strcmp(line, "HELP") == 0 || strcmp(line, "?") == 0)
+        HELP_PRINT(help_top);
+    else if (strcmp(line, "HELP SYS") == 0)
+        HELP_PRINT(help_sys);
+    else if (strcmp(line, "HELP CAL") == 0)
+        HELP_PRINT(help_cal);
+    else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
+        HELP_PRINT(help_mot);
+    else if (strncmp(line, "HELP ", 5) == 0)
+        link_printf("ERR expected: HELP, HELP SYS, HELP CAL or HELP MOT\r\n");
+    else
+        return false;
     return true;
 }
 
