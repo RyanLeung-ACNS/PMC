@@ -10,7 +10,7 @@
 #include "valve.h"
 
 /* --------------------------------------------------------------------------
- * Settings (RAM only until stage 3). Defaults and ranges from the simulator
+ * Settings (CFG SAVE keeps them, cfg.c). Defaults and ranges from the simulator
  * (DEF_P / RANGE): POS_MAX is 6 turns of the 26M motor through the PK22
  * 344:1 gearbox, 99,072 full steps.
  * ------------------------------------------------------------------------ */
@@ -36,6 +36,7 @@ static const setting_t settings[] = {
     { "OFFSET",  &n_offset,  0,    5000 },
 };
 #define N_SETTINGS (sizeof settings / sizeof settings[0])
+_Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
 
 #define SETTLE_MS     150     // after a move, before the switch is read
 #define CREEP_EXTRA   200     // creep goes this far past the back-off
@@ -61,7 +62,7 @@ static void evt_print(const event_t *e)
                 (unsigned long)(e->t_ms % 1000 / 100), e->tag, e->text);
 }
 
-static void ev(const char *tag, const char *fmt, ...)
+void valve_event(const char *tag, const char *fmt, ...)
 {
     event_t *e = &events[evt_count % EVT_N];
     va_list args;
@@ -73,6 +74,7 @@ static void ev(const char *tag, const char *fmt, ...)
     evt_count++;
     evt_print(e);
 }
+#define ev valve_event
 
 /* --------------------------------------------------------------------------
  * Faults, in the simulator's FAULT_ORDER (highest priority first).
@@ -530,6 +532,34 @@ static void setting_command(const char *a)
         return;
     }
     link_printf("ERR unknown VALVE command\r\n");
+}
+
+const char *valve_setting_name(int i)
+{
+    return i >= 0 && i < (int)N_SETTINGS ? settings[i].name : "?";
+}
+
+void valve_settings(int32_t v[VALVE_N_SETTINGS])
+{
+    for (size_t i = 0; i < N_SETTINGS; i++)
+        v[i] = *settings[i].v;
+}
+
+const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS])
+{
+    for (size_t i = 0; i < N_SETTINGS; i++)
+        if (v[i] < settings[i].lo || v[i] > settings[i].hi)
+            return settings[i].name;
+    return NULL;
+}
+
+bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS])
+{
+    if (valve_settings_check(v) || mode == VALVE_CALIBRATING || stepper3_busy())
+        return false;
+    for (size_t i = 0; i < N_SETTINGS; i++)
+        *settings[i].v = v[i];
+    return true;
 }
 
 bool valve_command(const char *line)

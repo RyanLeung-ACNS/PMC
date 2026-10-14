@@ -9,8 +9,8 @@
 /**
  * @brief Valve layer over stepper3.c: calibration to the closed switch,
  * position in % of POS_MAX, fault latches, STOP and the event log.
- * Ported from the simulator (stage 2 of the porting plan). Settings are RAM
- * only until the settings store (stage 3).
+ * Ported from the simulator (stage 2 of the porting plan). Settings are kept
+ * by CFG SAVE (cfg.c, stage 3).
  *
  * Modes: NOT CALIBRATED (boot, watchdog reset, after F-07/F-09 or an
  * aborted calibration), CALIBRATING, MANUAL. Nothing moves at boot.
@@ -58,5 +58,17 @@ int32_t valve_pos_max(void);
 int32_t valve_pct10(void);       // position in 0.1 % of POS_MAX
 bool valve_fault_latched(void);
 const char *valve_status(void);  // one status line
+
+// Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET (cfg.c).
+#define VALVE_N_SETTINGS 6
+const char *valve_setting_name(int i);
+void valve_settings(int32_t v[VALVE_N_SETTINGS]);
+// NULL if every value is in range, else the name of the first that is not.
+const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]);
+// Sets all of them; false (nothing changed) if one is out of range or the
+// valve is calibrating or moving.
+bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]);
+// Adds an event to the log (tag up to 5 characters).
+void valve_event(const char *tag, const char *fmt, ...);
 
 #endif // _VALVE_H_

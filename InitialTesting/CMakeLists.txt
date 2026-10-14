@@ -44,6 +44,8 @@ add_executable(InitialTesting
     extflash.c
     cal.h
     cal.c
+    cfg.h
+    cfg.c
     sysinfo.h
     sysinfo.c
     rtclock.c

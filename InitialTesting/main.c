@@ -29,6 +29,7 @@
 #include "cal.h"
 #include "stepper3.h"
 #include "valve.h"
+#include "cfg.h"
 #include "limit.h"
 #include "main_screen.h"
 
@@ -78,6 +79,7 @@ static bool perf_command(const char *line)
 static const char *const help_top[] = {
     "Commands (upper case, one per line, CR or LF ends a line). Groups:",
     "  HELP SYS     version, data lines, time, timing, diagnostics",
+    "  HELP CFG     save and load settings",
     "  HELP CAL     pressure calibration",
     "  HELP VALVE   valve calibration, % position, STOP, faults, events",
     "  HELP MOT     valve motor and limit switch (engineering)",
@@ -88,7 +90,7 @@ static const char *const help_valve[] = {
     "  VALVE CAL                  calibrate to the closed switch (0 %)",
     "  VALVE GOTO <0-100>         go to % open, one decimal",
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
-    "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (RAM only)",
+    "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
     "  CTRL STOP                  stop now, latch F-12",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
     "  EVT? [1-200]               last events (default 20)",
@@ -105,13 +107,22 @@ static const char *const help_sys[] = {
     "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
 };
+static const char *const help_cfg[] = {
+    "Settings (motor, valve, pressure cal; changes are live, unsaved until saved):",
+    "  CFG?                       saved records, what was loaded, unsaved count",
+    "  CFG DIFF?                  settings that differ from the newest save",
+    "  CFG SAVE                   save everything (CAL SAVE does the same)",
+    "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
+    "  CFG LOAD DEFAULTS          factory motor and valve settings, cal kept",
+    "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
+};
 static const char *const help_cal[] = {
     "Calibration:",
     "  CAL?                       active cal and bench points",
     "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
     "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
-    "  CAL SAVE                   write the active cal to flash",
-    "  CAL ERASE                  erase the saved cal, use nominal",
+    "  CAL SAVE                   save all settings, cal included (= CFG SAVE)",
+    "  CAL ERASE                  use nominal and save (old cal record erased)",
     "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
 };
 static const char *const help_mot[] = {
@@ -123,7 +134,7 @@ static const char *const help_mot[] = {
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
     "  LIM?                       limit switch state",
-    "Motor settings (refused during a move):",
+    "Motor settings (refused during a move; CFG SAVE keeps):",
     "  MOT RATE <16-1000>         run rate, steps/s",
     "  MOT START <16-1000>        start rate, steps/s",
     "  MOT ACCEL <10-20000>       steps/s^2",
@@ -144,6 +155,8 @@ static bool help_command(const char *line)
         HELP_PRINT(help_top);
     else if (strcmp(line, "HELP SYS") == 0)
         HELP_PRINT(help_sys);
+    else if (strcmp(line, "HELP CFG") == 0)
+        HELP_PRINT(help_cfg);
     else if (strcmp(line, "HELP CAL") == 0)
         HELP_PRINT(help_cal);
     else if (strcmp(line, "HELP VALVE") == 0 || strcmp(line, "HELP CTRL") == 0)
@@ -151,7 +164,7 @@ static bool help_command(const char *line)
     else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
         HELP_PRINT(help_mot);
     else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR expected: HELP, HELP SYS, HELP CAL, HELP VALVE or HELP MOT\r\n");
+        link_printf("ERR expected: HELP, HELP SYS, HELP CFG, HELP CAL, HELP VALVE or HELP MOT\r\n");
     else
         return false;
     return true;
@@ -190,6 +203,8 @@ void application_init()
     clicks_init();
     limit_init();
     valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
+    // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
+    cfg_init();
 
     // Initialize all available screens.
     init_screens();
@@ -264,7 +279,7 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");

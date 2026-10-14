@@ -11,13 +11,13 @@ Pressure-based needle-valve controller firmware for the MikroE Mikromedia 4 (STM
 
 ## PC link commands
 
-Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CAL` or `HELP MOT`.
+Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE` or `HELP MOT`.
 
 Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok` line once a second (after `DATA ON`; off at boot), status lines when they change, and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-13 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
-| `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CAL`, `HELP MOT` list one group each |
+| `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
 | `VER?` | Firmware version and build time |
 | `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
 | `TIME?` | Read the real-time clock |
@@ -28,6 +28,17 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
 | `PM DIAG` | Steps the excitation from 9 to 11 V, one step a second, then puts it back (only when `PMC_PM_DIAG` is 1) |
 
+Settings store (motor, valve and pressure cal in one record, serial flash). Changes are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
+
+| Command | What it does |
+| --- | --- |
+| `CFG?` | Both flash sectors (revision, valid or why not), what was loaded at power-up, number of unsaved settings |
+| `CFG DIFF?` | Each setting that differs from the newest save |
+| `CFG SAVE` | Save everything. Two sectors are used in turn; a save is read back before it counts, so a failed save keeps the last good record |
+| `CFG LOAD LAST` / `CFG LOAD PREVIOUS` | Load the newest / the other saved record (shows as unsaved until saved). Refused while moving or calibrating |
+| `CFG LOAD DEFAULTS` | Factory motor and valve settings; the cal is kept |
+| `CFG TEST CORRUPT` / `CFG TEST ERASE` | Bench tests: spoil the newest record's CRC / erase both sectors |
+
 Calibration (Druck, through the INA228):
 
 | Command | What it does |
@@ -35,8 +46,8 @@ Calibration (Druck, through the INA228):
 | `CAL?` | Active cal, whether it is saved, and the bench points held |
 | `CAL VAC [mbar] [unc]` | Capture the vacuum point over 10 readings. Defaults: 0 mbar, ±0.010 mbar. Range 0 to 50 mbar |
 | `CAL AIR <mbar> [unc]` | Capture the air point at the reference reading, 500 to 1100 mbar. Default ±1.0 mbar |
-| `CAL SAVE` | Write the active cal to serial flash (it is only in RAM until then) |
-| `CAL ERASE` | Erase the saved cal and go back to nominal |
+| `CAL SAVE` | Same as `CFG SAVE`: saves all settings, the active cal included (it is only in RAM until then) |
+| `CAL ERASE` | Go back to nominal, erase the old 0.5.x cal record and save |
 | `CAL NEW [id]`, `CAL PT <mV/V> <mbar>`, `CAL APPLY` | Enter a table by hand (up to 32 points), then make it active |
 
 A bench cal: pump down, `CAL VAC`; vent, `CAL AIR 1013.2` (your reference reading); check with `CAL?`; then `CAL SAVE`. Either point can be redone on its own.
@@ -49,7 +60,7 @@ Valve (calibration, position, STOP, faults). Nothing moves at power-up; the valv
 | `VALVE CAL` | Calibrate: off the switch if pressed, fast close to the switch, back off, slow close; the switch point is 0 % |
 | `VALVE GOTO <0-100>` | Go to % open (one decimal), once calibrated |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
-| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (99072), calibration speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). RAM only for now |
+| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (99072), calibration speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
 | `CTRL STOP` | Stop now and latch F-12; cancels calibration |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
@@ -76,6 +87,8 @@ Valve motor (Stepper 3, engineering; refused while calibrating or with a fault l
 | `MOT HOLD 0\|1` | Keep the coils on when stopped |
 | `MOT DIR 0\|1` | Reverse the direction |
 | `MOT ORDER <abcd>` | Coil order, digits 0 to 3 once each, e.g. `MOT ORDER 0123` |
+
+`CFG SAVE` keeps the motor settings (`RATE` to `ORDER`).
 
 The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR busy, MOT STOP first` during a move.
 

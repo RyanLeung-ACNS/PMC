@@ -61,13 +61,13 @@ static const uint8_t seq[8] = { 0x1, 0x3, 0x2, 0x6, 0x4, 0xC, 0x8, 0x9 };
 
 #define TICK_HZ        1000000UL
 #define SETTLE_US      20000UL    // coils stay on this long after the last step
-#define RATE_MIN       16         // 1 MHz / 65536, the 16-bit ARR limit
-#define RATE_MAX       1000
-#define ACCEL_MIN      10
-#define ACCEL_MAX      20000
+#define RATE_MIN       STEPPER3_RATE_MIN
+#define RATE_MAX       STEPPER3_RATE_MAX
+#define ACCEL_MIN      STEPPER3_ACCEL_MIN
+#define ACCEL_MAX      STEPPER3_ACCEL_MAX
 
 /* --------------------------------------------------------------------------
- * Settings (RAM only). Defaults from the 26M048B2U bench test, 8 Oct 2026
+ * Settings (CFG SAVE keeps them). Defaults from the 26M048B2U bench test, 8 Oct 2026
  * (thread "26M motor torque-speed settings", /mnt/project-files/motor/):
  * clean at RUN 400 and START 400 with no ramp, steps missed at RUN 600,
  * so RUN 400 is about 2/3 of the measured limit.

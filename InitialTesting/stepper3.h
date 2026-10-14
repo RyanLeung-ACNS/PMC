@@ -37,7 +37,7 @@
  *   MOT HOLD 0|1          keep the coils on when idle
  *   MOT DIR 0|1           1 reverses the direction
  *   MOT ORDER <abcd>      coil order on the outputs, e.g. 0123 or 0213
- * Settings are RAM only and return to the defaults at reset.
+ * Settings are kept by CFG SAVE (cfg.c) and loaded at start-up.
  */
 
 typedef enum {
@@ -104,8 +104,12 @@ bool stepper3_override(void);
 void stepper3_override_arm(void);
 bool stepper3_limit_fitted(void);
 
-// Settings (RAM only). Setters return false while a move is running or for
-// a value out of range (rates 16-1000 steps/s, accel 10-20000 steps/s^2).
+// Settings (saved by cfg.c). Setters return false while a move is running or
+// for a value out of range.
+#define STEPPER3_RATE_MIN  16      // steps/s, 1 MHz / 65536, the 16-bit ARR limit
+#define STEPPER3_RATE_MAX  1000
+#define STEPPER3_ACCEL_MIN 10      // steps/s^2
+#define STEPPER3_ACCEL_MAX 20000
 bool stepper3_set_rate(uint32_t sps);
 bool stepper3_set_start(uint32_t sps);
 bool stepper3_set_accel(uint32_t sps2);
