@@ -5,10 +5,8 @@ cmake_minimum_required(VERSION 3.19)
 project(pmc_xbuild C ASM)
 
 set(PROJ ${CMAKE_CURRENT_SOURCE_DIR}/../../InitialTesting)
-# As InitialTesting/CMakeLists.txt: both build types are -Os. NECTO links the Release
-# mikroSDK libraries for a Release build and the Debug ones otherwise.
-set(CMAKE_C_FLAGS_DEBUG "-g -Os")
-set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
+# NECTO links the Release mikroSDK libraries for a Release build and the Debug
+# ones otherwise. Only Debug (-O0) runs on the board: see InitialTesting/CMakeLists.txt.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(SDK_CFG Release)
 else()

@@ -8,12 +8,11 @@ endif()
 
 include(mikroeUtils)
 
-# Both NECTO build types optimise for size (-Os): Debug 431 KB of flash,
-# Release 403 KB, against 650 KB at CMake's Debug -O0 and 578 KB at its
-# Release -O3 (0.3.33, tools/xbuild). The GUI port needs the room, and an
-# unoptimised build redraws slowly. Debug keeps -g and asserts.
-set(CMAKE_C_FLAGS_DEBUG "-g -Os")
-set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
+# Build Debug (-O0). Any optimised build (-Os, -O2, -O3) blanks the display:
+# the mikroSDK GPIO register struct (.meproject/.../hal_ll_gpio_port.h) is
+# not volatile, so with the flattened inline digital_out_low/high the
+# compiler merges WR_LOW; WR_HIGH into one store and the SSD1963 never sees
+# a write strobe (found on the bench, 0.3.33, 14 Oct 2026).
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
 set(PROJECT_TYPE "lvgl_designer" CACHE STRING "" FORCE)
