@@ -81,7 +81,7 @@ void stepper3_poll(void);
 // Goes up by one each time a move ends (done, stopped, limit, timeout);
 // stepper3_last_stop() then says why.
 uint32_t stepper3_move_seq(void);
-// Sets the position count (idle only).
+// Sets the position count (refused while moving; fine while settling).
 bool stepper3_set_position(int32_t p);
 // While set (non-NULL), MOT MOVE/GOTO/OVERRIDE/ZERO and the motor screen
 // moves are refused with this text. MOT STOP and MOT OFF always work. The

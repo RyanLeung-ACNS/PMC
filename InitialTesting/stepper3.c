@@ -443,9 +443,11 @@ void stepper3_poll(void)
 int32_t stepper3_target(void) { return run_state == ST_MOVING ? target : position; }
 uint32_t stepper3_move_seq(void) { return moves_ended; }
 
+// Allowed while the coils settle after a move: calibration sets 0 % the
+// moment the switch stops the creep, inside that 20 ms.
 bool stepper3_set_position(int32_t p)
 {
-    if (run_state != ST_IDLE)
+    if (run_state == ST_MOVING)
         return false;
     position = p;
     return true;

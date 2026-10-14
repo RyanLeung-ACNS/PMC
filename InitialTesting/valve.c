@@ -237,7 +237,10 @@ static void cal_move_ended(stepper3_stop_t why)
         break;
     case CAL_CREEP:
         if (why == STEPPER3_STOP_LIMIT) {
-            stepper3_set_position(n_offset);
+            if (!stepper3_set_position(n_offset)) {
+                cal_abort("count not set");
+                break;
+            }
             calibrated = true;
             ev("REF", "Calibrated in %lu s, position %ld",
                (unsigned long)(lv_tick_elaps(cal_t0) / 1000), (long)n_offset);
@@ -358,7 +361,7 @@ const char *valve_status(void)
     char p[16], f[40];
     faults_text(f, sizeof f);
     if (calibrated)
-        lv_snprintf(status_text, sizeof status_text, "Valve: %s, %s %% (count %ld of %ld)%s%s%s",
+        lv_snprintf(status_text, sizeof status_text, "Valve: %s, calibrated, %s %% (count %ld of %ld)%s%s%s",
                     valve_mode_name(), pct_text(p, sizeof p, stepper3_position()),
                     (long)stepper3_position(), (long)pos_max, f[0] ? ", faults " : "", f,
                     question ? ", switch question waiting" : "");
