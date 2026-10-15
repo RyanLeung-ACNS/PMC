@@ -324,6 +324,7 @@ static lv_obj_t *home_scr, *cur_scr, *overlay;
 // Screens to go Back to (Home is under them all), e.g. Menu under Faults and log.
 static const ui_screen_t *back_stack[4];
 static int back_n;
+static bool overlay_tv;         // the overlay is a text page (Help): strip shown greyed
 static bool overlay_q;          // the overlay is the closed-switch question
 static bool kp_open;            // the overlay is the keypad
 static void kp_side(void);
@@ -500,8 +501,11 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     ui_set_text(strip_text, text);
     lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
-    show(strip_ok, ok);
-    show(strip_act, act);
+    show(strip_ok, ok && !overlay_tv);
+    show(strip_act, act && !overlay_tv);
+    lv_opa_t opa = overlay_tv ? LV_OPA_40 : LV_OPA_COVER;
+    if (lv_obj_get_style_opa(strip, 0) != opa)
+        lv_obj_set_style_opa(strip, opa, 0);
 }
 
 static void frame_refresh(void)
@@ -538,7 +542,7 @@ static void frame_refresh(void)
     act_cb = NULL;
     if (cur->refresh)
         cur->refresh();
-    show(strip, !overlay);
+    show(strip, !overlay || overlay_tv);
     if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
         msg_until = 0;
     char buf[96];
@@ -668,6 +672,7 @@ void ui_overlay_close(void)
         overlay = NULL;
     }
     overlay_q = false;
+    overlay_tv = false;
     kp_open = false;
 }
 
@@ -925,6 +930,7 @@ void ui_text_view(const char *title, const char *text)
     }
     lv_obj_update_layout(c);
     tv_buttons();
+    overlay_tv = true;
     frame_refresh();
 }
 
