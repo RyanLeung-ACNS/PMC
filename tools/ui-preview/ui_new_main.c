@@ -8,6 +8,9 @@
  *   state: notcal | manual | calib | moving | nodruck | stop | neg | menu | keypad | confirm
  *          | valve | valvenc | limithit | calpage | faults | detail | diag | help
  */
+#ifndef TVX
+#define TVX 444
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,10 +48,13 @@ const char *valve_mode_name(void)
 bool valve_calibrated(void) { return v_cal; }
 int32_t valve_pct10(void) { return v_pct10; }
 int32_t valve_target_pct10(void) { return moving ? v_target10 : v_pct10; }
+int32_t valve_pct_milli(void) { return v_pct10 * 100 + 37; }
+int32_t valve_target_pct_milli(void) { return valve_target_pct10() * 100; }
 int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
+bool valve_goto_pct100(int32_t p, const char **why) { return valve_goto_pct10(p / 10, why); }
 void valve_stop(void) { moving = false; }
 bool valve_stop_latches(void) { return false; }
 int valve_fault_count(void) { return v_f01 + v_f12; }
@@ -168,7 +174,7 @@ int main(int argc, char **argv)
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
                 !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
-                !strcmp(st, "help") || !strcmp(st, "back") || !strcmp(st, "svc");
+                !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -219,7 +225,7 @@ int main(int argc, char **argv)
 
     if (!strcmp(st, "stop")) tap(415, 240);
     if (!strcmp(st, "menu")) tap(415, 184);
-    if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); }
+    if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); tap(111, 184); }
     if (!strcmp(st, "confirm")) tap(415, 72);
     if (!strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit")) tap(415, 128);
     if (!strcmp(st, "limithit")) v_q = true;
@@ -239,7 +245,9 @@ int main(int argc, char **argv)
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
-    if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 160, 100); }
+    if (!strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3")) { tap(415, 128); tap(415, 184); }
+    if (!strcmp(st, "help2")) tap(TVX, 172);
+    if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }

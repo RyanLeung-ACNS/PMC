@@ -100,6 +100,7 @@ typedef enum { CAL_NONE, CAL_CLEAR, CAL_FAST, CAL_BACK, CAL_CREEP } cal_stage_t;
 
 static valve_mode_t mode = VALVE_NOT_CAL;
 static bool calibrated;
+static bool cal_was;     // calibrated before this calibration started
 static cal_stage_t cal_stage;
 static bool cal_moving;           // a calibration move is running
 static uint32_t cal_settle_from;  // non-zero: waiting SETTLE_MS before the next stage
@@ -155,8 +156,12 @@ static void cal_abort(const char *why)
         return;
     stepper3_stop();
     seq_seen = stepper3_move_seq();
-    ev("REF", "Calibrating aborted (%s)", why);
-    cal_end(VALVE_NOT_CAL);
+    // An operator STOP keeps the earlier calibration: the step count kept
+    // counting through the cancelled moves, so the position is still known.
+    bool keep = cal_was && !strcmp(why, "STOP");
+    ev("REF", "Calibrating aborted (%s)%s", why, keep ? ", earlier calibration kept" : "");
+    calibrated = keep;
+    cal_end(keep ? VALVE_MANUAL : VALVE_NOT_CAL);
 }
 
 static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
@@ -210,6 +215,7 @@ static bool cal_start(const char **err)
     stepper3_stop();
     stepper3_override_cancel();
     question = false;
+    cal_was = calibrated;
     calibrated = false;
     mode = VALVE_CALIBRATING;
     cal_t0 = lv_tick_get();
@@ -605,10 +611,15 @@ bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS])
 
 bool valve_goto_pct10(int32_t pct10, const char **why)
 {
+    return valve_goto_pct100(pct10 * 10, why);
+}
+
+bool valve_goto_pct100(int32_t pct100, const char **why)
+{
     if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (!calibrated)                { *why = "valve not calibrated, VALVE CAL first"; return false; }
-    int32_t to = (int32_t)(((int64_t)pct10 * pos_max + 500) / 1000);
+    int32_t to = (int32_t)(((int64_t)pct100 * pos_max + 5000) / 10000);
     if (to < 0) to = 0;
     if (to > pos_max) to = pos_max;
     if (!stepper3_goto(to))         { *why = "limit open, closing move refused"; return false; }
@@ -635,6 +646,13 @@ int valve_cal_step(void)
 }
 
 int32_t valve_target_pct10(void) { return pct10_of(stepper3_target()); }
+
+static int32_t milli_of(int32_t pos)
+{
+    return (int32_t)(((int64_t)pos * 100000 + (pos >= 0 ? pos_max / 2 : -pos_max / 2)) / pos_max);
+}
+int32_t valve_pct_milli(void)        { return milli_of(stepper3_position()); }
+int32_t valve_target_pct_milli(void) { return milli_of(stepper3_target()); }
 
 int valve_fault_count(void)
 {

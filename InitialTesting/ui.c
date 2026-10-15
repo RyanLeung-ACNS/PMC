@@ -196,6 +196,14 @@ const char *ui_when(char *buf, size_t n, uint32_t age_ms)
     return buf;
 }
 
+const char *ui_fmt2(char *buf, size_t n, int64_t milli)
+{
+    bool neg = milli < 0;
+    int64_t t = ((neg ? -milli : milli) + 5) / 10;
+    lv_snprintf(buf, n, "%s%ld.%02ld", neg && t ? "-" : "", (long)(t / 100), (long)(t % 100));
+    return buf;
+}
+
 const char *ui_fmt1(char *buf, size_t n, int64_t milli)
 {
     bool neg = milli < 0;
@@ -324,6 +332,7 @@ static lv_obj_t *home_scr, *cur_scr, *overlay;
 // Screens to go Back to (Home is under them all), e.g. Menu under Faults and log.
 static const ui_screen_t *back_stack[4];
 static int back_n;
+static bool overlay_tv;         // the overlay is a text page (Help): strip shown greyed
 static bool overlay_q;          // the overlay is the closed-switch question
 static bool kp_open;            // the overlay is the keypad
 static void kp_side(void);
@@ -368,6 +377,7 @@ static void ok_event(lv_event_t *e)
 {
     (void)e;
     msg_until = 0;
+    frame_refresh();   // clear now, not at the next 0.5 s refresh
 }
 
 static void act_event(lv_event_t *e)
@@ -499,8 +509,11 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     ui_set_text(strip_text, text);
     lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
-    show(strip_ok, ok);
-    show(strip_act, act);
+    show(strip_ok, ok && !overlay_tv);
+    show(strip_act, act && !overlay_tv);
+    lv_opa_t opa = overlay_tv ? LV_OPA_40 : LV_OPA_COVER;
+    if (lv_obj_get_style_opa(strip, 0) != opa)
+        lv_obj_set_style_opa(strip, opa, 0);
 }
 
 static void frame_refresh(void)
@@ -537,7 +550,7 @@ static void frame_refresh(void)
     act_cb = NULL;
     if (cur->refresh)
         cur->refresh();
-    show(strip, !overlay);
+    show(strip, !overlay || overlay_tv);
     if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
         msg_until = 0;
     char buf[96];
@@ -667,6 +680,7 @@ void ui_overlay_close(void)
         overlay = NULL;
     }
     overlay_q = false;
+    overlay_tv = false;
     kp_open = false;
 }
 
@@ -687,17 +701,17 @@ static lv_obj_t *overlay_new(void)
 // Keypad.
 static struct {
     char entry[10];
-    int32_t min10, max10;
+    int32_t min100, max100;
     ui_keypad_set_t on_set;
     lv_obj_t *value, *title, *info, *err, *side;
-    int32_t (*side10)(void);   // live side value, 0.1 units
+    int32_t (*side_milli)(void);   // live side value, 0.001 units, shown to 2 dp
 } kp;
 
 static void kp_side(void)
 {
     char v[16];
-    if (kp.side && kp.side10)
-        ui_set_text(kp.side, ui_fmt1(v, sizeof v, (int64_t)kp.side10() * 100));
+    if (kp.side && kp.side_milli)
+        ui_set_text(kp.side, ui_fmt2(v, sizeof v, kp.side_milli()));
 }
 
 static void kp_show_err(const char *why)
@@ -709,7 +723,7 @@ static void kp_show_err(const char *why)
         ui_set_text(kp.err, why);
 }
 
-static bool kp_parse(int32_t *v10)
+static bool kp_parse(int32_t *v100)
 {
     const char *s = kp.entry;
     int32_t whole = 0, frac = 0;
@@ -721,10 +735,13 @@ static bool kp_parse(int32_t *v10)
         whole = whole * 10 + (*s++ - '0');
     if (*s == '.') {
         s++;
-        if (*s >= '0' && *s <= '9')
-            frac = *s - '0';
+        for (int i = 0; i < 2; i++) {
+            frac *= 10;
+            if (*s >= '0' && *s <= '9')
+                frac += *s++ - '0';
+        }
     }
-    *v10 = (neg ? -1 : 1) * (whole * 10 + frac);
+    *v100 = (neg ? -1 : 1) * (whole * 100 + frac);
     return true;
 }
 
@@ -737,20 +754,20 @@ static void kp_key(lv_event_t *e)
     if (strcmp(k, "<") == 0) {
         if (n) kp.entry[n - 1] = '\0';
     } else if (strcmp(k, "set") == 0) {
-        int32_t v10;
+        int32_t v100;
         const char *why = NULL;
-        if (!kp_parse(&v10)) {
+        if (!kp_parse(&v100)) {
             ui_overlay_close();
             return;
         }
-        if (v10 < kp.min10 || v10 > kp.max10) {
+        if (v100 < kp.min100 || v100 > kp.max100) {
             char a[16], b[16], t[48];
-            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt1(a, sizeof a, kp.min10 * 100),
-                        ui_fmt1(b, sizeof b, kp.max10 * 100));
+            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt2(a, sizeof a, kp.min100 * 10),
+                        ui_fmt2(b, sizeof b, kp.max100 * 10));
             kp_show_err(t);
             return;
         }
-        if (!kp.on_set(v10, &why)) {
+        if (!kp.on_set(v100, &why)) {
             kp_show_err(why ? why : "Refused");
             return;
         }
@@ -760,8 +777,8 @@ static void kp_key(lv_event_t *e)
         if (*k == '.') {
             if (dot) return;
             if (!n) { strcpy(kp.entry, "0"); n = 1; }
-        } else if (dot && strlen(dot) > 1) {
-            return;                           // one decimal
+        } else if (dot && strlen(dot) > 2) {
+            return;                           // two decimals
         } else if (n == 1 && kp.entry[0] == '0') {
             n = 0;                            // no leading zero
         }
@@ -771,15 +788,15 @@ static void kp_key(lv_event_t *e)
     ui_set_text(kp.value, kp.entry);
 }
 
-void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
-               const char *side_label, int32_t (*side10)(void), ui_keypad_set_t on_set)
+void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max100,
+               const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set)
 {
     lv_obj_t *o = overlay_new();
     memset(&kp, 0, sizeof kp);
-    kp.min10 = min10;
-    kp.max10 = max10;
+    kp.min100 = min100;
+    kp.max100 = max100;
     kp.on_set = on_set;
-    kp.side10 = side10;
+    kp.side_milli = side_milli;
     kp_open = true;
 
     lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
@@ -850,28 +867,55 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
     ui_ask(text, "Cancel", NULL, ok, on_ok);
 }
 
-// Text page over the screen (Help). Header Back closes it. Up and
-// Down jump a page without animation (a drag redraws the card every frame).
-static lv_obj_t *tv_card;
+// Text page over the screen (Help). Header Back closes it. No dragging (a
+// drag redraws the card every frame and crowded Back): small Up and Down
+// buttons on the right jump a page less one line, without animation.
+// Layout A: wide text card, 52 px buttons at the right edge.
+// Layout B: taller text card down to the bottom row, buttons over STOP.
+#ifndef TV_LAYOUT_B
+#define TV_W 400
+#define TV_H 152
+#define TV_BX 418
+#define TV_BW 52
+#else
+#define TV_W 341
+#define TV_H 208
+#define TV_BX 361
+#define TV_BW 109
+#endif
+#define TV_STEP (TV_H - 38)   // a page less one line
+static lv_obj_t *tv_card, *tv_btn[2];
+
+static void tv_buttons(void)
+{
+    for (int i = 0; i < 2; i++) {
+        bool room = i ? lv_obj_get_scroll_bottom(tv_card) > 0 : lv_obj_get_scroll_top(tv_card) > 0;
+        ui_btn_enable(tv_btn[i], room);
+    }
+}
 
 static void tv_page(lv_event_t *e)
 {
+    if (ui_btn_disabled(e))
+        return;
     int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
     int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(tv_card) : lv_obj_get_scroll_top(tv_card);
-    int32_t d = room < 114 ? room : 114;     // a page less one line
+    int32_t d = room < TV_STEP ? room : TV_STEP;
     if (d > 0)
         lv_obj_scroll_by(tv_card, 0, -dir * d, LV_ANIM_OFF);
+    tv_buttons();
 }
 
 void ui_text_view(const char *title, const char *text)
 {
     lv_obj_t *o = overlay_new();
-    // Kept 16 px clear of the header so a drag never starts near Back, and
-    // no momentum or elastic: the scroll stops when the finger lifts.
-    lv_obj_t *c = ui_card(o, 10, 16, 460, 152);
+    // Not clickable, so a touch on the text does nothing; it still scrolls
+    // from the buttons and shows where it is with the scroll bar.
+    lv_obj_t *c = ui_card(o, 10, 16, TV_W, TV_H);
     tv_card = c;
-    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                          LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_set_scroll_dir(c, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ON);
     lv_obj_set_style_width(c, 6, LV_PART_SCROLLBAR);
@@ -883,16 +927,21 @@ void ui_text_view(const char *title, const char *text)
     lv_obj_set_style_pad_all(c, 10, 0);
     lv_obj_set_style_pad_right(c, 20, 0);
     lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
-    t = ui_label(c, 0, 26, 430, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    t = ui_label(c, 0, 26, TV_W - 30, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(t, 3, 0);
     // On press (not release); held, it repeats every 0.1 s after 0.4 s.
+    // Greyed at the top and the bottom.
     for (int i = 0; i < 2; i++) {
-        lv_obj_t *b = ui_btn(o, 10 + i * 117, 176, 109, 48, UI_SECONDARY,
-                             i ? LV_SYMBOL_DOWN " Down" : LV_SYMBOL_UP " Up", NULL, NULL);
+        lv_obj_t *b = ui_btn(o, TV_BX, i ? 96 : 16, TV_BW, 72, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN : LV_SYMBOL_UP, NULL, NULL);
         lv_obj_add_event_cb(b, tv_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
         lv_obj_add_event_cb(b, tv_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+        tv_btn[i] = b;
     }
+    lv_obj_update_layout(c);
+    tv_buttons();
+    overlay_tv = true;
     frame_refresh();
 }
 

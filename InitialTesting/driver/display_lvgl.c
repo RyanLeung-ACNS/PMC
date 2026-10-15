@@ -4,6 +4,7 @@
 #include "display_lvgl.h"
 #include "lvgl_common.h"
 #include "mcu.h"
+#include "display_px.h"
 
 static void disp_init(void);
 static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t * px_map);
@@ -80,22 +81,11 @@ static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t *
     /* Start frame. */
     frame_start(start_column, end_column, start_page, end_page);
 
-    /* Flush data line-by-line. The SDK's write_array_data makes three HAL
-     * calls per pixel; on this board the 16-bit bus is all of GPIOE
-     * (LCD_TFT_16BIT_CH0, mask 0xFFFF) and WR is PF11 (TFT_WR), so write the
-     * registers directly. Each write is at least two AHB cycles (>= 12 ns),
-     * and two nops stretch the WR low pulse, well inside SSD1963 timing. */
+    /* Flush data. The SDK's write_array_data makes three HAL calls per
+     * pixel, so the registers are written directly in display_px.c, which is
+     * built at -O2 (this file must stay at -O0, see CMakeLists.txt). */
     uint32_t t0 = lv_tick_get();
-    for(int32_t y = act_y1; y <= act_y2; y++) {
-        const uint16_t * p = color_p;
-        for(uint16_t i = 0; i < act_w; i++) {
-            GPIOE->ODR = *p++;
-            GPIOF->BSRR = 1UL << (11 + 16);   /* WR low */
-            __asm volatile ("nop\n\tnop");
-            GPIOF->BSRR = 1UL << 11;          /* WR high: SSD1963 latches */
-        }
-        color_p += full_w; /* advance by the originally rendered line width */
-    }
+    display_px_write(color_p, act_w, act_y2 - act_y1 + 1, full_w);
     disp_flush_ms += lv_tick_elaps(t0);
     disp_flush_px += (uint32_t)act_w * (uint32_t)(act_y2 - act_y1 + 1);
 

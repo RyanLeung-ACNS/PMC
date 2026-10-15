@@ -8,11 +8,18 @@ endif()
 
 include(mikroeUtils)
 
-# Build Debug (-O0). Any optimised build (-Os, -O2, -O3) blanks the display:
-# the mikroSDK GPIO register struct (.meproject/.../hal_ll_gpio_port.h) is
-# not volatile, so with the flattened inline digital_out_low/high the
-# compiler merges WR_LOW; WR_HIGH into one store and the SSD1963 never sees
-# a write strobe (found on the bench, 0.3.33, 14 Oct 2026).
+# Build Debug. A Release build blanks the display: MikroE's prebuilt Release
+# mikroSDK libraries (lib_ssd1963.a) were compiled with a non-volatile GPIO
+# register struct, so ssd1963_write_command loses its WR low and the SSD1963
+# never latches a command (found on the bench, 0.3.33; confirmed by
+# disassembly, 0.8.9). LVGL, the pixel loop (driver/display_px.c) and the
+# ui*.c screens are compiled
+# at -O2 below while the SDK libraries stay Debug. driver/display_lvgl.c
+# must stay at -O0: it expands the static inline write_command/frame_start
+# from the SDK lvgl_common.h, which hit the same non-volatile GPIO struct
+# (0.8.9 on the bench: nothing reached the panel). The hardware drivers stay
+# at -O0 too: some bit-bang or count delay loops (clicks.c, extflash.c,
+# eth_hw.c), so their timing does not change.
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
 set(PROJECT_TYPE "lvgl_designer" CACHE STRING "" FORCE)
@@ -21,6 +28,8 @@ add_executable(InitialTesting
     driver/display_lvgl.h
     driver/lv_port_indev.h
     driver/display_lvgl.c
+    driver/display_px.h
+    driver/display_px.c
     driver/lv_port_indev.c
     1ms_Timer.h
     resource.mres
@@ -123,3 +132,11 @@ if(COMPILER_REVISION)
     endif()
 endif()
 add_subdirectory(lvgl_940)
+
+set_source_files_properties(driver/display_px.c ui.c ui_home.c ui_valve.c
+    PROPERTIES COMPILE_OPTIONS "-O2")
+get_target_property(_lvgl_real lvgl ALIASED_TARGET)
+if(NOT _lvgl_real)
+    set(_lvgl_real lvgl)
+endif()
+target_compile_options(${_lvgl_real} PRIVATE -O2)
