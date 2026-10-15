@@ -140,12 +140,8 @@ static void help_cb(lv_event_t *e)
                  lv_event_get_user_data(e));
 }
 
-/* Layout 1: readings 104 px tall with 26 px numbers, the six move buttons
- * in one row, Go to on its card, Help beside the strip.
- * Layout 2: the 0.8.5 rows, readings 64 px with 26 px numbers, buttons 40 px. */
-#ifndef UI_VALVE_LAYOUT
-#define UI_VALVE_LAYOUT 1
-#endif
+/* Readings 64 px tall with 26 px numbers; move buttons 40 px in two rows
+ * (Ryan chose this over one row of six, 15 Oct). */
 
 // 3 px bar near the bottom of a 148 px card; returns the fill.
 static lv_obj_t *thin_bar(lv_obj_t *card, int32_t y)
@@ -172,7 +168,7 @@ static lv_obj_t *reading(lv_obj_t *scr, int32_t x, int32_t h, const char *cap, l
     lv_obj_t *card = lv_obj_get_parent(v);
     right(v);
     lv_obj_set_style_text_font(v, &ui_num_26, 0);
-    lv_obj_set_y(v, h > 64 ? 34 : 20);
+    lv_obj_set_y(v, 20);
     if (fill)
         *fill = thin_bar(card, h - 10);
     return v;
@@ -188,35 +184,6 @@ static void hold_btn(lv_obj_t *b, bool open)
 static void valve_build(lv_obj_t *scr)
 {
     memset(&vp, 0, sizeof vp);
-#if UI_VALVE_LAYOUT == 1
-    vp.p = reading(scr, 10, 104, "Pressure, mB", &vp.pfill);
-    vp.v = reading(scr, 166, 104, "Valve, %", &vp.fill);
-    vp.go = reading(scr, 322, 104, "Go to, %", NULL);
-    lv_obj_t *go = lv_obj_get_parent(vp.go);           // tap to enter a position
-    lv_obj_add_flag(go, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(go, goto_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_style_border_side(go, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_color(go, UI_BLUE, 0);
-    lv_obj_set_style_border_width(go, 3, 0);
-    lv_obj_set_style_pad_bottom(go, -3, 0);
-    ui_label(go, 10, 80, 128, &ui_font_12, UI_BLUE, LV_TEXT_ALIGN_RIGHT, "Set " LV_SYMBOL_RIGHT);
-
-    static const char *const row[6] = { "Fully\nclose", "Close", "-5 %", "+5 %", "Open", "Fully\nopen" };
-    for (int i = 0; i < 6; i++) {
-        lv_obj_t *b = ui_btn(scr, 10 + i * 78, 160, 70, 48, UI_SECONDARY, row[i],
-                             i == 0 || i == 5 ? full_cb : i == 2 || i == 3 ? step_cb : NULL,
-                             i == 5 ? (void *)1 : (void *)(intptr_t)(i == 2 ? -50 : 50));
-        if (i == 0 || i == 5)
-            lv_obj_set_style_text_line_space(lv_obj_get_child(b, 0), -2, 0);
-        if (i == 1 || i == 4) {
-            hold_btn(b, i == 4);
-            ui_btn_text(b, row[i], "hold");
-        }
-        vp.btn[i] = b;
-    }
-    ui_strip_width(226);
-    ui_btn(scr, 244, 216, 109, 48, UI_NAV, "Help", help_cb, (void *)valve_help);
-#else
     vp.p = reading(scr, 10, 64, "Pressure, mB", &vp.pfill);
     vp.v = reading(scr, 166, 64, "Valve, %", &vp.fill);
     vp.go = reading(scr, 322, 64, "Go to, %", NULL);
@@ -235,7 +202,6 @@ static void valve_build(lv_obj_t *scr)
     vp.btn[5] = ui_btn(scr, 128, 168, 106, 40, UI_SECONDARY, "Fully close", full_cb, NULL);
     vp.btn[6] = ui_btn(scr, 246, 168, 106, 40, UI_SECONDARY, "Fully open", full_cb, (void *)1);
     ui_btn(scr, 364, 168, 106, 40, UI_NAV, "Help", help_cb, (void *)valve_help);
-#endif
 }
 
 // Valve %, its bar and Go to, at 10 Hz.
