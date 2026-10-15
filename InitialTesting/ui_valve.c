@@ -209,9 +209,8 @@ static void valve_fast(void)
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
-    int32_t p = valve_pct10();
-    p = !cal || p < 0 ? 0 : p > 1000 ? 1000 : p;
-    bar_width(vp.fill, p * 128 / 1000);
+    int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
+    bar_width(vp.fill, p * 128 / 10000);
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);

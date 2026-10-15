@@ -45,9 +45,17 @@ static int32_t log2_q8(uint32_t v)
     return n;
 }
 
+// The pressure as the screen shows it (1 dp), so a bar never moves while
+// the number stands still.
+static int32_t p_shown(int32_t p_mmbar)
+{
+    return p_mmbar < 0 ? 0 : (p_mmbar + 50) / 100 * 100;
+}
+
 int32_t ui_log_px(int32_t p_mmbar, int32_t w)
 {
     const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar
+    p_mmbar = p_shown(p_mmbar);
     int32_t l = log2_q8(p_mmbar > 1 ? (uint32_t)p_mmbar : 1);
     int32_t x = (l - lo) * w / (hi - lo);
     return x < 0 ? 0 : x > w ? w : x;
@@ -56,6 +64,7 @@ int32_t ui_log_px(int32_t p_mmbar, int32_t w)
 static int32_t pbar_x(int32_t p_mmbar)
 {
     const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar
+    p_mmbar = p_shown(p_mmbar);
     int32_t l = log2_q8(p_mmbar > 1 ? (uint32_t)p_mmbar : 1);
     int32_t x = PPAD + (l - lo) * (BAR_W - 2 * PPAD) / (hi - lo);
     return x < 0 ? 0 : x > BAR_W ? BAR_W : x;
@@ -288,9 +297,8 @@ static void home_fast(void)
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
-    int32_t p = valve_pct10();
-    p = p < 0 ? 0 : p > 1000 ? 1000 : p;
-    bar_set(&vt, cal ? p * BAR_W / 1000 : -1);
+    int32_t p = ui_pct_shown(valve_pct_milli());
+    bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
 }
 
 static void home_refresh(void)

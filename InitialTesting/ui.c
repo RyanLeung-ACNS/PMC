@@ -213,6 +213,12 @@ const char *ui_fmt1(char *buf, size_t n, int64_t milli)
     return buf;
 }
 
+int32_t ui_pct_shown(int32_t milli)
+{
+    int32_t c = milli < 0 ? 0 : (milli + 5) / 10;
+    return c > 10000 ? 10000 : c;
+}
+
 /* --------------------------------------------------------------------------
  * Buttons. Child 0 is the main label, then the chevron (nav only), then the
  * 12 px state line, made on first use (most buttons never have one).
