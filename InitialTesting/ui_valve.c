@@ -40,9 +40,9 @@ static const char *pressure_text(char *buf, size_t n, bool *ok)
     return *ok ? ui_fmt1(buf, n, s->p_mmbar) : "----";
 }
 
-static const char *pct_text(char *buf, size_t n, int32_t pct10)
+static const char *pct_text(char *buf, size_t n, int32_t milli)
 {
-    return ui_fmt1(buf, n, (int64_t)pct10 * 100);
+    return ui_fmt2(buf, n, milli);
 }
 
 static void right(lv_obj_t *l)
@@ -117,7 +117,7 @@ static void goto_cb(lv_event_t *e)
         ui_msg(why);
         return;
     }
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct10, goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct_milli, goto_set);
 }
 
 static void full_cb(lv_event_t *e)
@@ -207,13 +207,13 @@ static void valve_fast(void)
 {
     char buf[16];
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
-    ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
+    ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
     int32_t p = valve_pct10();
     p = !cal || p < 0 ? 0 : p > 1000 ? 1000 : p;
     bar_width(vp.fill, p * 128 / 1000);
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
-    ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct10()) : "--");
+    ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
 }
 
@@ -290,7 +290,7 @@ static void calib_fast(void)
 {
     char buf[16];
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
-    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
+    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
     ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
 }
 

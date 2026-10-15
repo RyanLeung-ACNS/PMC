@@ -48,6 +48,8 @@ const char *valve_mode_name(void)
 bool valve_calibrated(void) { return v_cal; }
 int32_t valve_pct10(void) { return v_pct10; }
 int32_t valve_target_pct10(void) { return moving ? v_target10 : v_pct10; }
+int32_t valve_pct_milli(void) { return v_pct10 * 100 + 37; }
+int32_t valve_target_pct_milli(void) { return valve_target_pct10() * 100; }
 int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }

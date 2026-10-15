@@ -76,6 +76,8 @@ uint32_t valve_cal_budget_s(void);               // longest calibration, s
 int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
 bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
 int32_t valve_target_pct10(void);                // where the valve is going
+int32_t valve_pct_milli(void);                   // position in 0.001 % (for 2 dp on screen)
+int32_t valve_target_pct_milli(void);
 void valve_stop(void);                           // CTRL STOP (latches F-12 in AUTO only)
 bool valve_stop_latches(void);                   // STOP would latch F-12 now
 // CTRL RESET; returns the number latched before, left = those kept.

@@ -642,6 +642,13 @@ int valve_cal_step(void)
 
 int32_t valve_target_pct10(void) { return pct10_of(stepper3_target()); }
 
+static int32_t milli_of(int32_t pos)
+{
+    return (int32_t)(((int64_t)pos * 100000 + (pos >= 0 ? pos_max / 2 : -pos_max / 2)) / pos_max);
+}
+int32_t valve_pct_milli(void)        { return milli_of(stepper3_position()); }
+int32_t valve_target_pct_milli(void) { return milli_of(stepper3_target()); }
+
 int valve_fault_count(void)
 {
     int n = 0;

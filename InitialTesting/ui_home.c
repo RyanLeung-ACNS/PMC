@@ -206,7 +206,7 @@ static void goto_event(lv_event_t *e)
         ui_msg(not_manual_why());
         return;
     }
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct10, goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct_milli, goto_set);
 }
 
 static void calibrate(void)
@@ -285,7 +285,7 @@ static void home_fast(void)
     } else {
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_26)
             lv_obj_set_style_text_font(vt.reading, &ui_num_26, 0);
-        ui_set_text(vt.reading, cal ? ui_fmt1(buf, sizeof buf, (int64_t)valve_pct10() * 100) : "----");
+        ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
     int32_t p = valve_pct10();
@@ -310,7 +310,7 @@ static void home_refresh(void)
     home_fast();
     alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-13"));
     bool manual = m == VALVE_MANUAL && !valve_fault_count();
-    box_set(&vt, manual, manual ? ui_fmt1(buf, sizeof buf, (int64_t)valve_target_pct10() * 100) : "");
+    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "");
 
     // Mode button.
     int step = valve_cal_step();
@@ -355,7 +355,7 @@ void ui_status_line(void)
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
     } else if (stepper3_busy()) {
         char t[40], v[16];
-        lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt1(v, sizeof v, (int64_t)valve_target_pct10() * 100));
+        lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
     } else {
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Valve held");

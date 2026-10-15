@@ -196,6 +196,14 @@ const char *ui_when(char *buf, size_t n, uint32_t age_ms)
     return buf;
 }
 
+const char *ui_fmt2(char *buf, size_t n, int64_t milli)
+{
+    bool neg = milli < 0;
+    int64_t t = ((neg ? -milli : milli) + 5) / 10;
+    lv_snprintf(buf, n, "%s%ld.%02ld", neg && t ? "-" : "", (long)(t / 100), (long)(t % 100));
+    return buf;
+}
+
 const char *ui_fmt1(char *buf, size_t n, int64_t milli)
 {
     bool neg = milli < 0;
@@ -696,14 +704,14 @@ static struct {
     int32_t min10, max10;
     ui_keypad_set_t on_set;
     lv_obj_t *value, *title, *info, *err, *side;
-    int32_t (*side10)(void);   // live side value, 0.1 units
+    int32_t (*side_milli)(void);   // live side value, 0.001 units, shown to 2 dp
 } kp;
 
 static void kp_side(void)
 {
     char v[16];
-    if (kp.side && kp.side10)
-        ui_set_text(kp.side, ui_fmt1(v, sizeof v, (int64_t)kp.side10() * 100));
+    if (kp.side && kp.side_milli)
+        ui_set_text(kp.side, ui_fmt2(v, sizeof v, kp.side_milli()));
 }
 
 static void kp_show_err(const char *why)
@@ -778,14 +786,14 @@ static void kp_key(lv_event_t *e)
 }
 
 void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
-               const char *side_label, int32_t (*side10)(void), ui_keypad_set_t on_set)
+               const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set)
 {
     lv_obj_t *o = overlay_new();
     memset(&kp, 0, sizeof kp);
     kp.min10 = min10;
     kp.max10 = max10;
     kp.on_set = on_set;
-    kp.side10 = side10;
+    kp.side_milli = side_milli;
     kp_open = true;
 
     lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
