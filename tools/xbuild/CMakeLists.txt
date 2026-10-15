@@ -32,7 +32,7 @@ target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE LV_LVGL_H_INCLUDE_
 target_compile_options(lvgl PRIVATE -w -O2)
 
 file(GLOB APP_SRC ${PROJ}/*.c ${PROJ}/driver/*.c ${PROJ}/build-MM4/generated/*.c)
-set_source_files_properties(${PROJ}/ui.c ${PROJ}/ui_home.c ${PROJ}/ui_valve.c
+set_source_files_properties(${PROJ}/driver/display_px.c ${PROJ}/ui.c ${PROJ}/ui_home.c ${PROJ}/ui_valve.c
     PROPERTIES COMPILE_OPTIONS "-O2")
 add_executable(InitialTesting.elf ${APP_SRC} ${PROJ}/.meproject/setup/FileStartup/stm32f407zg.s)
 target_include_directories(InitialTesting.elf PRIVATE ${PROJ} ${PROJ}/driver ${PROJ}/1ms_timer ${PROJ}/1ms_timer/arm ${PROJ}/build-MM4/generated)
