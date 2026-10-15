@@ -238,7 +238,7 @@ int main(int argc, char **argv)
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
-    if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 180, 60); }
+    if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 160, 100); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }

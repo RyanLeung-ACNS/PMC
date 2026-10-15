@@ -843,13 +843,24 @@ static void tv_page(lv_event_t *e)
 void ui_text_view(const char *title, const char *text)
 {
     lv_obj_t *o = overlay_new();
-    lv_obj_t *c = ui_card(o, 10, 8, 460, 160);
+    // Kept 16 px clear of the header so a drag never starts near Back, and
+    // no momentum or elastic: the scroll stops when the finger lifts.
+    lv_obj_t *c = ui_card(o, 10, 16, 460, 152);
     tv_card = c;
-    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // a drag here scrolls it too
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_set_scroll_dir(c, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_width(c, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(c, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(c, UI_IDLE, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_right(c, 4, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_ver(c, 6, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_all(c, 10, 0);
+    lv_obj_set_style_pad_right(c, 20, 0);
     lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
-    t = ui_label(c, 0, 26, 440, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    t = ui_label(c, 0, 26, 430, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(t, 3, 0);
     ui_btn(o, 10, 176, 109, 48, UI_SECONDARY, LV_SYMBOL_UP " Up", tv_page, NULL);

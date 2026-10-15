@@ -59,14 +59,12 @@ static struct {
 } vp;
 
 static const char *const valve_help =
-    "Close and Open move the valve while held and stop when let go. "
-    "-5 % and +5 % step from where the valve is going. Go to opens a keypad "
-    "for a position, 0 closed to 100 open, one decimal. Fully close and Fully "
-    "open ask first.\n\n"
-    "The valve moves only in MANUAL with no fault. The closed switch stops "
-    "any closing move; the valve does not close past it. If it is pressed "
-    "during a move, the controller asks whether that point is 0 %.\n\n"
-    "STOP stops the valve at once and holds it where it is.";
+    "Close, Open: hold to move, let go to stop.\n"
+    "-5 %, +5 %: step from where the valve is going.\n"
+    "Go to: 0 closed to 100 open.\n"
+    "Fully close, Fully open: ask first.\n\n"
+    "Moves only in MANUAL with no fault. The limit switch stops any closing move.\n"
+    "STOP holds the valve where it is.";
 
 static bool vp_goto(int32_t pct10)
 {
@@ -230,14 +228,10 @@ static struct {
 } cp;
 
 static const char *const calib_help =
-    "Calibration finds 0 % from the closed switch. If the switch is pressed at "
-    "the start, the valve first moves off it. Then three steps: 1 closes fast "
-    "until the switch opens, 2 backs off a short way, 3 closes slowly to the "
-    "switch. That point is 0 %, and the valve is in MANUAL.\n\n"
-    "It takes up to a few minutes from fully open. STOP cancels it and the "
-    "valve is then not calibrated. If the switch is not found (F-07) or stays "
-    "pressed after moving off it (F-09), check the switch and its wiring, "
-    "reset the fault and calibrate again.";
+    "Finds 0 % at the limit switch: close fast, back off, close slowly.\n"
+    "Takes up to a few minutes. STOP cancels it.\n\n"
+    "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
+    "reset the fault, calibrate again.";
 
 static void start_cb(lv_event_t *e)
 {
