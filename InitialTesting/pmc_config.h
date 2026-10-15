@@ -19,7 +19,7 @@
 #define PMC_PM_DIAG       1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.8.17"
+#define PMC_FW_VERSION    "0.9.0"
 
 // 1 shows the +/- mbar uncertainty under the unit; UNC? works either way.
 #define PMC_SHOW_UNCERTAINTY 0
@@ -53,10 +53,5 @@
 #define PMC_FALLBACK_MASK "255.255.0.0"
 #define PMC_DHCP_TIMEOUT_MS 10000
 
-// 1: the new screens (ui.c, Home and Menu, stage 4); the 0.6.0 main and
-// motor screens open from Menu > Service. 0: the 0.6.0 screens only.
-#ifndef PMC_UI_NEW
-#define PMC_UI_NEW        1
-#endif
 
 #endif // _PMC_CONFIG_H_

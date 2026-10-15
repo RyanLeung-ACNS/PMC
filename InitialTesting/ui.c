@@ -6,8 +6,9 @@
 #include "rtclock.h"
 #include "stepper3.h"
 #include "valve.h"
-#include "main_screen.h"
-#include "screens.h"
+#include "valvepos.h"
+#include "motor_screen.h"
+#include "fixed.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -333,7 +334,7 @@ static lv_obj_t *home_scr, *cur_scr, *overlay;
 static const ui_screen_t *back_stack[4];
 static int back_n;
 static bool overlay_tv;         // the overlay is a text page (Help): strip shown greyed
-static bool overlay_q;          // the overlay is the closed-switch question
+static int overlay_q;           // the overlay is a question: 1 closed switch, 2 saved position
 static bool kp_open;            // the overlay is the keypad
 static void kp_side(void);
 static void question_check(void);
@@ -586,8 +587,7 @@ static void refresh_timer(lv_timer_t *t)
 {
     (void)t;
     if (service) {
-        // Back on Home once the 0.6.0 screens are left (their Back goes to
-        // the old main screen; its "Home" button calls ui_home()).
+        // Back on Home once the motor screen is left (its Back calls ui_home()).
         return;
     }
     frame_refresh();
@@ -656,10 +656,10 @@ void ui_service(void)
     service = true;
     static bool built;
     if (!built) {
-        init_screens();       // the 0.6.0 screens, kept once built
+        motor_screen_init(ui_home);   // kept once built
         built = true;
     }
-    show_main_screen();
+    motor_screen_show();
     if (cur_scr != home_scr)
         lv_obj_delete(cur_scr);
     cur = &ui_scr_home;
@@ -679,7 +679,7 @@ void ui_overlay_close(void)
         lv_obj_delete(overlay);
         overlay = NULL;
     }
-    overlay_q = false;
+    overlay_q = 0;
     overlay_tv = false;
     kp_open = false;
 }
@@ -701,17 +701,21 @@ static lv_obj_t *overlay_new(void)
 // Keypad.
 static struct {
     char entry[10];
-    int32_t min100, max100;
-    ui_keypad_set_t on_set;
-    lv_obj_t *value, *title, *info, *err, *side;
-    int32_t (*side_milli)(void);   // live side value, 0.001 units, shown to 2 dp
+    ui_kp_t k;
+    lv_obj_t *value, *title, *info, *err, *live;
 } kp;
+
+static const char *fmt_dec(char *buf, size_t n, int64_t v, int dec)
+{
+    return fixed_fmt(buf, n, v, dec);
+}
 
 static void kp_side(void)
 {
     char v[16];
-    if (kp.side && kp.side_milli)
-        ui_set_text(kp.side, ui_fmt2(v, sizeof v, kp.side_milli()));
+    if (kp.live && kp.k.live_milli)
+        ui_set_text(kp.live, kp.k.live_dec == 1 ? ui_fmt1(v, sizeof v, kp.k.live_milli())
+                                                 : ui_fmt2(v, sizeof v, kp.k.live_milli()));
 }
 
 static void kp_show_err(const char *why)
@@ -723,10 +727,11 @@ static void kp_show_err(const char *why)
         ui_set_text(kp.err, why);
 }
 
-static bool kp_parse(int32_t *v100)
+// The entry in 10^-dec units; false if empty or too large.
+static bool kp_parse(int64_t *v)
 {
     const char *s = kp.entry;
-    int32_t whole = 0, frac = 0;
+    int64_t whole = 0, frac = 0;
     bool neg = *s == '-';
     if (neg) s++;
     if (!*s)
@@ -735,13 +740,16 @@ static bool kp_parse(int32_t *v100)
         whole = whole * 10 + (*s++ - '0');
     if (*s == '.') {
         s++;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < kp.k.dec; i++) {
             frac *= 10;
             if (*s >= '0' && *s <= '9')
                 frac += *s++ - '0';
         }
     }
-    *v100 = (neg ? -1 : 1) * (whole * 100 + frac);
+    int64_t scale = 1;
+    for (int i = 0; i < kp.k.dec; i++)
+        scale *= 10;
+    *v = (neg ? -1 : 1) * (whole * scale + frac);
     return true;
 }
 
@@ -754,31 +762,34 @@ static void kp_key(lv_event_t *e)
     if (strcmp(k, "<") == 0) {
         if (n) kp.entry[n - 1] = '\0';
     } else if (strcmp(k, "set") == 0) {
-        int32_t v100;
+        int64_t v;
         const char *why = NULL;
-        if (!kp_parse(&v100)) {
+        if (!kp_parse(&v)) {
             ui_overlay_close();
             return;
         }
-        if (v100 < kp.min100 || v100 > kp.max100) {
+        if (v < kp.k.min || v > kp.k.max) {
             char a[16], b[16], t[48];
-            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt2(a, sizeof a, kp.min100 * 10),
-                        ui_fmt2(b, sizeof b, kp.max100 * 10));
+            lv_snprintf(t, sizeof t, "Outside %s to %s", fmt_dec(a, sizeof a, kp.k.min, kp.k.dec),
+                        fmt_dec(b, sizeof b, kp.k.max, kp.k.dec));
             kp_show_err(t);
             return;
         }
-        if (!kp.on_set(v100, &why)) {
+        if (!kp.k.on_set((int32_t)v, &why)) {
             kp_show_err(why ? why : "Refused");
             return;
         }
-        ui_overlay_close();
+        // on_set may have opened the next overlay (a pick list): leave it.
+        if (kp_open)
+            ui_overlay_close();
+        frame_refresh();
         return;
     } else if (n < sizeof kp.entry - 1) {
         if (*k == '.') {
-            if (dot) return;
+            if (dot || kp.k.dec == 0) return;
             if (!n) { strcpy(kp.entry, "0"); n = 1; }
-        } else if (dot && strlen(dot) > 2) {
-            return;                           // two decimals
+        } else if (dot && (int)strlen(dot) > kp.k.dec) {
+            return;                           // no more decimals
         } else if (n == 1 && kp.entry[0] == '0') {
             n = 0;                            // no leading zero
         }
@@ -788,20 +799,16 @@ static void kp_key(lv_event_t *e)
     ui_set_text(kp.value, kp.entry);
 }
 
-void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max100,
-               const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set)
+void ui_keypad_ex(const ui_kp_t *k)
 {
     lv_obj_t *o = overlay_new();
     memset(&kp, 0, sizeof kp);
-    kp.min100 = min100;
-    kp.max100 = max100;
-    kp.on_set = on_set;
-    kp.side_milli = side_milli;
+    kp.k = *k;
     kp_open = true;
 
     lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
-    kp.title = ui_label(card, 10, 6, 180, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
-    kp.info = ui_label(card, 10, 24, 180, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, info);
+    kp.title = ui_label(card, 10, 6, 180, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, k->title);
+    kp.info = ui_label(card, 10, 24, 180, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, k->info);
     kp.err = ui_label(card, 10, 6, 176, &ui_font_12, UI_FAULT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(kp.err, LV_LABEL_LONG_WRAP);
     lv_obj_add_flag(kp.err, LV_OBJ_FLAG_HIDDEN);
@@ -810,19 +817,91 @@ void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max1
     static const char *const keys[3][4] = { { "7", "8", "9", "<" }, { "4", "5", "6", "0" }, { "1", "2", "3", "." } };
     for (int r = 0; r < 3; r++)
         for (int c = 0; c < 4; c++) {
-            const char *k = keys[r][c];
-            bool bs = *k == '<';
+            const char *key = keys[r][c];
+            bool bs = *key == '<';
             lv_obj_t *b = ui_btn(o, 10 + c * 70, 64 + r * 56, bs ? 132 : 62, 48, UI_SECONDARY,
-                                 bs ? LV_SYMBOL_BACKSPACE : k, kp_key, (void *)k);
+                                 bs ? LV_SYMBOL_BACKSPACE : key, kp_key, (void *)key);
             if (bs)
                 lv_obj_set_style_text_font(lv_obj_get_child(b, 0), &lv_font_montserrat_14, 0);
+            if (*key == '.' && k->dec == 0)
+                ui_btn_enable(b, false);
         }
     ui_btn(o, 290, 120, 62, 104, UI_PRIMARY, "Set", kp_key, (void *)"set");
 
+    // Side card: the live value (one row), or In use and Saved (two rows).
     lv_obj_t *side = ui_card(o, 361, 8, 109, 160);
-    ui_label(side, 10, 52, 89, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, side_label);
-    kp.side = ui_label(side, 4, 72, 97, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "");
-    kp_side();
+    if (k->live_label) {
+        ui_label(side, 10, 52, 89, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, k->live_label);
+        kp.live = ui_label(side, 4, 72, 97, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "");
+        kp_side();
+    } else {
+        int rows = k->side_text[1] ? 2 : k->side_text[0] ? 1 : 0;
+        for (int i = 0; i < rows; i++) {
+            int32_t y = rows == 1 ? 52 : 18 + i * 72;
+            ui_label(side, 10, y, 89, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, k->side_label[i]);
+            lv_obj_t *l = ui_label(side, 4, y + 20, 97, strlen(k->side_text[i]) > 7 ? &ui_font_16 : &ui_num_26,
+                                   UI_TEXT, LV_TEXT_ALIGN_RIGHT, k->side_text[i]);
+            (void)l;
+        }
+        if (!rows)
+            lv_obj_add_flag(side, LV_OBJ_FLAG_HIDDEN);
+    }
+    frame_refresh();
+}
+
+static ui_keypad_set_t kp_v100_set;
+static bool kp_v100(int32_t v, const char **why) { return kp_v100_set(v, why); }
+
+void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max100,
+               const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set)
+{
+    kp_v100_set = on_set;
+    ui_kp_t k = { .title = title, .info = info, .dec = 2, .min = min100, .max = max100,
+                  .live_label = side_label, .live_milli = side_milli, .live_dec = 2, .on_set = kp_v100 };
+    ui_keypad_ex(&k);
+}
+
+// Pick list: a caption and up to six rows, the selected one dark. A tap
+// outside the list closes it.
+static void (*pick_cb)(int);
+
+static void pick_event(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    void (*f)(int) = pick_cb;
+    ui_overlay_close();
+    if (i >= 0 && f)
+        f(i);
+    frame_refresh();
+}
+
+void ui_pick(const char *title, const char *const *items, int n, int sel, void (*on_pick)(int i))
+{
+    lv_obj_t *o = overlay_new();
+    lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
+    lv_obj_set_style_bg_opa(o, 140, 0);
+    lv_obj_add_event_cb(o, pick_event, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
+    pick_cb = on_pick;
+    if (n > 6)
+        n = 6;
+    lv_obj_t *box = ui_card(o, 10, 4, 343, 24 + 32 * n);
+    lv_obj_set_style_clip_corner(box, true, 0);
+    ui_label(box, 12, 4, 320, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, title);
+    for (int i = 0; i < n; i++) {
+        lv_obj_t *it = plain(box);
+        lv_obj_set_pos(it, 0, 24 + 32 * i);
+        lv_obj_set_size(it, 343, 32);
+        lv_obj_add_flag(it, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_bg_opa(it, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(it, i == sel ? lv_color_hex(0x3E4C59) : UI_CARD, 0);
+        lv_obj_set_style_bg_color(it, UI_TRACK, LV_STATE_PRESSED);
+        lv_obj_set_style_border_side(it, LV_BORDER_SIDE_TOP, 0);
+        lv_obj_set_style_border_width(it, 1, 0);
+        lv_obj_set_style_border_color(it, UI_BG, 0);
+        lv_obj_t *l = ui_label(it, 12, 7, 320, &ui_font_16, i == sel ? UI_CARD : UI_TEXT, LV_TEXT_ALIGN_LEFT, items[i]);
+        (void)l;
+        lv_obj_add_event_cb(it, pick_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
     frame_refresh();
 }
 
@@ -957,25 +1036,49 @@ static void q_answer(bool zero)
 static void q_zero(void) { q_answer(true); }
 static void q_skip(void) { q_answer(false); }
 
+// A saved valve position at start-up: offered, never taken without asking.
+static void sp_use(void)
+{
+    const char *why;
+    if (!valvepos_use(&why))
+        ui_msg(why);
+}
+static void sp_calibrate(void)
+{
+    valvepos_decline();
+    ui_calibrate_ask();
+}
+
 static void question_check(void)
 {
     int32_t q;
-    if (!valve_question(&q)) {
-        if (overlay_q)
-            ui_overlay_close();
-        return;
+    bool lim = valve_question(&q);
+    bool saved = !lim && valvepos_offer(&q);
+    int want = lim ? 1 : saved ? 2 : 0;
+    if (overlay_q && overlay_q != want) {
+        ui_overlay_close();
     }
     static bool asking;
-    if (overlay_q || asking)
+    // A keypad or confirm the operator opened stays; the question waits.
+    if (!want || overlay_q || asking || (want == 2 && overlay))
         return;
-    static char t[80];
+    static char t[96], ok[32];
     char v[16];
-    lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
-                ui_fmt1(v, sizeof v, (int64_t)q * 100));
     asking = true;
-    ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
+    if (want == 1) {
+        lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
+                    ui_fmt1(v, sizeof v, (int64_t)q * 100));
+        ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
+    } else {
+        int32_t pm = valve_pos_max();
+        ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
+        lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. "
+                    "Use it, or calibrate the valve?", v);
+        lv_snprintf(ok, sizeof ok, "Use %s %%", v);
+        ui_ask(t, "Calibrate", sp_calibrate, ok, sp_use);
+    }
     asking = false;
-    overlay_q = true;
+    overlay_q = want;
 }
 
 /* --------------------------------------------------------------------------

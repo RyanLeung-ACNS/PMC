@@ -72,6 +72,9 @@ const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]);
 bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]);
 // For the screens (ui_*.c). Each refusal sets *why to a short reason.
 bool valve_calibrate(const char **why);          // VALVE CAL
+void valve_uncalibrate(const char *why);         // e.g. motor direction changed
+// Takes a saved step count as the position (operator's choice at boot).
+bool valve_restore(int32_t count, const char **why);
 uint32_t valve_cal_budget_s(void);               // longest calibration, s
 int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
 bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %

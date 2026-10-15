@@ -49,6 +49,10 @@ add_executable(InitialTesting
     stepper3.c
     valve.h
     valve.c
+    valvepos.h
+    valvepos.c
+    sense.h
+    sense.c
     extflash.h
     extflash.c
     cal.h
@@ -59,6 +63,7 @@ add_executable(InitialTesting
     ui.c
     ui_home.c
     ui_valve.c
+    ui_settings.c
     ui_font_12.c
     ui_font_16.c
     ui_font_26.c
@@ -133,7 +138,7 @@ if(COMPILER_REVISION)
 endif()
 add_subdirectory(lvgl_940)
 
-set_source_files_properties(driver/display_px.c ui.c ui_home.c ui_valve.c
+set_source_files_properties(driver/display_px.c ui.c ui_home.c ui_valve.c ui_settings.c
     PROPERTIES COMPILE_OPTIONS "-O2")
 get_target_property(_lvgl_real lvgl ALIASED_TARGET)
 if(NOT _lvgl_real)

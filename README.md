@@ -6,8 +6,8 @@ Pressure-based needle-valve controller firmware for the MikroE Mikromedia 4 (STM
 
 - `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. The two can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
 - The linker script `.meproject/setup/FileLinker/stm32f407zg.ld` is patched so `.ccmram` is `(NOLOAD)`, which keeps the LVGL heap that lives there out of the flash image. If NECTO ever regenerates this file, re-apply the patch.
-- Build Debug in NECTO. Release leaves the display blank: MikroE's prebuilt Release `lib_ssd1963.a` was compiled with a non-volatile GPIO register struct, so `ssd1963_write_command` loses its WR low and the SSD1963 never latches a command (bench, 0.3.33; disassembly, 0.8.9). From 0.8.10 (pixel loop from 0.8.11) the Debug build keeps the Debug SDK libraries and the hardware drivers at -O0 but compiles LVGL, the pixel loop `driver/display_px.c` and `ui*.c` at -O2 (`driver/display_lvgl.c` must stay -O0: it inlines the SDK's WR_LOW/WR_HIGH) (`InitialTesting/CMakeLists.txt`), so screens draw faster. About 595 KB of flash.
-- Screens: `PMC_UI_NEW 1` (default, 0.7.0) gives the new frame and Home from the simulator (`ui.c`, `ui_home.c`): header, status strip and STOP on every screen, Home with the Pressure and Valve tiles, Menu. From 0.8.0 (`ui_valve.c`) the operator screens for MANUAL: Valve, Calibrate valve, Faults and log, Diagnostics, and the closed-switch question ("Set as 0 % / Skip") on every screen. The 0.6.0 main and motor screens open from Menu > Service, and their "Home" button goes back. `PMC_UI_NEW 0` builds the 0.6.0 screens only. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •).
+- Build Debug in NECTO. Release leaves the display blank: MikroE's prebuilt Release `lib_ssd1963.a` was compiled with a non-volatile GPIO register struct, so `ssd1963_write_command` loses its WR low and the SSD1963 never latches a command (bench, 0.3.33; disassembly, 0.8.9). From 0.8.10 (pixel loop from 0.8.11) the Debug build keeps the Debug SDK libraries and the hardware drivers at -O0 but compiles LVGL, the pixel loop `driver/display_px.c` and `ui*.c` at -O2 (`driver/display_lvgl.c` must stay -O0: it inlines the SDK's WR_LOW/WR_HIGH) (`InitialTesting/CMakeLists.txt`), so screens draw faster. About 610 KB of flash.
+- Screens (`ui.c`, `ui_home.c`, `ui_valve.c`, `ui_settings.c`), after the simulator: header, status strip and STOP on every screen, Home with the Pressure and Valve tiles, Menu. From 0.8.0 the operator screens for MANUAL: Valve, Calibrate valve, Faults and log, Diagnostics, and the closed-switch question ("Set as 0 % / Skip") on every screen. From 0.9.0 Settings (Pressure sensor, Valve setup, Control tuning, Review and save, Limit override) and Calibrate sensor; edits are drafts until Save settings, which checks them together and saves all or nothing. The 0.6.0 main (pressure) screen is gone (`main_screen.c` is an empty stub NECTO's generated code links against); the 0.6.0 motor screen opens from Menu > Motor. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •).
 - NECTO's build folders (`build-MM4/`, `build-Default Configuration/`, ...), `compile_commands.json` and the clangd index in `.cache/` are not tracked, so a NECTO build no longer blocks `git pull`. The one exception is `build-MM4/generated/` (screen code from `main_screen.mscr`), which `tools/ui-preview` compiles. NECTO also rewrites `.meproject/config.json` (it holds machine paths, but also the board and MCU selection, so it stays tracked): before a pull, `git stash` or `git checkout -- InitialTesting/.meproject/config.json`.
 
 ## PC link commands
@@ -29,7 +29,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
 | `PM DIAG` | Steps the excitation from 9 to 11 V, one step a second, then puts it back (only when `PMC_PM_DIAG` is 1) |
 
-Settings store (motor, valve and pressure cal in one record, serial flash). Changes are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
+Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, and the save time, in one record in serial flash; version 2 from 0.9.0, and a 0.6.0 to 0.8.x record still loads as one sensor, s/n 5880156 at 15 psi). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 
 | Command | What it does |
 | --- | --- |
@@ -37,7 +37,7 @@ Settings store (motor, valve and pressure cal in one record, serial flash). Chan
 | `CFG DIFF?` | Each setting that differs from the newest save |
 | `CFG SAVE` | Save everything. Two sectors are used in turn; a save is read back before it counts, so a failed save keeps the last good record |
 | `CFG LOAD LAST` / `CFG LOAD PREVIOUS` | Load the newest / the other saved record (shows as unsaved until saved). Refused while moving or calibrating |
-| `CFG LOAD DEFAULTS` | Factory motor and valve settings; the cal is kept |
+| `CFG LOAD DEFAULTS` | Factory motor, valve and tuning settings; the sensors and their cals are kept |
 | `CFG TEST CORRUPT` / `CFG TEST ERASE` | Bench tests: spoil the newest record's CRC / erase both sectors |
 
 Calibration (Druck, through the INA228):
@@ -61,6 +61,8 @@ Valve (calibration, position, STOP, faults). Nothing moves at power-up; the valv
 | `VALVE CAL` | Calibrate: off the switch if pressed, fast close to the switch, back off, slow close; the switch point is 0 % |
 | `VALVE GOTO <0-100>` | Go to % open (one decimal), once calibrated |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
+| `VALVE SAVED?` | The valve position saved at the last standstill, and whether it is on offer |
+| `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Use saved X % / Calibrate". It is never used without the operator |
 | `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (99072), calibration speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
 | `CTRL STOP` | Stop now and latch F-12; cancels calibration |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
@@ -97,5 +99,6 @@ The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR busy, MOT STOP
 
 - `tools/logger/log_druck.py <IP or COM>` logs the once-a-second DATA lines to CSV and reconnects on its own.
 - `tools/cal/druck_cal.py <IP or COM> show|zs|load|erase` manages the Druck calibration table in serial flash.
-- `tools/ui-preview/build.sh` renders the 0.6.0 main screen and the new screens (Home, Menu, keypad, dialogs, the stage 5 pages) (`out/new-*.png`) to PNG on a PC, and checks the LVGL heap returns after opening and leaving screens.
+- `tools/ui-preview/build.sh` renders the screens (Home, Menu, keypad, dialogs, the stage 5 and 6 pages) to PNG on a PC (`out/new-*.png`), with the real settings store over a flash held in RAM, and checks the LVGL heap returns after opening and leaving screens.
+- `tools/cfg-test/run.sh` tests the settings store and the saved valve position on a PC against a flash held in RAM (version 1 record loading, saves, Previous save, refused combinations, sensors, sensor calibration, the position log wrapping).
 - `tools/xbuild/build.sh [Release|Debug]` cross-builds the firmware on Linux (cmake, ninja, Ubuntu `gcc-arm-none-eabi` and `libnewlib-arm-none-eabi`) with the mikroSDK libraries in `.meproject` and prints flash and RAM use. For size checks only; the flashed build is NECTO's.

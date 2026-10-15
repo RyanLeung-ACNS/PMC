@@ -21,6 +21,12 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "ui.h"
+#include "cal.h"
+#include "cfg.h"
+#include "extflash.h"
+#include "valvepos.h"
+#include <stdarg.h>
+#include <stddef.h>
 
 #define W 480
 #define H 272
@@ -103,11 +109,73 @@ const char *rtclock_iso(void) { return "2026-10-15 14:32:05"; }
 const char *valve_last_cal_iso(void) { return "2026-10-05 14:28:59"; }
 bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false; *from = 0; *ms = 41300; return true; }
 void stepper3_stop_ramped(void) {}
-#ifndef REAL_OLD
-void show_main_screen(void) {}
-void init_screens(void) {}
-#endif
 bool stepper3_busy(void);
+void stepper3_override_cancel(void) {}
+
+/* Settings store: the real cfg.c and cal.c over a serial flash in RAM. */
+static uint8_t *flash;
+bool extflash_init(void) { return true; }
+void extflash_read(uint32_t a, void *b, size_t n) { memcpy(b, flash + a, n); }
+bool extflash_erase_4k(uint32_t a) { memset(flash + (a & ~0xFFFu), 0xFF, 4096); return true; }
+bool extflash_write(uint32_t a, const void *b, size_t n)
+{
+    const uint8_t *p = b;
+    for (size_t i = 0; i < n; i++) flash[a + i] &= p[i];
+    return true;
+}
+static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
+static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET" };
+const char *valve_setting_name(int i) { return v_name[i]; }
+void valve_settings(int32_t v[VALVE_N_SETTINGS]) { memcpy(v, v_set, sizeof v_set); }
+const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]) { (void)v; return NULL; }
+bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]) { memcpy(v_set, v, sizeof v_set); return true; }
+int32_t valve_pos_max(void) { return v_set[0]; }
+void valve_uncalibrate(const char *why) { (void)why; v_cal = false; v_mode = VALVE_NOT_CAL; }
+void valve_event(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; }
+static bool vp_offer;
+bool valvepos_offer(int32_t *c) { if (vp_offer) *c = 33880; return vp_offer; }
+bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_mode = VALVE_MANUAL; return true; }
+void valvepos_decline(void) { vp_offer = false; }
+
+static uint32_t crc32(const void *data, size_t len)
+{
+    const uint8_t *p = data;
+    uint32_t c = 0xFFFFFFFFUL;
+    while (len--) {
+        c ^= *p++;
+        for (int k = 0; k < 8; k++)
+            c = (c >> 1) ^ (0xEDB88320UL & (0UL - (c & 1)));
+    }
+    return ~c;
+}
+
+// A 0.8.x board: one version 1 record (bench cal of s/n 5880156), rev 5.
+static void seed_flash(void)
+{
+    struct {
+        uint32_t magic, version, size, rev;
+        int32_t mot[7];
+        int32_t valve[VALVE_N_SETTINGS];
+        uint32_t has_cal;
+        cal_rec_t cal;
+        uint32_t crc;
+    } r;
+    memset(&r, 0, sizeof r);
+    r.magic = 0x47464350UL; r.version = 1; r.size = sizeof r; r.rev = 5;
+    int32_t mot[7] = { 400, 200, 3200, 1, 0, 0, 213 };
+    memcpy(r.mot, mot, sizeof mot);
+    memcpy(r.valve, v_set, sizeof v_set);
+    r.has_cal = 1;
+    cal_rec_t *c = &r.cal;
+    c->magic = CAL_MAGIC; c->version = CAL_VERSION; c->npts = 2;
+    strcpy(c->id, "5880156 bench 26-10-05");
+    c->r_ppb[0] = 127900; c->p_mmbar[0] = 0;
+    c->r_ppb[1] = 9798300; c->p_mmbar[1] = 1013250;
+    c->kind = CAL_KIND_BENCH; c->vac_unc_mmbar = 10; c->air_unc_mmbar = 1000;
+    c->crc = crc32(c, offsetof(cal_rec_t, crc));
+    r.crc = crc32(&r, offsetof(__typeof__(r), crc));
+    extflash_write(0x7FD000, &r, sizeof r);
+}
 
 /* Render ------------------------------------------------------------------ */
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
@@ -174,7 +242,8 @@ int main(int argc, char **argv)
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
                 !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
-                !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc");
+                !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc") ||
+                !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3);
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -195,6 +264,12 @@ int main(int argc, char **argv)
     lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(in, touch_read);
 
+    flash = malloc(8u << 20);
+    memset(flash, 0xFF, 8u << 20);
+    if (strcmp(st, "nosave"))
+        seed_flash();
+    cal_init();
+    cfg_init();
     ui_init();
     run(1200);
 
@@ -211,6 +286,13 @@ int main(int argc, char **argv)
         tap(415, 184); tap(350, 72); tap(60, 20); tap(60, 20);  // Faults and log
         tap(415, 184); tap(120, 128); tap(60, 20); tap(60, 20); // Calibrate valve
         tap(415, 184); tap(120, 184); tap(60, 20); tap(60, 20); // Diagnostics
+        tap(415, 184); tap(379, 184);                           // Settings
+        tap(120, 72); tap(60, 20);                              //   Pressure sensor
+        tap(356, 72); tap(270, 72); tap(60, 20);                //   Valve setup, Drive tab
+        tap(120, 128); tap(94, 72); tap(60, 20); tap(60, 20);   //   Control tuning, keypad
+        tap(356, 128); tap(60, 20);                             //   Review and save
+        tap(60, 20); tap(60, 20);
+        tap(415, 184); tap(379, 128); tap(60, 20); tap(60, 20); // Calibrate sensor
     }
     run(1200);
     size_t after = heap_used();
@@ -244,6 +326,30 @@ int main(int argc, char **argv)
         fprintf(stderr, "svc: home %zu, on service %zu, back home %zu, valve %zu, keypad %zu, peak %zu, total %zu\n",
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
+    if (!strcmp(st, "bootask")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
+    // Settings (stage 6).
+    bool set = !strncmp(st, "set-", 4);
+    if (set) { tap(415, 184); tap(379, 184); }
+    if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strcmp(st, "set-add") ||
+        !strcmp(st, "set-caldetail")) tap(120, 72);
+    if (!strcmp(st, "set-pick")) tap(120, 72);
+    if (!strcmp(st, "set-add")) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
+    if (!strcmp(st, "set-caldetail")) tap(120, 128);
+    if (!strncmp(st, "set-valve", 9)) tap(356, 72);
+    if (!strcmp(st, "set-valve2")) tap(182, 72);
+    if (!strcmp(st, "set-valve3")) tap(294, 72);
+    if (!strcmp(st, "set-valvepos")) tap(94, 128);
+    if (!strncmp(st, "set-tune", 8) || !strncmp(st, "set-save", 8)) tap(120, 128);
+    if (!strcmp(st, "set-tunekp") || !strcmp(st, "set-tunedraft") || !strcmp(st, "set-saveask") ||
+        !strcmp(st, "set-saved")) { tap(94, 72); tap(181, 240); tap(251, 240); tap(111, 184); }
+    if (!strcmp(st, "set-tunedraft") || !strcmp(st, "set-saveask") || !strcmp(st, "set-saved")) tap(321, 184);
+    if (!strcmp(st, "set-saveask") || !strcmp(st, "set-saved")) tap(415, 128);
+    if (!strcmp(st, "set-saved")) tap(249, 136 + 40);
+    if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(356, 128);
+    if (!strcmp(st, "set-load")) tap(120, 184);
+    if (!strcmp(st, "set-override")) tap(120, 184);
+    if (!strcmp(st, "calsensor") || !strcmp(st, "calvac")) { tap(415, 184); tap(379, 128); }
+    if (!strcmp(st, "calvac")) tap(298, 128);
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
     if (!strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3")) { tap(415, 128); tap(415, 184); }
     if (!strcmp(st, "help2")) tap(TVX, 172);

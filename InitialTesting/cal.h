@@ -102,6 +102,19 @@ int32_t cal_vac_unc_mmbar(void);
 int32_t cal_air_unc_mmbar(void);
 // Readings still to take in a running capture, 0 if none.
 int cal_capture_left(void);
+// The running capture: 0 none, 1 vacuum, 2 air.
+int cal_capturing(void);
+// Starts a bench capture (1 vacuum, 2 air) at p_mmbar, as CAL VAC / CAL AIR;
+// unc_mmbar 0 for the default. False with *why if refused.
+bool cal_capture(int what, int32_t p_mmbar, int32_t unc_mmbar, const char **why);
+typedef struct { bool have; int32_t r_ppb, p_mmbar; } cal_point_t;
+// The bench points held for the sensor in use (captured, or from its table).
+void cal_points(cal_point_t *vac, cal_point_t *air);
+// The sensor in use: its serial for the bench cal id and its range for the
+// nominal table (0 to 10 mV/V is 0 to fs_mmbar).
+void cal_set_sensor(const char *serial, int32_t fs_mmbar);
+// Pressure for a ratio with a given table (the saved one, for comparison).
+int64_t cal_pressure_with(const cal_rec_t *c, int64_t r_ppb);
 
 // Handles one command line from COM3. Returns false if it is not a CAL command.
 bool cal_command(const char *line);

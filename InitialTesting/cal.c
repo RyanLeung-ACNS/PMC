@@ -7,6 +7,7 @@
 #include "cal.h"
 #include "cfg.h"
 #include "fixed.h"
+#include "rtclock.h"
 #include "pmc_config.h"   // PMC_DRUCK_SERIAL
 #include "clicks.h"   // live ratio for CAL VAC / CAL AIR
 
@@ -17,14 +18,16 @@
  * ------------------------------------------------------------------------ */
 #define CAL_FLASH_ADDR  0x7FF000UL
 
-// Nominal: 0 mV and 100 mV at 10 V = 0 and 10 mV/V over 0-15 psia.
-static const cal_rec_t cal_default = {
+// Nominal: 0 mV and 100 mV at 10 V = 0 and 10 mV/V over the sensor's range
+// (15 psia, 1034.214 mbar, unless cal_set_sensor() says otherwise).
+static cal_rec_t cal_default = {
     .magic = CAL_MAGIC, .version = CAL_VERSION, .npts = 2,
     .id = "nominal",
     .r_ppb = { 0, 10000000 },
     .p_mmbar = { 0, 1034214 },
     .kind = CAL_KIND_TABLE,
 };
+static char sensor_serial[12] = PMC_DRUCK_SERIAL;
 
 static cal_rec_t active;
 static cal_rec_t staging;
@@ -148,18 +151,37 @@ void cal_set_default(bool saved)
 
 void cal_set_saved(bool saved) { active_saved = saved; }
 
-int64_t cal_pressure_mmbar(int64_t r)
+void cal_set_sensor(const char *serial, int32_t fs_mmbar)
 {
-    const cal_rec_t *c = &active;
-    uint32_t i = 0;
+    lv_strlcpy(sensor_serial, serial, sizeof sensor_serial);
+    cal_default.p_mmbar[1] = fs_mmbar;
+    if (active_is_default)
+        active = cal_default;
+    cap.what = 0;
+}
 
-    // Segment containing r; the end segments extend past the table.
+int64_t cal_pressure_with(const cal_rec_t *c, int64_t r)
+{
+    uint32_t i = 0;
     while (i + 2 < c->npts && r > c->r_ppb[i + 1])
         i++;
-
     int64_t r0 = c->r_ppb[i], r1 = c->r_ppb[i + 1];
     int64_t p0 = c->p_mmbar[i], p1 = c->p_mmbar[i + 1];
     return p0 + (r - r0) * (p1 - p0) / (r1 - r0);
+}
+
+void cal_points(cal_point_t *vac, cal_point_t *air)
+{
+    vac->have = bench.have_vac; vac->r_ppb = bench.r_vac; vac->p_mmbar = bench.p_vac;
+    air->have = bench.have_air; air->r_ppb = bench.r_air; air->p_mmbar = bench.p_air;
+}
+
+int cal_capturing(void) { return cap.what; }
+
+// The end segments extend past the table.
+int64_t cal_pressure_mmbar(int64_t r)
+{
+    return cal_pressure_with(&active, r);
 }
 
 bool cal_is_default(void)
@@ -281,16 +303,30 @@ static void capture_start(int what, const char *s)
         link_printf("ERR uncertainty: 0.001 to 50 mbar\r\n");
         return;
     }
-    if (!clicks_state()->reading_ok) {
-        link_printf("ERR no valid Druck reading\r\n");
+    const char *why;
+    if (!cal_capture(what, (int32_t)p, (int32_t)u, &why)) {
+        link_printf("ERR %s\r\n", why);
         return;
     }
-    memset(&cap, 0, sizeof cap);
-    cap.what = what;
-    cap.p = (int32_t)p;
-    cap.u = (int32_t)u;
     link_printf("OK capturing %s point, %d readings, keep the pressure steady\r\n",
                 vac ? "vacuum" : "air", CAPTURE_N);
+}
+
+bool cal_capture(int what, int32_t p_mmbar, int32_t unc_mmbar, const char **why)
+{
+    const clicks_state_t *s = clicks_state();
+    if (cap.what)        { *why = "a capture is running"; return false; }
+    if (!s->reading_ok)  { *why = "no valid Druck reading"; return false; }
+    // A vacuum reads under 5 % of span (0.5 mV/V); room air at least 40 % of
+    // what 1013 mbar gives on this sensor's range.
+    int64_t air_ppb = 1013250LL * 10000000 / cal_default.p_mmbar[1];
+    if (what == 1 && s->r_ppb > 500000)              { *why = "not a vacuum: pump the sensor down first"; return false; }
+    if (what == 2 && s->r_ppb < air_ppb * 4 / 10)    { *why = "not room air: vent the sensor first"; return false; }
+    memset(&cap, 0, sizeof cap);
+    cap.what = what;
+    cap.p = p_mmbar;
+    cap.u = unc_mmbar > 0 ? unc_mmbar : what == 1 ? CAL_VAC_UNC_DEFAULT : CAL_AIR_UNC_DEFAULT;
+    return true;
 }
 
 static void bench_apply(void)
@@ -301,7 +337,12 @@ static void bench_apply(void)
     r.version = CAL_VERSION;
     r.kind = CAL_KIND_BENCH;
     r.npts = 2;
-    lv_snprintf(r.id, CAL_ID_LEN, "%s bench", PMC_DRUCK_SERIAL);
+    // "5880156 bench 26-10-16": the date for the screens, when the clock is set.
+    const char *iso = rtclock_iso();
+    if (iso[0])
+        lv_snprintf(r.id, CAL_ID_LEN, "%s bench %.8s", sensor_serial, iso + 2);
+    else
+        lv_snprintf(r.id, CAL_ID_LEN, "%s bench", sensor_serial);
     r.r_ppb[0] = bench.r_vac; r.p_mmbar[0] = bench.p_vac; r.vac_unc_mmbar = bench.u_vac;
     r.r_ppb[1] = bench.r_air; r.p_mmbar[1] = bench.p_air; r.air_unc_mmbar = bench.u_air;
     if (rec_check(&r) != NULL) {

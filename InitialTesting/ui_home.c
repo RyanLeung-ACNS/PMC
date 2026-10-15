@@ -365,11 +365,11 @@ void ui_status_line(void)
 const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh, home_fast };
 
 /* --------------------------------------------------------------------------
- * Menu: the six v63 tiles in three captioned rows (those not built yet
- * greyed), and a
- * temporary Service button for the 0.6.0 screens (until the settings stage).
+ * Menu: the six v63 tiles in three captioned rows (Trend greyed until it
+ * is built), and Motor for the 0.6.0 motor screen (kept as a service tool).
  * ------------------------------------------------------------------------ */
-static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, NULL, &ui_scr_diag, NULL };
+static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, &ui_scr_sensor_cal,
+                                                &ui_scr_diag, &ui_scr_settings };
 
 static void menu_tile_event(lv_event_t *e)
 {
@@ -402,12 +402,12 @@ static void menu_build(lv_obj_t *scr)
         ui_btn_enable(b, menu_scr[i] != NULL);
     }
     ui_strip_width(226);
-    ui_btn(scr, 244, 216, 109, 48, UI_NAV, "Service", service_event, NULL);
+    ui_btn(scr, 244, 216, 109, 48, UI_NAV, "Motor", service_event, NULL);
 }
 
 static void menu_refresh(void)
 {
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Service: the 0.6.0 screens");
+    ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Motor: the service screen");
 }
 
 const ui_screen_t ui_scr_menu = { "Menu", menu_build, menu_refresh, NULL };
