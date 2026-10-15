@@ -6,7 +6,9 @@ project(pmc_xbuild C ASM)
 
 set(PROJ ${CMAKE_CURRENT_SOURCE_DIR}/../../InitialTesting)
 # NECTO links the Release mikroSDK libraries for a Release build and the Debug
-# ones otherwise. Only Debug (-O0) runs on the board: see InitialTesting/CMakeLists.txt.
+# ones otherwise. Only Debug runs on the board (the prebuilt Release
+# lib_ssd1963.a drops the WR strobe): see InitialTesting/CMakeLists.txt, which
+# also compiles LVGL and the drawing code at -O2, as below.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(SDK_CFG Release)
 else()
@@ -27,9 +29,11 @@ file(GLOB_RECURSE LVGL_SRC ${PROJ}/lvgl_940/src/*.c)
 add_library(lvgl STATIC ${LVGL_SRC})
 target_include_directories(lvgl PUBLIC ${PROJ}/lvgl_940 ${PROJ}/lvgl_940/lv_conf/heavy)
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE LV_LVGL_H_INCLUDE_SIMPLE)
-target_compile_options(lvgl PRIVATE -w)
+target_compile_options(lvgl PRIVATE -w -O2)
 
 file(GLOB APP_SRC ${PROJ}/*.c ${PROJ}/driver/*.c ${PROJ}/build-MM4/generated/*.c)
+set_source_files_properties(${PROJ}/driver/display_lvgl.c ${PROJ}/ui.c ${PROJ}/ui_home.c ${PROJ}/ui_valve.c
+    PROPERTIES COMPILE_OPTIONS "-O2")
 add_executable(InitialTesting.elf ${APP_SRC} ${PROJ}/.meproject/setup/FileStartup/stm32f407zg.s)
 target_include_directories(InitialTesting.elf PRIVATE ${PROJ} ${PROJ}/driver ${PROJ}/1ms_timer ${PROJ}/1ms_timer/arm ${PROJ}/build-MM4/generated)
 target_compile_definitions(InitialTesting.elf PRIVATE

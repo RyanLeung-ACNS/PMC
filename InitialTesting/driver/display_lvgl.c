@@ -83,15 +83,19 @@ static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t *
     /* Flush data line-by-line. The SDK's write_array_data makes three HAL
      * calls per pixel; on this board the 16-bit bus is all of GPIOE
      * (LCD_TFT_16BIT_CH0, mask 0xFFFF) and WR is PF11 (TFT_WR), so write the
-     * registers directly. Each write is at least two AHB cycles (>= 12 ns),
-     * and two nops stretch the WR low pulse, well inside SSD1963 timing. */
+     * registers directly. This file is built at -O2 (see CMakeLists.txt),
+     * so the nops set the timing: one gives the data setup before WR falls,
+     * three stretch the WR low pulse, and the loop itself gives the hold
+     * after WR rises. That is about 12 cycles (70 ns) a pixel, well inside
+     * SSD1963 timing. */
     uint32_t t0 = lv_tick_get();
     for(int32_t y = act_y1; y <= act_y2; y++) {
         const uint16_t * p = color_p;
         for(uint16_t i = 0; i < act_w; i++) {
             GPIOE->ODR = *p++;
+            __asm volatile ("nop");
             GPIOF->BSRR = 1UL << (11 + 16);   /* WR low */
-            __asm volatile ("nop\n\tnop");
+            __asm volatile ("nop\n\tnop\n\tnop");
             GPIOF->BSRR = 1UL << 11;          /* WR high: SSD1963 latches */
         }
         color_p += full_w; /* advance by the originally rendered line width */

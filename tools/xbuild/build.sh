@@ -1,6 +1,6 @@
 #!/bin/sh
 # Cross-builds the firmware in the cloud and prints flash and RAM use.
-# Usage: build.sh [Debug|Release]   (default Debug, -O0, the build that runs on the board)
+# Usage: build.sh [Debug|Release]   (default Debug, the build that runs on the board)
 # Needs cmake, ninja and the Ubuntu gcc-arm-none-eabi + libnewlib-arm-none-eabi
 # packages. Ryan's flashed build is still the NECTO one; this is for checks.
 set -e
