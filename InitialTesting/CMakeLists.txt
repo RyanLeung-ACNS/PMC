@@ -12,11 +12,13 @@ include(mikroeUtils)
 # mikroSDK libraries (lib_ssd1963.a) were compiled with a non-volatile GPIO
 # register struct, so ssd1963_write_command loses its WR low and the SSD1963
 # never latches a command (found on the bench, 0.3.33; confirmed by
-# disassembly, 0.9.0). Our own code does not have that problem, so the
-# drawing path (LVGL, the pixel loop in display_lvgl.c and the ui*.c
-# screens) is compiled at -O2 below while the SDK libraries stay Debug.
-# The hardware drivers stay at -O0: some bit-bang or count delay loops
-# (clicks.c, extflash.c, eth_hw.c), so their timing does not change.
+# disassembly, 0.8.9). The LVGL drawing and the ui*.c screens are compiled
+# at -O2 below while the SDK libraries stay Debug. driver/display_lvgl.c
+# must stay at -O0: it expands the static inline write_command/frame_start
+# from the SDK lvgl_common.h, which hit the same non-volatile GPIO struct
+# (0.8.9 on the bench: nothing reached the panel). The hardware drivers stay
+# at -O0 too: some bit-bang or count delay loops (clicks.c, extflash.c,
+# eth_hw.c), so their timing does not change.
 include(${CMAKE_CURRENT_SOURCE_DIR}/1ms_timer/TimerHeaderConfig.cmake)
 set(LVGL_VERSION "9.4.0" CACHE STRING "" FORCE)
 set(PROJECT_TYPE "lvgl_designer" CACHE STRING "" FORCE)
@@ -128,7 +130,7 @@ if(COMPILER_REVISION)
 endif()
 add_subdirectory(lvgl_940)
 
-set_source_files_properties(driver/display_lvgl.c ui.c ui_home.c ui_valve.c
+set_source_files_properties(ui.c ui_home.c ui_valve.c
     PROPERTIES COMPILE_OPTIONS "-O2")
 get_target_property(_lvgl_real lvgl ALIASED_TARGET)
 if(NOT _lvgl_real)
