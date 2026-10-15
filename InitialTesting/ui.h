@@ -94,10 +94,11 @@ void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none
 
 // Keypad over the screen. on_set gets the value in 0.1 units (dec 1) and
-// returns false with *why to refuse. Header Back cancels.
+// returns false with *why to refuse. side10 gives the present value (0.1
+// units) shown at the side, updated at 10 Hz. Header Back cancels.
 typedef bool (*ui_keypad_set_t)(int32_t v10, const char **why);
 void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
-               const char *side_label, const char *side_value, ui_keypad_set_t on_set);
+               const char *side_label, int32_t (*side10)(void), ui_keypad_set_t on_set);
 
 // Confirm dialog: Cancel and OK (OK primary). Buttons sit inside x70-410,
 // clear of the Home mode button.

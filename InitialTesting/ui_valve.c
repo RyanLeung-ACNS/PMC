@@ -117,9 +117,7 @@ static void goto_cb(lv_event_t *e)
         ui_msg(why);
         return;
     }
-    char v[16];
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %",
-              pct_text(v, sizeof v, valve_pct10()), goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct10, goto_set);
 }
 
 static void full_cb(lv_event_t *e)

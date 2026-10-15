@@ -206,9 +206,7 @@ static void goto_event(lv_event_t *e)
         ui_msg(not_manual_why());
         return;
     }
-    char v[16];
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %",
-              ui_fmt1(v, sizeof v, (int64_t)valve_pct10() * 100), goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct10, goto_set);
 }
 
 static void calibrate(void)

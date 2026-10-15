@@ -325,6 +325,8 @@ static lv_obj_t *home_scr, *cur_scr, *overlay;
 static const ui_screen_t *back_stack[4];
 static int back_n;
 static bool overlay_q;          // the overlay is the closed-switch question
+static bool kp_open;            // the overlay is the keypad
+static void kp_side(void);
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
 static const ui_screen_t *cur = &ui_scr_home;
@@ -357,20 +359,8 @@ static void back_event(lv_event_t *e)
 static void stop_event(lv_event_t *e)
 {
     (void)e;
-    bool latch = valve_stop_latches();
-    bool cal = valve_mode() == VALVE_CALIBRATING;
     ui_overlay_close();
     valve_stop();
-    if (!latch) {
-        char t[48], v[16];
-        if (cal)
-            lv_strlcpy(t, "Stopped. Calibration cancelled.", sizeof t);
-        else if (valve_calibrated())
-            lv_snprintf(t, sizeof t, "Stopped at %s %%.", ui_fmt1(v, sizeof v, (int64_t)valve_pct10() * 100));
-        else
-            lv_strlcpy(t, "Stopped.", sizeof t);
-        ui_msg(t);
-    }
     frame_refresh();
 }
 
@@ -571,8 +561,12 @@ static void frame_refresh(void)
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
-    if (!service && cur->fast)
+    if (service)
+        return;
+    if (cur->fast)
         cur->fast();
+    if (kp_open)
+        kp_side();             // the keypad's present value follows the valve
 }
 
 static void refresh_timer(lv_timer_t *t)
@@ -673,6 +667,7 @@ void ui_overlay_close(void)
         overlay = NULL;
     }
     overlay_q = false;
+    kp_open = false;
 }
 
 lv_obj_t *ui_overlay(void) { return overlay_new(); }
@@ -694,8 +689,16 @@ static struct {
     char entry[10];
     int32_t min10, max10;
     ui_keypad_set_t on_set;
-    lv_obj_t *value, *title, *info, *err;
+    lv_obj_t *value, *title, *info, *err, *side;
+    int32_t (*side10)(void);   // live side value, 0.1 units
 } kp;
+
+static void kp_side(void)
+{
+    char v[16];
+    if (kp.side && kp.side10)
+        ui_set_text(kp.side, ui_fmt1(v, sizeof v, (int64_t)kp.side10() * 100));
+}
 
 static void kp_show_err(const char *why)
 {
@@ -769,13 +772,15 @@ static void kp_key(lv_event_t *e)
 }
 
 void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
-               const char *side_label, const char *side_value, ui_keypad_set_t on_set)
+               const char *side_label, int32_t (*side10)(void), ui_keypad_set_t on_set)
 {
     lv_obj_t *o = overlay_new();
     memset(&kp, 0, sizeof kp);
     kp.min10 = min10;
     kp.max10 = max10;
     kp.on_set = on_set;
+    kp.side10 = side10;
+    kp_open = true;
 
     lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
     kp.title = ui_label(card, 10, 6, 180, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
@@ -799,7 +804,8 @@ void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10
 
     lv_obj_t *side = ui_card(o, 361, 8, 109, 160);
     ui_label(side, 10, 52, 89, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, side_label);
-    ui_label(side, 4, 72, 97, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, side_value);
+    kp.side = ui_label(side, 4, 72, 97, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "");
+    kp_side();
     frame_refresh();
 }
 
