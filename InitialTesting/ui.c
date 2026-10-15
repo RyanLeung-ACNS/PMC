@@ -6,6 +6,7 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "main_screen.h"
+#include "screens.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -530,6 +531,11 @@ void ui_service(void)
     ui_overlay_close();
     show(frame, false);
     service = true;
+    static bool built;
+    if (!built) {
+        init_screens();       // the 0.6.0 screens, kept once built
+        built = true;
+    }
     show_main_screen();
     if (cur_scr != home_scr)
         lv_obj_delete(cur_scr);

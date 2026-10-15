@@ -60,6 +60,7 @@ bool valve_fault_is(const char *tag)
 int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
 bool valve_question(int32_t *p) { (void)p; return false; }
 void show_main_screen(void) {}
+void init_screens(void) {}
 bool stepper3_busy(void);
 
 /* Render ------------------------------------------------------------------ */

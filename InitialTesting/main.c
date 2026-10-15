@@ -207,13 +207,14 @@ void application_init()
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
 
+#if PMC_UI_NEW
+    // The new frame and Home. The 0.6.0 screens are built the first time
+    // Menu > Service opens them, which keeps their LVGL heap free until then.
+    ui_init();
+#else
     // Initialize all available screens.
     init_screens();
 
-#if PMC_UI_NEW
-    // The new frame and Home; the 0.6.0 screens open from Menu > Service.
-    ui_init();
-#else
     // Show the main screen.
     // To display another screen, call its respective show function.
     show_main_screen();
