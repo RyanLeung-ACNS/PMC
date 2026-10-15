@@ -21,6 +21,9 @@
 
 #define W 480
 #define H 272
+#ifndef POOL2_KB
+#define POOL2_KB 24
+#endif
 
 void fake_hw_set_scenario(const char *name);
 
@@ -46,7 +49,8 @@ int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
-void valve_stop(void) { v_f12 = true; moving = false; }
+void valve_stop(void) { moving = false; }
+bool valve_stop_latches(void) { return false; }
 int valve_fault_count(void) { return v_f01 + v_f12; }
 bool valve_fault_first(const char **tag, const char **text)
 {
@@ -92,8 +96,10 @@ bool limit_open_now(void) { return v_cal && v_pct10 == 0; }
 const char *rtclock_iso(void) { return "2026-10-15 14:32:05"; }
 bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false; *from = 0; *ms = 41300; return true; }
 void stepper3_stop_ramped(void) {}
+#ifndef REAL_OLD
 void show_main_screen(void) {}
 void init_screens(void) {}
+#endif
 bool stepper3_busy(void);
 
 /* Render ------------------------------------------------------------------ */
@@ -161,7 +167,7 @@ int main(int argc, char **argv)
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
                 !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
-                !strcmp(st, "help") || !strcmp(st, "back");
+                !strcmp(st, "help") || !strcmp(st, "back") || !strcmp(st, "svc");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -172,6 +178,8 @@ int main(int argc, char **argv)
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
     lv_init();
+    static uint8_t pool2[POOL2_KB * 1024] __attribute__((aligned(8)));   // 24 KB as main.c board_init; 64-bit pointers need more
+    lv_mem_add_pool(pool2, sizeof pool2);
     lv_display_t *d = lv_display_create(W, H);
     lv_display_set_color_format(d, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(d, draw_buf, NULL, sizeof draw_buf, LV_DISPLAY_RENDER_MODE_FULL);
@@ -214,6 +222,21 @@ int main(int argc, char **argv)
     if (!strcmp(st, "confirm")) tap(415, 72);
     if (!strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit")) tap(415, 128);
     if (!strcmp(st, "limithit")) v_q = true;
+    if (!strcmp(st, "svc")) {
+        size_t a = heap_used();
+        tap(415, 184); tap(300, 240);     // Menu, Service (0.6.0 screens built)
+        run(1200);
+        size_t b = heap_used();
+        ui_home(); run(600);
+        size_t c = heap_used();
+        tap(415, 128); run(600);           // Valve page
+        size_t d = heap_used();
+        tap(60, 184); run(600);            // Go to: keypad
+        size_t f = heap_used();
+        lv_mem_monitor_t m; lv_mem_monitor(&m);
+        fprintf(stderr, "svc: home %zu, on service %zu, back home %zu, valve %zu, keypad %zu, peak %zu, total %zu\n",
+                a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
+    }
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
     if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 180, 60); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }

@@ -51,7 +51,7 @@ static void num_font(lv_font_t *f, const lv_font_t *base)
 #define UI_CHEV    lv_color_hex(0x7B8794)
 
 static lv_style_t st_btn, st_btn_pr, st_btn_dis, st_act, st_act_pr, st_act_small,
-                  st_red, st_red_pr, st_dark, st_dark_pr, st_card;
+                  st_red, st_red_pr, st_dark, st_dark_pr, st_card, st_stop_op, st_stop_op_pr;
 #define ST_DIS LV_STATE_USER_1   // greyed, still clickable so it can say why
 
 static void styles_init(void)
@@ -90,6 +90,17 @@ static void styles_init(void)
     lv_style_set_border_width(&st_red, 0);
     lv_style_init(&st_red_pr);
     lv_style_set_bg_color(&st_red_pr, lv_color_hex(0xAA1E1E));
+
+    // STOP outside AUTO (no latch): white with a red edge and red word.
+    lv_style_init(&st_stop_op);
+    lv_style_set_bg_color(&st_stop_op, UI_CARD);
+    lv_style_set_text_color(&st_stop_op, UI_FAULT);
+    lv_style_set_border_side(&st_stop_op, LV_BORDER_SIDE_FULL);
+    lv_style_set_border_width(&st_stop_op, 3);
+    lv_style_set_border_color(&st_stop_op, UI_FAULT);
+    lv_style_set_pad_all(&st_stop_op, -3);      // the word keeps its place
+    lv_style_init(&st_stop_op_pr);
+    lv_style_set_bg_color(&st_stop_op_pr, lv_color_hex(0xF6D5D5));
 
     lv_style_init(&st_dark);
     lv_style_set_bg_color(&st_dark, UI_TEXT);
@@ -184,18 +195,29 @@ const char *ui_fmt1(char *buf, size_t n, int64_t milli)
 }
 
 /* --------------------------------------------------------------------------
- * Buttons. Child 0 is the main label, child 1 the 12 px state line, child 2
- * the chevron (nav only).
+ * Buttons. Child 0 is the main label, then the chevron (nav only), then the
+ * 12 px state line, made on first use (most buttons never have one).
  * ------------------------------------------------------------------------ */
+#define BTN_NAV   LV_OBJ_FLAG_USER_1    // on the button
+#define BTN_SMALL LV_OBJ_FLAG_USER_1    // on its state line
+
+static lv_obj_t *btn_small(lv_obj_t *b)
+{
+    uint32_t n = lv_obj_get_child_count(b);
+    lv_obj_t *last = lv_obj_get_child(b, (int32_t)n - 1);
+    return n > 1 && lv_obj_has_flag(last, BTN_SMALL) ? last : NULL;
+}
+
 static void btn_layout(lv_obj_t *b)
 {
-    lv_obj_t *main = lv_obj_get_child(b, 0), *small = lv_obj_get_child(b, 1);
-    bool two = !lv_obj_has_flag(small, LV_OBJ_FLAG_HIDDEN);
-    bool nav = lv_obj_get_child_count(b) > 2;
+    lv_obj_t *main = lv_obj_get_child(b, 0), *small = btn_small(b);
+    bool two = small && !lv_obj_has_flag(small, LV_OBJ_FLAG_HIDDEN);
+    bool nav = lv_obj_has_flag(b, BTN_NAV);
     lv_align_t al = nav ? LV_ALIGN_LEFT_MID : LV_ALIGN_CENTER;
     int32_t x = nav ? 12 : 0;
     lv_obj_align(main, al, x, two ? -8 : 0);
-    lv_obj_align(small, al, x, 10);
+    if (small)
+        lv_obj_align(small, al, x, 10);
 }
 
 lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
@@ -219,21 +241,16 @@ lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
         lv_obj_add_style(b, &st_dark_pr, LV_STATE_PRESSED);
     }
     lv_obj_add_style(b, &st_btn_dis, ST_DIS);
+    if (kind == UI_NAV)
+        lv_obj_add_flag(b, BTN_NAV);
+    if (kind == UI_PRIMARY)
+        lv_obj_add_flag(b, LV_OBJ_FLAG_USER_2);   // its state line is light
 
     lv_obj_t *main = lv_label_create(b);
     lv_obj_set_width(main, w - (kind == UI_NAV ? 36 : 8));
     lv_obj_set_style_text_align(main, kind == UI_NAV || kind == UI_DARK ? LV_TEXT_ALIGN_LEFT
                                                                          : LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(main, text);
-    lv_obj_t *small = lv_label_create(b);
-    lv_obj_set_width(small, w - (kind == UI_NAV ? 36 : 8));
-    lv_obj_set_style_text_align(small, lv_obj_get_style_text_align(main, 0), 0);
-    lv_obj_set_style_text_font(small, &ui_font_12, 0);
-    lv_obj_set_style_text_color(small, UI_MUTED, 0);
-    if (kind == UI_PRIMARY)
-        lv_obj_add_style(small, &st_act_small, 0);
-    lv_label_set_text(small, "");
-    lv_obj_add_flag(small, LV_OBJ_FLAG_HIDDEN);
     if (kind == UI_NAV) {
         lv_obj_t *chev = lv_label_create(b);
         lv_obj_set_style_text_font(chev, &lv_font_montserrat_14, 0);
@@ -249,9 +266,22 @@ lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
 
 void ui_btn_text(lv_obj_t *b, const char *text, const char *small)
 {
-    lv_obj_t *m = lv_obj_get_child(b, 0), *s = lv_obj_get_child(b, 1);
-    bool had = !lv_obj_has_flag(s, LV_OBJ_FLAG_HIDDEN), has = small && *small;
+    lv_obj_t *m = lv_obj_get_child(b, 0), *s = btn_small(b);
+    bool has = small && *small;
     ui_set_text(m, text);
+    if (!s && !has)
+        return;
+    if (!s) {
+        s = lv_label_create(b);
+        lv_obj_add_flag(s, BTN_SMALL | LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(s, lv_obj_get_style_width(m, 0));
+        lv_obj_set_style_text_align(s, lv_obj_get_style_text_align(m, 0), 0);
+        lv_obj_set_style_text_font(s, &ui_font_12, 0);
+        lv_obj_set_style_text_color(s, UI_MUTED, 0);
+        if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_2))
+            lv_obj_add_style(s, &st_act_small, 0);
+    }
+    bool had = !lv_obj_has_flag(s, LV_OBJ_FLAG_HIDDEN);
     ui_set_text(s, has ? small : "");
     if (had != has) {
         if (has) lv_obj_remove_flag(s, LV_OBJ_FLAG_HIDDEN);
@@ -301,6 +331,8 @@ static int32_t strip_w = 343;
 
 static void open_screen(const ui_screen_t *s);
 
+static void frame_refresh(void);
+
 static void back_event(lv_event_t *e)
 {
     (void)e;
@@ -315,8 +347,21 @@ static void back_event(lv_event_t *e)
 static void stop_event(lv_event_t *e)
 {
     (void)e;
+    bool latch = valve_stop_latches();
+    bool cal = valve_mode() == VALVE_CALIBRATING;
     ui_overlay_close();
     valve_stop();
+    if (!latch) {
+        char t[48], v[16];
+        if (cal)
+            lv_strlcpy(t, "Stopped. Calibration cancelled.", sizeof t);
+        else if (valve_calibrated())
+            lv_snprintf(t, sizeof t, "Stopped at %s %%.", ui_fmt1(v, sizeof v, (int64_t)valve_pct10() * 100));
+        else
+            lv_strlcpy(t, "Stopped.", sizeof t);
+        ui_msg(t);
+    }
+    frame_refresh();
 }
 
 static void ok_event(lv_event_t *e)
@@ -349,6 +394,9 @@ static void build_frame(void)
     lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
     lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
     back_btn = ui_btn(hdr, 0, 0, 119, 40, UI_DARK, LV_SYMBOL_LEFT " Back", back_event, NULL);
+    // A touch in the 8 px gap under the header is Back's, not the page's.
+    lv_obj_set_ext_click_area(hdr, 8);
+    lv_obj_set_ext_click_area(back_btn, 8);
     lv_obj_align(lv_obj_get_child(back_btn, 0), LV_ALIGN_LEFT_MID, 4, 0);
     pmc_lbl = ui_label(hdr, 10, 11, 109, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "PMC");
     title_lbl = ui_label(hdr, 127, 11, 166, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
@@ -382,6 +430,8 @@ static void build_frame(void)
     stop_btn = ui_btn(frame, 361, 216, 109, 48, UI_RED, "STOP", NULL, NULL);
     lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), &ui_font_26, 0);
     lv_obj_add_event_cb(stop_btn, stop_event, LV_EVENT_PRESSED, NULL);   // on press, not release
+    lv_obj_add_style(stop_btn, &st_stop_op, LV_STATE_USER_2);
+    lv_obj_add_style(stop_btn, &st_stop_op_pr, LV_STATE_USER_2 | LV_STATE_PRESSED);
 }
 
 static void show(lv_obj_t *o, bool on)
@@ -469,6 +519,11 @@ static void frame_refresh(void)
         ui_set_text(title_lbl, cur->title);
     ui_set_text(mode_lbl, f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name());
     show(fault_rule, nf > 0);
+    bool op = !valve_stop_latches();
+    if (op != lv_obj_has_state(stop_btn, LV_STATE_USER_2)) {
+        if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
+        else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
+    }
     // Dot: red with a fault, filled grey in AUTO (not built), else a ring.
     lv_opa_t opa = nf ? LV_OPA_COVER : LV_OPA_TRANSP;
     if (lv_obj_get_style_bg_opa(mode_dot, 0) != opa) {
@@ -772,18 +827,33 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
     ui_ask(text, "Cancel", NULL, ok, on_ok);
 }
 
-// Text page over the screen (Help). Header Back closes it.
+// Text page over the screen (Help). Header Back closes it. Up and
+// Down jump a page without animation (a drag redraws the card every frame).
+static lv_obj_t *tv_card;
+
+static void tv_page(lv_event_t *e)
+{
+    int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
+    int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(tv_card) : lv_obj_get_scroll_top(tv_card);
+    int32_t d = room < 120 ? room : 120;
+    if (d > 0)
+        lv_obj_scroll_by(tv_card, 0, -dir * d, LV_ANIM_OFF);
+}
+
 void ui_text_view(const char *title, const char *text)
 {
     lv_obj_t *o = overlay_new();
-    lv_obj_t *c = ui_card(o, 10, 8, 460, 168);
-    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // a drag here scrolls it
+    lv_obj_t *c = ui_card(o, 10, 8, 460, 160);
+    tv_card = c;
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // a drag here scrolls it too
     lv_obj_set_scroll_dir(c, LV_DIR_VER);
     lv_obj_set_style_pad_all(c, 10, 0);
     lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
     t = ui_label(c, 0, 26, 440, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(t, 3, 0);
+    ui_btn(o, 10, 176, 109, 48, UI_SECONDARY, LV_SYMBOL_UP " Up", tv_page, NULL);
+    ui_btn(o, 127, 176, 109, 48, UI_SECONDARY, LV_SYMBOL_DOWN " Down", tv_page, (void *)1);
     frame_refresh();
 }
 

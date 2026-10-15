@@ -177,6 +177,12 @@ static bool help_command(const char *line)
 void board_init()
 {
     lv_init();
+#if PMC_UI_NEW
+    // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
+    // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
+    static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
+    lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
+#endif
     lv_port_disp_init();
     lv_port_indev_init();
 

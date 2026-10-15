@@ -30,7 +30,8 @@
  * which clears only the latches whose cause has gone:
  *   F-01 no Druck signal, F-03 excitation outside 9.5-10.5 V or tripped,
  *   F-07 switch not found while calibrating, F-09 switch still pressed
- *   after moving off it, F-13 motion timeout, F-12 STOP (CTRL STOP).
+ *   after moving off it, F-13 motion timeout, F-12 STOP in AUTO (CTRL STOP).
+ * Outside AUTO, STOP stops and holds the valve without a latch (STOP event).
  *
  * Commands:
  *   VALVE?                       mode, position, settings, pending question
@@ -38,7 +39,7 @@
  *   VALVE GOTO <0-100>           go to % open (one decimal), once calibrated
  *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question (or the screen)
  *   VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (idle)
- *   CTRL STOP                    stop now, latch F-12, cancel calibration
+ *   CTRL STOP                    stop now, cancel calibration (F-12 in AUTO)
  *   CTRL RESET                   clear latches whose cause has gone
  *   CTRL?                        latched faults, highest priority first
  *   EVT? [n]                     the last n events (default 20, 200 kept)
@@ -75,7 +76,8 @@ uint32_t valve_cal_budget_s(void);               // longest calibration, s
 int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
 bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
 int32_t valve_target_pct10(void);                // where the valve is going
-void valve_stop(void);                           // CTRL STOP: latch F-12
+void valve_stop(void);                           // CTRL STOP (latches F-12 in AUTO only)
+bool valve_stop_latches(void);                   // STOP would latch F-12 now
 // CTRL RESET; returns the number latched before, left = those kept.
 int valve_reset(char *left, size_t n);
 int valve_fault_count(void);

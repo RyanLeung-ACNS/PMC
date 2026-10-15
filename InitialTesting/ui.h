@@ -114,6 +114,7 @@ void ui_overlay_close(void);
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
 void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
 void ui_calibrate_ask(void);   // the Calibrate valve confirm
+int32_t ui_log_px(int32_t p_mmbar, int32_t w);   // 0.1-1000 mbar on a log scale, 0 to w px
 // Valve, Calibrate valve, Faults and log, Diagnostics (ui_valve.c).
 extern const ui_screen_t ui_scr_valve, ui_scr_calib, ui_scr_faults, ui_scr_diag;
 

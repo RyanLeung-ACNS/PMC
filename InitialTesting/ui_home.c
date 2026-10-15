@@ -45,6 +45,14 @@ static int32_t log2_q8(uint32_t v)
     return n;
 }
 
+int32_t ui_log_px(int32_t p_mmbar, int32_t w)
+{
+    const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar
+    int32_t l = log2_q8(p_mmbar > 1 ? (uint32_t)p_mmbar : 1);
+    int32_t x = (l - lo) * w / (hi - lo);
+    return x < 0 ? 0 : x > w ? w : x;
+}
+
 static int32_t pbar_x(int32_t p_mmbar)
 {
     const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar

@@ -397,10 +397,22 @@ static bool can_reset(fault_t f)
     return true;
 }
 
+bool valve_stop_latches(void)
+{
+    return false;    // only in AUTO (stage 8); MANUAL has no AUTO to hold off
+}
+
 void valve_stop(void)
 {
     bool was_cal = mode == VALVE_CALIBRATING;
-    if (latched[F12]) {
+    if (!valve_stop_latches()) {
+        // Outside AUTO, STOP is an operating stop: stop and hold, nothing latched.
+        stepper3_stop();
+        seq_seen = stepper3_move_seq();
+        cal_abort("STOP");
+        ev("STOP", "Operator stop at count %ld%s", (long)stepper3_position(),
+           was_cal ? ", calibrating cancelled" : "");
+    } else if (latched[F12]) {
         // STOP always stops, even with F-12 already latched.
         stepper3_stop();
         cal_abort("STOP");

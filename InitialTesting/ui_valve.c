@@ -54,7 +54,7 @@ static void right(lv_obj_t *l)
  * Valve page
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *p, *v, *go, *fill, *btn[8];
+    lv_obj_t *p, *v, *go, *fill, *pfill, *btn[8];
     bool jog;                 // a Close or Open hold is moving the valve
 } vp;
 
@@ -147,6 +147,24 @@ static void help_cb(lv_event_t *e)
                  lv_event_get_user_data(e));
 }
 
+// 3 px bar along the bottom of a 148 px card; returns the fill.
+static lv_obj_t *thin_bar(lv_obj_t *card)
+{
+    lv_obj_t *track = ui_card(card, 10, 42, 128, 3);
+    lv_obj_set_style_radius(track, 0, 0);
+    lv_obj_set_style_bg_color(track, UI_TRACK, 0);
+    lv_obj_t *fill = ui_card(track, 0, 0, 0, 3);
+    lv_obj_set_style_radius(fill, 0, 0);
+    lv_obj_set_style_bg_color(fill, UI_FILL, 0);
+    return fill;
+}
+
+static void bar_width(lv_obj_t *fill, int32_t w)
+{
+    if (lv_obj_get_width(fill) != w)
+        lv_obj_set_width(fill, w);
+}
+
 static void valve_build(lv_obj_t *scr)
 {
     memset(&vp, 0, sizeof vp);
@@ -156,13 +174,8 @@ static void valve_build(lv_obj_t *scr)
     right(vp.p);
     right(vp.v);
     right(vp.go);
-    lv_obj_t *card = lv_obj_get_parent(vp.v);
-    lv_obj_t *track = ui_card(card, 10, 42, 128, 3);
-    lv_obj_set_style_radius(track, 0, 0);
-    lv_obj_set_style_bg_color(track, UI_TRACK, 0);
-    vp.fill = ui_card(track, 0, 0, 0, 3);
-    lv_obj_set_style_radius(vp.fill, 0, 0);
-    lv_obj_set_style_bg_color(vp.fill, UI_FILL, 0);
+    vp.pfill = thin_bar(lv_obj_get_parent(vp.p));
+    vp.fill = thin_bar(lv_obj_get_parent(vp.v));
 
     static const char *const row2[4] = { "Close", "-5 %", "+5 %", "Open" };
     for (int i = 0; i < 4; i++) {
@@ -189,14 +202,14 @@ static void valve_refresh(void)
     bool ok;
     ui_set_text(vp.p, pressure_text(buf, sizeof buf, &ok));
     ui_set_color(vp.p, ok ? UI_TEXT : UI_FAULT);
+    bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
     int32_t p = valve_pct10();
     p = !cal || p < 0 ? 0 : p > 1000 ? 1000 : p;
-    if (lv_obj_get_width(vp.fill) != p * 128 / 1000)
-        lv_obj_set_width(vp.fill, p * 128 / 1000);
-    bool moving = cal && stepper3_busy();
+    bar_width(vp.fill, p * 128 / 1000);
+    bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct10()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
     bool on = why_not_manual() == NULL;
@@ -316,7 +329,7 @@ static const fault_help_t fault_help[] = {
       "Stopped the valve and holds it. Calibration kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
-    { "F-12", "STOP was pressed, or CTRL STOP sent.",
+    { "F-12", "STOP was pressed in AUTO, or CTRL STOP sent.",
       "Stopped the valve and holds it, not closed.",
       "Why it was stopped.",
       "Any time." },
