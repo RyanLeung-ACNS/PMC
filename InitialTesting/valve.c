@@ -611,10 +611,15 @@ bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS])
 
 bool valve_goto_pct10(int32_t pct10, const char **why)
 {
+    return valve_goto_pct100(pct10 * 10, why);
+}
+
+bool valve_goto_pct100(int32_t pct100, const char **why)
+{
     if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (!calibrated)                { *why = "valve not calibrated, VALVE CAL first"; return false; }
-    int32_t to = (int32_t)(((int64_t)pct10 * pos_max + 500) / 1000);
+    int32_t to = (int32_t)(((int64_t)pct100 * pos_max + 5000) / 10000);
     if (to < 0) to = 0;
     if (to > pos_max) to = pos_max;
     if (!stepper3_goto(to))         { *why = "limit open, closing move refused"; return false; }

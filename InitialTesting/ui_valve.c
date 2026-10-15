@@ -98,9 +98,9 @@ static void step_cb(lv_event_t *e)
     vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
 }
 
-static bool goto_set(int32_t v10, const char **why)
+static bool goto_set(int32_t v100, const char **why)
 {
-    if (!valve_goto_pct10(v10, why)) {
+    if (!valve_goto_pct100(v100, why)) {
         *why = why_not_manual();
         if (!*why)
             *why = "Limit switch pressed, cannot close";
@@ -117,7 +117,7 @@ static void goto_cb(lv_event_t *e)
         ui_msg(why);
         return;
     }
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct_milli, goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 10000, "Valve, %", valve_pct_milli, goto_set);
 }
 
 static void full_cb(lv_event_t *e)

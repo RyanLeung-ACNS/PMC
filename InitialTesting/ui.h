@@ -94,12 +94,12 @@ void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text);
 void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none
 
-// Keypad over the screen. on_set gets the value in 0.1 units (dec 1) and
-// returns false with *why to refuse. side_milli gives the present value
-// (0.001 units, shown to 2 dp) at the side, updated at 10 Hz. Header Back
-// cancels.
-typedef bool (*ui_keypad_set_t)(int32_t v10, const char **why);
-void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
+// Keypad over the screen. on_set gets the value in 0.01 units (two
+// decimals) and returns false with *why to refuse. side_milli gives the
+// present value (0.001 units, shown to 2 dp) at the side, updated at 10 Hz.
+// Header Back cancels.
+typedef bool (*ui_keypad_set_t)(int32_t v100, const char **why);
+void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max100,
                const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set);
 
 // Confirm dialog: Cancel and OK (OK primary). Buttons sit inside x70-410,

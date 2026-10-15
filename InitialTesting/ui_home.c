@@ -190,9 +190,9 @@ static void target_event(lv_event_t *e)
                                         : not_manual_why());
 }
 
-static bool goto_set(int32_t v10, const char **why)
+static bool goto_set(int32_t v100, const char **why)
 {
-    if (!valve_goto_pct10(v10, why)) {
+    if (!valve_goto_pct100(v100, why)) {
         *why = valve_fault_count() ? "Reset the fault first" : "Limit switch pressed, cannot close";
         return false;
     }
@@ -206,7 +206,7 @@ static void goto_event(lv_event_t *e)
         ui_msg(not_manual_why());
         return;
     }
-    ui_keypad("Go to, %", "0 closed, 100 open", 0, 1000, "Valve, %", valve_pct_milli, goto_set);
+    ui_keypad("Go to, %", "0 closed, 100 open", 0, 10000, "Valve, %", valve_pct_milli, goto_set);
 }
 
 static void calibrate(void)
@@ -365,7 +365,8 @@ void ui_status_line(void)
 const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh, home_fast };
 
 /* --------------------------------------------------------------------------
- * Menu: the six v63 tiles (those not built yet greyed), and a
+ * Menu: the six v63 tiles in three captioned rows (those not built yet
+ * greyed), and a
  * temporary Service button for the 0.6.0 screens (until the settings stage).
  * ------------------------------------------------------------------------ */
 static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, NULL, &ui_scr_diag, NULL };
@@ -387,10 +388,16 @@ static void service_event(lv_event_t *e)
 
 static void menu_build(lv_obj_t *scr)
 {
-    static const char *const names[6] = { "Trend", "Faults and log", "Calibrate valve",
-                                          "Calibrate sensor", "Diagnostics", "Settings" };
+    // Grouped in rows with a caption on the left, as on Diagnostics.
+    static const char *const rows[3] = { "Records", "Calibrate", "System" };
+    static const char *const names[6] = { "Trend", "Faults and log", "Valve",
+                                          "Sensor", "Diagnostics", "Settings" };
+    for (int r = 0; r < 3; r++) {
+        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
+        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
+    }
     for (int i = 0; i < 6; i++) {
-        lv_obj_t *b = ui_btn(scr, i % 2 ? 244 : 10, 48 + (i / 2) * 56, 226, 48, UI_NAV, names[i],
+        lv_obj_t *b = ui_btn(scr, i % 2 ? 288 : 98, 48 + (i / 2) * 56, 182, 48, UI_NAV, names[i],
                              menu_tile_event, (void *)menu_scr[i]);
         ui_btn_enable(b, menu_scr[i] != NULL);
     }

@@ -701,7 +701,7 @@ static lv_obj_t *overlay_new(void)
 // Keypad.
 static struct {
     char entry[10];
-    int32_t min10, max10;
+    int32_t min100, max100;
     ui_keypad_set_t on_set;
     lv_obj_t *value, *title, *info, *err, *side;
     int32_t (*side_milli)(void);   // live side value, 0.001 units, shown to 2 dp
@@ -723,7 +723,7 @@ static void kp_show_err(const char *why)
         ui_set_text(kp.err, why);
 }
 
-static bool kp_parse(int32_t *v10)
+static bool kp_parse(int32_t *v100)
 {
     const char *s = kp.entry;
     int32_t whole = 0, frac = 0;
@@ -735,10 +735,13 @@ static bool kp_parse(int32_t *v10)
         whole = whole * 10 + (*s++ - '0');
     if (*s == '.') {
         s++;
-        if (*s >= '0' && *s <= '9')
-            frac = *s - '0';
+        for (int i = 0; i < 2; i++) {
+            frac *= 10;
+            if (*s >= '0' && *s <= '9')
+                frac += *s++ - '0';
+        }
     }
-    *v10 = (neg ? -1 : 1) * (whole * 10 + frac);
+    *v100 = (neg ? -1 : 1) * (whole * 100 + frac);
     return true;
 }
 
@@ -751,20 +754,20 @@ static void kp_key(lv_event_t *e)
     if (strcmp(k, "<") == 0) {
         if (n) kp.entry[n - 1] = '\0';
     } else if (strcmp(k, "set") == 0) {
-        int32_t v10;
+        int32_t v100;
         const char *why = NULL;
-        if (!kp_parse(&v10)) {
+        if (!kp_parse(&v100)) {
             ui_overlay_close();
             return;
         }
-        if (v10 < kp.min10 || v10 > kp.max10) {
+        if (v100 < kp.min100 || v100 > kp.max100) {
             char a[16], b[16], t[48];
-            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt1(a, sizeof a, kp.min10 * 100),
-                        ui_fmt1(b, sizeof b, kp.max10 * 100));
+            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt2(a, sizeof a, kp.min100 * 10),
+                        ui_fmt2(b, sizeof b, kp.max100 * 10));
             kp_show_err(t);
             return;
         }
-        if (!kp.on_set(v10, &why)) {
+        if (!kp.on_set(v100, &why)) {
             kp_show_err(why ? why : "Refused");
             return;
         }
@@ -774,8 +777,8 @@ static void kp_key(lv_event_t *e)
         if (*k == '.') {
             if (dot) return;
             if (!n) { strcpy(kp.entry, "0"); n = 1; }
-        } else if (dot && strlen(dot) > 1) {
-            return;                           // one decimal
+        } else if (dot && strlen(dot) > 2) {
+            return;                           // two decimals
         } else if (n == 1 && kp.entry[0] == '0') {
             n = 0;                            // no leading zero
         }
@@ -785,13 +788,13 @@ static void kp_key(lv_event_t *e)
     ui_set_text(kp.value, kp.entry);
 }
 
-void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
+void ui_keypad(const char *title, const char *info, int32_t min100, int32_t max100,
                const char *side_label, int32_t (*side_milli)(void), ui_keypad_set_t on_set)
 {
     lv_obj_t *o = overlay_new();
     memset(&kp, 0, sizeof kp);
-    kp.min10 = min10;
-    kp.max10 = max10;
+    kp.min100 = min100;
+    kp.max100 = max100;
     kp.on_set = on_set;
     kp.side_milli = side_milli;
     kp_open = true;

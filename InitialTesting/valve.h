@@ -75,6 +75,7 @@ bool valve_calibrate(const char **why);          // VALVE CAL
 uint32_t valve_cal_budget_s(void);               // longest calibration, s
 int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
 bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
+bool valve_goto_pct100(int32_t pct100, const char **why); // the same in 0.01 % (keypad)
 int32_t valve_target_pct10(void);                // where the valve is going
 int32_t valve_pct_milli(void);                   // position in 0.001 % (for 2 dp on screen)
 int32_t valve_target_pct_milli(void);
