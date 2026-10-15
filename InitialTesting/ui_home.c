@@ -301,7 +301,7 @@ static void home_refresh(void)
 
     // Pressure.
     bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
+    ui_set_text(pt.reading, ok ? ui_fmt2(buf, sizeof buf, s->p_mmbar) : "----");
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
     alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-03"));
