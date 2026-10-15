@@ -194,13 +194,10 @@ static void valve_build(lv_obj_t *scr)
     ui_btn(scr, 364, 160, 106, 48, UI_NAV, "Help", help_cb, (void *)valve_help);
 }
 
-static void valve_refresh(void)
+// Valve %, its bar and Go to, at 10 Hz.
+static void valve_fast(void)
 {
     char buf[16];
-    bool ok;
-    ui_set_text(vp.p, pressure_text(buf, sizeof buf, &ok));
-    ui_set_color(vp.p, ok ? UI_TEXT : UI_FAULT);
-    bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
@@ -210,6 +207,16 @@ static void valve_refresh(void)
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct10()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
+}
+
+static void valve_refresh(void)
+{
+    char buf[16];
+    bool ok;
+    ui_set_text(vp.p, pressure_text(buf, sizeof buf, &ok));
+    ui_set_color(vp.p, ok ? UI_TEXT : UI_FAULT);
+    bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
+    valve_fast();
     bool on = why_not_manual() == NULL;
     for (int i = 0; i < 7; i++)
         ui_btn_enable(vp.btn[i], on);
@@ -218,7 +225,7 @@ static void valve_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh };
+const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fast };
 
 /* --------------------------------------------------------------------------
  * Calibrate valve
@@ -262,12 +269,20 @@ static void calib_build(lv_obj_t *scr)
     cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
     right(cp.v);
     cp.seat = ui_info(scr, 10, 104, 148, 48, "Limit switch");
-    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated, took");
+    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated, took");   // "15 Oct 14:28, 15 s"
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
     calib_switch(t);
+}
+
+static void calib_fast(void)
+{
+    char buf[16];
+    bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
+    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
+    ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
 }
 
 static void calib_refresh(void)
@@ -281,12 +296,13 @@ static void calib_refresh(void)
     } else {
         ui_set_text(cp.state, valve_calibrated() ? "Calibrated" : "Not calibrated");
     }
-    bool cal = valve_calibrated() && !calib;
-    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct10()) : "----");
-    ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
+    calib_fast();
     uint32_t age, took;
     if (valve_last_cal(&age, &took)) {
-        lv_snprintf(buf, sizeof buf, "%s, %lu s", ui_when(w, sizeof w, age), (unsigned long)took);
+        const char *iso = valve_last_cal_iso();
+        char d[20];
+        lv_snprintf(buf, sizeof buf, "%s, %lu s", iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age),
+                    (unsigned long)took);
         ui_set_text(cp.last, buf);
     } else {
         ui_set_text(cp.last, "Not since power-up");
@@ -296,7 +312,7 @@ static void calib_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Calibrate valve", calib_build, calib_refresh };
+const ui_screen_t ui_scr_calib = { "Calibrate valve", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log
@@ -539,7 +555,7 @@ static void faults_refresh(void)
     ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
 }
 
-const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refresh };
+const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refresh, NULL };
 
 /* --------------------------------------------------------------------------
  * Diagnostics
@@ -622,4 +638,4 @@ static void diag_refresh(void)
     ui_strip_set(UI_STRIP_INFO, UI_MUTED, buf);
 }
 
-const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh };
+const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };

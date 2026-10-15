@@ -273,21 +273,11 @@ static void home_build(lv_obj_t *scr)
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
 
-static void home_refresh(void)
+// Valve reading and bar, at 10 Hz.
+static void home_fast(void)
 {
-    const clicks_state_t *s = clicks_state();
     valve_mode_t m = valve_mode();
-    char buf[32];
-
-    // Pressure.
-    bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
-    ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
-    bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
-    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-03"));
-    box_set(&pt, false, "Not set");
-
-    // Valve.
+    char buf[16];
     bool cal = valve_calibrated() && m != VALVE_CALIBRATING;
     if (m == VALVE_CALIBRATING) {
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_font_16)
@@ -303,13 +293,30 @@ static void home_refresh(void)
     int32_t p = valve_pct10();
     p = p < 0 ? 0 : p > 1000 ? 1000 : p;
     bar_set(&vt, cal ? p * BAR_W / 1000 : -1);
+}
+
+static void home_refresh(void)
+{
+    const clicks_state_t *s = clicks_state();
+    valve_mode_t m = valve_mode();
+    char buf[32];
+
+    // Pressure.
+    bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
+    ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
+    ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
+    bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
+    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-03"));
+    box_set(&pt, false, "Not set");
+
+    home_fast();
     alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-13"));
     bool manual = m == VALVE_MANUAL && !valve_fault_count();
     box_set(&vt, manual, manual ? ui_fmt1(buf, sizeof buf, (int64_t)valve_target_pct10() * 100) : "");
 
     // Mode button.
     int step = valve_cal_step();
-    if (m == VALVE_CALIBRATING) {
+        if (m == VALVE_CALIBRATING) {
         lv_snprintf(buf, sizeof buf, "%d of 3", step < 1 ? 1 : step);
         ui_btn_text(mode_btn, "Calibrating", buf);
         ui_btn_enable(mode_btn, false);
@@ -357,7 +364,7 @@ void ui_status_line(void)
     }
 }
 
-const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh };
+const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh, home_fast };
 
 /* --------------------------------------------------------------------------
  * Menu: the six v63 tiles (those not built yet greyed), and a
@@ -398,4 +405,4 @@ static void menu_refresh(void)
     ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Service: the 0.6.0 screens");
 }
 
-const ui_screen_t ui_scr_menu = { "Menu", menu_build, menu_refresh };
+const ui_screen_t ui_scr_menu = { "Menu", menu_build, menu_refresh, NULL };

@@ -170,6 +170,16 @@ lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, 
     return ui_label(c, 10, 22, w - 20, &ui_num_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
 }
 
+const char *ui_date(char *buf, size_t n, const char *iso)
+{
+    static const char *const mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    int m = (iso[5] - '0') * 10 + iso[6] - '0';
+    lv_snprintf(buf, n, "%c%c %s %.5s", iso[8] == '0' ? ' ' : iso[8], iso[9],
+                m >= 1 && m <= 12 ? mon[m - 1] : "?", iso + 11);
+    return iso[8] == '0' ? buf + 1 : buf;
+}
+
 const char *ui_when(char *buf, size_t n, uint32_t age_ms)
 {
     const char *iso = rtclock_iso();
@@ -558,6 +568,13 @@ static void frame_refresh(void)
     }
 }
 
+static void fast_timer(lv_timer_t *t)
+{
+    (void)t;
+    if (!service && cur->fast)
+        cur->fast();
+}
+
 static void refresh_timer(lv_timer_t *t)
 {
     (void)t;
@@ -835,7 +852,7 @@ static void tv_page(lv_event_t *e)
 {
     int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
     int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(tv_card) : lv_obj_get_scroll_top(tv_card);
-    int32_t d = room < 120 ? room : 120;
+    int32_t d = room < 114 ? room : 114;     // a page less one line
     if (d > 0)
         lv_obj_scroll_by(tv_card, 0, -dir * d, LV_ANIM_OFF);
 }
@@ -863,8 +880,13 @@ void ui_text_view(const char *title, const char *text)
     t = ui_label(c, 0, 26, 430, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(t, 3, 0);
-    ui_btn(o, 10, 176, 109, 48, UI_SECONDARY, LV_SYMBOL_UP " Up", tv_page, NULL);
-    ui_btn(o, 127, 176, 109, 48, UI_SECONDARY, LV_SYMBOL_DOWN " Down", tv_page, (void *)1);
+    // On press (not release); held, it repeats every 0.1 s after 0.4 s.
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = ui_btn(o, 10 + i * 117, 176, 109, 48, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN " Down" : LV_SYMBOL_UP " Up", NULL, NULL);
+        lv_obj_add_event_cb(b, tv_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, tv_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+    }
     frame_refresh();
 }
 
@@ -916,4 +938,8 @@ void ui_init(void)
     lv_screen_load(home_scr);
     frame_refresh();
     lv_timer_create(refresh_timer, 500, NULL);
+    lv_timer_create(fast_timer, 100, NULL);
+    // Drags start after 3 px, not LVGL's 10, so Help follows the finger sooner.
+    for (lv_indev_t *in = lv_indev_get_next(NULL); in; in = lv_indev_get_next(in))
+        lv_indev_set_scroll_limit(in, 3);
 }

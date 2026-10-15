@@ -4,6 +4,7 @@
 
 #include "lvgl.h"   // lv_tick_get, lv_snprintf
 #include "link.h"
+#include "rtclock.h"
 #include "limit.h"
 #include "stepper3.h"
 #include "fixed.h"
@@ -109,6 +110,7 @@ static bool question;             // switch-pressed question waiting
 static int32_t question_at;       // count where the switch was pressed
 
 static uint32_t cal_done_ms, cal_took_s;   // last good calibration
+static char cal_done_iso[20];              // its wall time, "" if the clock is not set
 static int32_t switch_at;         // count where the switch last opened
 static bool switch_was_open;
 
@@ -254,6 +256,7 @@ static void cal_move_ended(stepper3_stop_t why)
             calibrated = true;
             cal_done_ms = lv_tick_get() | 1;
             cal_took_s = lv_tick_elaps(cal_t0) / 1000;
+            lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
             ev("REF", "Calibrated in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
             cal_end(VALVE_MANUAL);
         } else if (why == STEPPER3_STOP_DONE) {
@@ -714,6 +717,8 @@ bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **tex
     *text = e->text;
     return true;
 }
+
+const char *valve_last_cal_iso(void) { return cal_done_iso; }
 
 bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s)
 {

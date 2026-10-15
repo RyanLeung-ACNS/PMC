@@ -61,6 +61,8 @@ void ui_set_color(lv_obj_t *obj, lv_color_t c);
 
 // Card with a 12 px caption; returns the 16 px value label under it.
 lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, const char *caption);
+// "15 Oct 14:28" from "YYYY-MM-DD HH:MM:SS".
+const char *ui_date(char *buf, size_t n, const char *iso);
 // When something happened age_ms ago: "14:03:22" once the clock is set, else "up 0:12:05".
 const char *ui_when(char *buf, size_t n, uint32_t age_ms);
 
@@ -68,11 +70,12 @@ const char *ui_when(char *buf, size_t n, uint32_t age_ms);
 const char *ui_fmt1(char *buf, size_t n, int64_t milli);
 
 // Screens. A screen's build() makes its objects on scr; refresh() runs at
-// 2 Hz while it is shown.
+// 2 Hz while it is shown, fast() (optional) at 10 Hz for moving readings.
 typedef struct {
     const char *title;
     void (*build)(lv_obj_t *scr);
     void (*refresh)(void);
+    void (*fast)(void);
 } ui_screen_t;
 
 void ui_init(void);            // after the drivers and valve/cfg init

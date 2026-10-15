@@ -94,6 +94,7 @@ bool valve_last_cal(uint32_t *age, uint32_t *took) { if (!v_cal) return false; *
 bool valve_beyond_switch(int32_t *s) { *s = 0; return false; }
 bool limit_open_now(void) { return v_cal && v_pct10 == 0; }
 const char *rtclock_iso(void) { return "2026-10-15 14:32:05"; }
+const char *valve_last_cal_iso(void) { return "2026-10-05 14:28:59"; }
 bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false; *from = 0; *ms = 41300; return true; }
 void stepper3_stop_ramped(void) {}
 #ifndef REAL_OLD
