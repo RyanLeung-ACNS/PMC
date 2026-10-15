@@ -868,7 +868,7 @@ void ui_text_view(const char *title, const char *text)
     frame_refresh();
 }
 
-// The closed switch pressed during a move: asks on every screen until answered.
+// The limit switch pressed during a move: asks on every screen until answered.
 static void q_answer(bool zero)
 {
     const char *why;
@@ -893,7 +893,7 @@ static void question_check(void)
         return;
     static char t[80];
     char v[16];
-    lv_snprintf(t, sizeof t, "Closed switch pressed at %s %%. Set this point as 0 %%?",
+    lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
                 ui_fmt1(v, sizeof v, (int64_t)q * 100));
     asking = true;
     ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);

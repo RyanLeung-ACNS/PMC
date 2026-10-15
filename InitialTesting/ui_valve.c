@@ -70,9 +70,9 @@ static bool vp_goto(int32_t pct10)
 {
     const char *why = why_not_manual();
     if (!why && pct10 < valve_pct10() && limit_open_now())
-        why = "At seat, cannot close";
+        why = "Limit switch pressed, cannot close";
     if (!why && !valve_goto_pct10(pct10 < 0 ? 0 : pct10 > 1000 ? 1000 : pct10, &why))
-        why = "At seat, cannot close";
+        why = "Limit switch pressed, cannot close";
     if (why)
         ui_msg(why);
     return why == NULL;
@@ -103,7 +103,7 @@ static bool goto_set(int32_t v10, const char **why)
     if (!valve_goto_pct10(v10, why)) {
         *why = why_not_manual();
         if (!*why)
-            *why = "At seat, cannot close";
+            *why = "Limit switch pressed, cannot close";
         return false;
     }
     return true;
@@ -130,7 +130,7 @@ static void full_cb(lv_event_t *e)
     bool open = lv_event_get_user_data(e) != NULL;
     const char *why = why_not_manual();
     if (!why && !open && limit_open_now())
-        why = "At seat, cannot close";
+        why = "Limit switch pressed, cannot close";
     if (why)
         ui_msg(why);
     else if (open)
@@ -244,15 +244,30 @@ static void start_cb(lv_event_t *e)
         ui_calibrate_ask();
 }
 
+// Limit switch at 50 Hz, as on Diagnostics.
+static void calib_switch(lv_timer_t *t)
+{
+    (void)t;
+    ui_set_text(cp.seat, limit_open_now() ? "Pressed" : "Not pressed");
+}
+
+static void timer_deleted(lv_event_t *e)
+{
+    lv_timer_delete(lv_event_get_user_data(e));
+}
+
 static void calib_build(lv_obj_t *scr)
 {
     cp.state = ui_info(scr, 10, 48, 226, 48, "Valve calibration");
     cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
     right(cp.v);
-    cp.last = ui_info(scr, 10, 104, 226, 48, "Last calibrated");
-    cp.seat = ui_info(scr, 244, 104, 109, 48, "Seat switch");
+    cp.seat = ui_info(scr, 10, 104, 148, 48, "Limit switch");
+    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated, took");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
+    lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
+    lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
+    calib_switch(t);
 }
 
 static void calib_refresh(void)
@@ -271,12 +286,11 @@ static void calib_refresh(void)
     ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
     uint32_t age, took;
     if (valve_last_cal(&age, &took)) {
-        lv_snprintf(buf, sizeof buf, "%s, took %lu s", ui_when(w, sizeof w, age), (unsigned long)took);
+        lv_snprintf(buf, sizeof buf, "%s, %lu s", ui_when(w, sizeof w, age), (unsigned long)took);
         ui_set_text(cp.last, buf);
     } else {
         ui_set_text(cp.last, "Not since power-up");
     }
-    ui_set_text(cp.seat, limit_open_now() ? "At seat" : "Off seat");
     ui_btn_text(cp.start, calib ? "Calibrating" : "Start calibration", NULL);
     ui_btn_enable(cp.start, !calib && !valve_fault_count());
     ui_status_line();
@@ -311,11 +325,11 @@ static const fault_help_t fault_help[] = {
       "Stopped the valve and holds it.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
-    { "F-07", "Calibrating, the valve closed 1.1 x full travel without the closed switch.",
+    { "F-07", "Calibrating, the valve closed 1.1 x full travel without the limit switch.",
       "Stopped. The valve is not calibrated.",
       "The switch and its wire, and that the valve turns.",
       "Any time. Then calibrate again." },
-    { "F-09", "The closed switch stayed pressed after the valve moved off it.",
+    { "F-09", "The limit switch stayed pressed after the valve moved off it.",
       "Stopped. The valve is not calibrated.",
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then calibrate again." },
@@ -552,10 +566,6 @@ static void diag_motor(lv_timer_t *t)
     ui_set_text(dp.v[5], buf);
 }
 
-static void diag_deleted(lv_event_t *e)
-{
-    lv_timer_delete(lv_event_get_user_data(e));
-}
 
 static void diag_build(lv_obj_t *scr)
 {
@@ -572,7 +582,7 @@ static void diag_build(lv_obj_t *scr)
             dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
     lv_timer_t *t = lv_timer_create(diag_motor, 20, NULL);
-    lv_obj_add_event_cb(scr, diag_deleted, LV_EVENT_DELETE, t);
+    lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
     diag_motor(t);
 }
 

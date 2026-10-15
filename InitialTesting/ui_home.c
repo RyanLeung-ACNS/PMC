@@ -193,7 +193,7 @@ static void target_event(lv_event_t *e)
 static bool goto_set(int32_t v10, const char **why)
 {
     if (!valve_goto_pct10(v10, why)) {
-        *why = valve_fault_count() ? "Reset the fault first" : "Closed switch pressed: closing refused";
+        *why = valve_fault_count() ? "Reset the fault first" : "Limit switch pressed, cannot close";
         return false;
     }
     return true;
@@ -339,7 +339,7 @@ void ui_status_line(void)
     int32_t q;
     if (valve_question(&q)) {
         char t[64], v[16];
-        lv_snprintf(t, sizeof t, "W-01 Closed switch pressed at %s %%",
+        lv_snprintf(t, sizeof t, "W-01 Limit switch pressed at %s %%",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_strip_set(UI_STRIP_WARN, UI_IDLE, t);
     } else if (m == VALVE_NOT_CAL) {

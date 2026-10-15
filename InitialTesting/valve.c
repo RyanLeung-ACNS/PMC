@@ -288,7 +288,7 @@ static void limit_hit(void)
     question_at = stepper3_position();
     question = true;
     char p[16];
-    ev("W-01", "Closed switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
+    ev("W-01", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)question_at, pct_text(p, sizeof p, question_at));
 }
 
@@ -542,7 +542,7 @@ static void show(void)
                 (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_clear, (long)n_offset);
     link_printf("VALVE faults %s, limit %s\r\n", f[0] ? f : "none", limit_text());
     if (question)
-        link_printf("VALVE question: closed switch pressed at count %ld (%s %%), VALVE SETZERO or VALVE SKIP\r\n",
+        link_printf("VALVE question: limit switch pressed at count %ld (%s %%), VALVE SETZERO or VALVE SKIP\r\n",
                     (long)question_at, pct_text(p, sizeof p, question_at));
     link_printf("OK\r\n");
 }
