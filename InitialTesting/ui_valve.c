@@ -37,7 +37,7 @@ static const char *pressure_text(char *buf, size_t n, bool *ok)
 {
     const clicks_state_t *s = clicks_state();
     *ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    return *ok ? ui_fmt2(buf, n, s->p_mmbar) : "----";
+    return *ok ? ui_fmt1(buf, n, s->p_mmbar) : "----";
 }
 
 static const char *pct_text(char *buf, size_t n, int32_t milli)
@@ -622,7 +622,7 @@ static void diag_refresh(void)
     ui_set_text(dp.v[0], sig ? buf : "----");
     lv_snprintf(buf, sizeof buf, "%ld.%02ld", (long)(s->bus_mv / 1000), (long)(s->bus_mv % 1000 / 10));
     ui_set_text(dp.v[1], sig ? buf : "----");
-    ui_set_text(dp.v[2], sig ? ui_fmt2(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
+    ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
 
     int32_t from;
     uint32_t ms;
