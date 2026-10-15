@@ -6,7 +6,7 @@
  *
  *   ./ui_new <state> <out.raw>
  *   state: notcal | manual | calib | moving | nodruck | stop | neg | menu | keypad | confirm
- *          | valve | valvenc | limithit | calpage | faults | detail | diag
+ *          | valve | valvenc | limithit | calpage | faults | detail | diag | help
  */
 #include <assert.h>
 #include <stdio.h>
@@ -130,6 +130,20 @@ static void tap(int32_t x, int32_t y)
     run(100);
 }
 
+static void drag(int32_t x, int32_t y0, int32_t y1)
+{
+    touch_point.x = x;
+    touch_point.y = y0;
+    touch_down = true;
+    run(60);
+    for (int i = 1; i <= 10; i++) {
+        touch_point.y = y0 + (y1 - y0) * i / 10;
+        run(20);
+    }
+    touch_down = false;
+    run(600);
+}
+
 static size_t heap_used(void)
 {
     lv_mem_monitor_t m;
@@ -146,7 +160,8 @@ int main(int argc, char **argv)
     const char *st = argv[1];
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
-                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag");
+                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
+                !strcmp(st, "help") || !strcmp(st, "back");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -199,6 +214,8 @@ int main(int argc, char **argv)
     if (!strcmp(st, "confirm")) tap(415, 72);
     if (!strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit")) tap(415, 128);
     if (!strcmp(st, "limithit")) v_q = true;
+    if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
+    if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 180, 60); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }

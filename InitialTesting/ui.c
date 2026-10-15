@@ -281,6 +281,9 @@ static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
+// Screens to go Back to (Home is under them all), e.g. Menu under Faults and log.
+static const ui_screen_t *back_stack[4];
+static int back_n;
 static bool overlay_q;          // the overlay is the closed-switch question
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
@@ -296,11 +299,15 @@ static char line_text[96];
 static lv_event_cb_t act_cb;
 static int32_t strip_w = 343;
 
+static void open_screen(const ui_screen_t *s);
+
 static void back_event(lv_event_t *e)
 {
     (void)e;
     if (overlay)
         ui_overlay_close();
+    else if (back_n)
+        open_screen(back_stack[--back_n]);
     else if (cur != &ui_scr_home)
         ui_home();
 }
@@ -524,6 +531,13 @@ static lv_obj_t *new_screen(void)
 
 void ui_open(const ui_screen_t *s)
 {
+    if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
+        back_stack[back_n++] = cur;
+    open_screen(s);
+}
+
+static void open_screen(const ui_screen_t *s)
+{
     ui_overlay_close();
     lv_obj_t *old = cur_scr;
     lv_obj_t *scr = new_screen();
@@ -540,6 +554,7 @@ void ui_open(const ui_screen_t *s)
 
 void ui_home(void)
 {
+    back_n = 0;
     ui_overlay_close();
     lv_obj_t *old = cur_scr;
     cur = &ui_scr_home;
@@ -762,7 +777,7 @@ void ui_text_view(const char *title, const char *text)
 {
     lv_obj_t *o = overlay_new();
     lv_obj_t *c = ui_card(o, 10, 8, 460, 168);
-    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // a drag here scrolls it
     lv_obj_set_scroll_dir(c, LV_DIR_VER);
     lv_obj_set_style_pad_all(c, 10, 0);
     lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);

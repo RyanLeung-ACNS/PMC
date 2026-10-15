@@ -429,7 +429,7 @@ static void faults_build(lv_obj_t *scr)
     fp.detail = -1;
     fp.nf = -1;
     fp.list = ui_card(scr, 10, 48, 343, 48);
-    lv_obj_add_flag(fp.list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(fp.list, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_scroll_dir(fp.list, LV_DIR_VER);
     lv_obj_set_scroll_snap_y(fp.list, LV_SCROLL_SNAP_START);
     fp.reset = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Reset fault", faults_reset_cb, NULL);
@@ -527,35 +527,12 @@ static struct {
     lv_obj_t *v[9];
 } dp;
 
-static void diag_build(lv_obj_t *scr)
+// Valve motor row: position, limit switch and steps past it, at 50 Hz so
+// the switch shows as the hardware reads it (limit.c samples every 5 ms).
+static void diag_motor(lv_timer_t *t)
 {
-    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
-    static const char *const caps[9] = { "Signal, mV/V", "Supply, V", "Before cal, mB",
-                                         "Position, steps", "Closed switch", "Beyond switch",
-                                         "Result", "Moved, steps", "Took, s" };
-    static const int32_t x[3] = { 98, 225, 351 };
-    for (int r = 0; r < 3; r++) {
-        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
-        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
-        for (int c = 0; c < 3; c++)
-            dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
-    }
-}
-
-static void diag_refresh(void)
-{
-    const clicks_state_t *s = clicks_state();
-    char buf[48];
-    bool sig = s->pm_found && !s->pm_diag;
-    int32_t r = s->r_ppb / 100;     // 0.0001 mV/V
-    int32_t ar = r < 0 ? -r : r;
-    lv_snprintf(buf, sizeof buf, "%s%ld.%04ld", r < 0 ? "-" : "", (long)(ar / 10000), (long)(ar % 10000));
-    ui_set_text(dp.v[0], sig ? buf : "----");
-    lv_snprintf(buf, sizeof buf, "%ld.%02ld", (long)(s->bus_mv / 1000), (long)(s->bus_mv % 1000 / 10));
-    ui_set_text(dp.v[1], sig ? buf : "----");
-    ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
-
+    (void)t;
+    char buf[16];
     lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
     ui_set_text(dp.v[3], buf);
     bool pressed = limit_open_now();
@@ -566,6 +543,44 @@ static void diag_refresh(void)
     else
         lv_strlcpy(buf, "--", sizeof buf);
     ui_set_text(dp.v[5], buf);
+}
+
+static void diag_deleted(lv_event_t *e)
+{
+    lv_timer_delete(lv_event_get_user_data(e));
+}
+
+static void diag_build(lv_obj_t *scr)
+{
+    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
+    static const char *const caps[9] = { "Signal, mV", "Supply, V", "Before cal, mB",
+                                         "Position, steps", "Limit switch", "Beyond limit",
+                                         "Result", "Moved, steps", "Took, s" };
+    static const int32_t x[3] = { 98, 225, 351 };
+    for (int r = 0; r < 3; r++) {
+        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
+        for (int c = 0; c < 3; c++)
+            dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
+    }
+    lv_timer_t *t = lv_timer_create(diag_motor, 20, NULL);
+    lv_obj_add_event_cb(scr, diag_deleted, LV_EVENT_DELETE, t);
+    diag_motor(t);
+}
+
+static void diag_refresh(void)
+{
+    const clicks_state_t *s = clicks_state();
+    char buf[48];
+    bool sig = s->pm_found && !s->pm_diag;
+    int32_t uv = s->shunt_nv / 1000;    // Druck output, 0.001 mV
+    int32_t au = uv < 0 ? -uv : uv;
+    lv_snprintf(buf, sizeof buf, "%s%ld.%03ld", uv < 0 ? "-" : "", (long)(au / 1000), (long)(au % 1000));
+    ui_set_text(dp.v[0], sig ? buf : "----");
+    lv_snprintf(buf, sizeof buf, "%ld.%02ld", (long)(s->bus_mv / 1000), (long)(s->bus_mv % 1000 / 10));
+    ui_set_text(dp.v[1], sig ? buf : "----");
+    ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
 
     int32_t from;
     uint32_t ms;
