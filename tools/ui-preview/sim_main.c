@@ -22,8 +22,38 @@ static uint16_t fb[W * H];
 static uint8_t draw_buf[W * H * 2] __attribute__((aligned(4)));
 
 void fake_hw_set_scenario(const char *name);
+void fake_hw_pumpdown(int t);
+void fake_hw_rise(int t);
+
+static lv_obj_t *find_label(lv_obj_t *obj, const char *text);
+
+// The history line and pressure bar: the one plain object in the pressure card
+// (the parent of the unit label); the rest are labels.
+static lv_obj_t *find_side(void)
+{
+    lv_obj_t *card = lv_obj_get_parent(find_label(lv_screen_active(), "mB"));
+    for (uint32_t i = 0; i < lv_obj_get_child_count(card); i++) {
+        lv_obj_t *o = lv_obj_get_child(card, i);
+        if (lv_obj_get_class(o) == &lv_obj_class)
+            return o;
+    }
+    return NULL;
+}
 
 static long flushed_px;   // pixels sent to the display, for the redraw check
+// The pressure history line gains a point every 5 s, so it redraws on a
+// steady screen. The main screen check counts invalidated areas outside it
+// and the pressure bar beside it
+// (the full-frame render here always flushes the whole screen).
+static lv_area_t hist_area;
+static long invalid_px;
+
+static void invalidate_cb(lv_event_t *e)
+{
+    const lv_area_t *a = lv_event_get_param(e);
+    if (a->x1 < hist_area.x1 || a->x2 > hist_area.x2 || a->y1 < hist_area.y1 || a->y2 > hist_area.y2)
+        invalid_px += (long)(a->x2 - a->x1 + 1) * (a->y2 - a->y1 + 1);
+}
 
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
@@ -195,6 +225,7 @@ int main(int argc, char **argv)
     lv_display_set_color_format(d, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(d, draw_buf, NULL, sizeof draw_buf, LV_DISPLAY_RENDER_MODE_FULL);
     lv_display_set_flush_cb(d, flush_cb);
+    lv_display_add_event_cb(d, invalidate_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
     clicks_init();
     init_screens();
@@ -205,15 +236,18 @@ int main(int argc, char **argv)
         lv_tick_inc(1100);
         lv_timer_handler();
     }
+    lv_obj_t *side = find_side();
+    assert(side);
+    lv_obj_get_coords(side, &hist_area);
     // Readings that do not change must not redraw anything: on the board
     // every redrawn pixel is written to the SSD1963 one at a time.
-    flushed_px = 0;
+    invalid_px = 0;
     for (int i = 0; i < 3; i++) {
         lv_tick_inc(1100);
         lv_timer_handler();
     }
-    if (flushed_px != 0) {
-        fprintf(stderr, "steady-state redraw: %ld px\n", flushed_px);
+    if (invalid_px != 0) {
+        fprintf(stderr, "steady-state redraw: %ld px\n", invalid_px);
         return 1;
     }
 
@@ -224,6 +258,23 @@ int main(int argc, char **argv)
     if (argc == 4 && !strcmp(argv[3], "motor")) {
         check_motor_screen();
         goto render;
+    }
+    if (argc == 4 && !strcmp(argv[3], "hist")) {
+        // A pump-down over the history line's 1 min, one status tick a second.
+        for (int t = 0; t < 60; t++) {
+            fake_hw_pumpdown(t * 10);
+            lv_tick_inc(1000);
+            lv_timer_handler();
+        }
+    }
+    bool rise = argc == 4 && !strcmp(argv[3], "rise");
+    if (rise) {
+        // A fast rise from 0 (and a little below): the line must stay in its box.
+        for (int t = 0; t < 60; t++) {
+            fake_hw_rise(t);
+            lv_tick_inc(1000);
+            lv_timer_handler();
+        }
     }
     check_detail_tabs(argc == 4 && !strcmp(argv[3], "raw"));
     lv_obj_update_layout(lv_screen_active());
@@ -238,5 +289,15 @@ render:
     if (!f) { perror(argv[2]); return 1; }
     fwrite(fb, sizeof fb, 1, f);
     fclose(f);
+    if (rise) {
+        // No history pen (#2D5877) below the 32 px line box.
+        const uint16_t pen = (45 >> 3) << 11 | (88 >> 2) << 5 | (119 >> 3);
+        for (int32_t y = hist_area.y1 + 32; y <= hist_area.y2; y++)
+            for (int32_t x = hist_area.x1; x <= hist_area.x2; x++)
+                if (fb[y * W + x] == pen) {
+                    fprintf(stderr, "history line below its box at %ld,%ld\n", (long)x, (long)y);
+                    return 1;
+                }
+    }
     return 0;
 }

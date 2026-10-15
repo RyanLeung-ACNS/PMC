@@ -16,11 +16,14 @@
  * wired, so the INA228 input loading of the Druck output (about 5 % low)
  * and the INA228 gain and offset are inside the table.
  *
- * Stored in the on-board serial flash (extflash.c) with a CRC32, loaded at
- * start-up. If nothing valid is stored, the nominal 0 mV / 100 mV at 10 V
- * (15 psia) is used and cal_is_default() is true. A record from before
- * 0.3.30 (versions 1 to 3, CAL ATM era) is not loaded: nominal is used and
- * CAL? says to redo the bench cal.
+ * Saved inside the settings record (cfg.c, CFG SAVE or CAL SAVE) and loaded
+ * from it at start-up. With no settings record yet, the old stand-alone
+ * record (0.3.30 to 0.5.x, at 0x7FF000) is loaded instead; the first save
+ * copies it into the settings record and leaves the old one in place. If
+ * neither holds a valid table, the nominal 0 mV / 100 mV at 10 V (15 psia)
+ * is used and cal_is_default() is true. An old record from before 0.3.30
+ * (versions 1 to 3, CAL ATM era) is not loaded: CAL? says to redo the
+ * bench cal.
  *
  * Set over COM3, one command per line:
  *   CAL?                       show the active calibration
@@ -32,8 +35,8 @@
  *   CAL NEW <id text>          start an entered table (id up to 23 chars)
  *   CAL PT <mV/V> <mbar>       add a point, ratio ascending
  *   CAL APPLY                  check the entered table and use it (RAM only)
- *   CAL SAVE                   write the active table to flash
- *   CAL ERASE                  erase flash and go back to the default
+ *   CAL SAVE                   same as CFG SAVE: save all settings, cal included
+ *   CAL ERASE                  erase the old record, use nominal and CFG SAVE
  * Replies start with OK or ERR.
  */
 
@@ -47,7 +50,38 @@
 #define CAL_VAC_UNC_DEFAULT 10     // 0.010 mbar: pumped to about 1e-2 mbar, taken as 0
 #define CAL_AIR_UNC_DEFAULT 1000   // 1.0 mbar: room barometer
 
+#define CAL_MAGIC       0x4C414350UL  // "PCAL"
+#define CAL_VERSION     4   // 4: bench two-point; 1 to 3 (CAL ATM era) are not loaded
+
+// One table. Little-endian, fixed layout, CRC32 (IEEE) over everything
+// before the crc field. Kept whole inside the settings record (cfg.c).
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t npts;
+    char id[CAL_ID_LEN];
+    int32_t r_ppb[CAL_MAX_POINTS];     // ratio, ppb, strictly ascending
+    int32_t p_mmbar[CAL_MAX_POINTS];   // pressure, 0.001 mbar
+    int32_t kind;            // CAL_KIND_TABLE or CAL_KIND_BENCH
+    int32_t vac_unc_mmbar;   // bench: uncertainty of the vacuum point's pressure
+    int32_t air_unc_mmbar;   // bench: uncertainty of the air point's pressure
+    uint32_t crc;
+} cal_rec_t;
+
+// Loads the old stand-alone record if valid; cfg_init() then overrides it.
 void cal_init(void);
+// True if the active table came from the old record at start-up.
+bool cal_from_old_record(void);
+
+// For cfg.c. The record of the active table, crc filled in.
+void cal_get_record(cal_rec_t *r);
+// Header, points and crc valid.
+bool cal_record_ok(const cal_rec_t *r);
+// Makes r the active table; false (nothing changed) if it is not valid.
+bool cal_set_record(const cal_rec_t *r, bool saved);
+// Makes the nominal table active.
+void cal_set_default(bool saved);
+void cal_set_saved(bool saved);
 // Call once per reading; runs a CAL VAC / CAL AIR capture.
 void cal_update(const clicks_state_t *s);
 
@@ -57,7 +91,7 @@ int64_t cal_pressure_mmbar(int64_t r_ppb);
 bool cal_is_default(void);
 const char *cal_id(void);
 // True once the active table has been written to flash (or was loaded from
-// it), false after APPLY or a bench capture until CAL SAVE.
+// it), false after APPLY or a bench capture until CFG SAVE or CAL SAVE.
 bool cal_saved(void);
 // Version of an old record found in flash and not loaded, 0 if none.
 uint32_t cal_old_version(void);

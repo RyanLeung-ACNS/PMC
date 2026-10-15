@@ -12,4 +12,8 @@ void show_main_screen();
 // Returns false if the line is not a DATA command.
 bool main_screen_data_command(const char *line);
 
+// Once a second from the main loop: read the boards, update the checks,
+// print the status and DATA lines.
+void main_screen_sense(void);
+
 #endif // !__MAIN_SCREEN_H__H_

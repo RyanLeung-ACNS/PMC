@@ -5,30 +5,17 @@
 #include "link.h"
 #include "extflash.h"
 #include "cal.h"
+#include "cfg.h"
 #include "fixed.h"
 #include "pmc_config.h"   // PMC_DRUCK_SERIAL
 #include "clicks.h"   // live ratio for CAL VAC / CAL AIR
 
 /* --------------------------------------------------------------------------
- * Stored record. Little-endian, fixed layout, CRC32 (IEEE) over everything
- * before the crc field. Lives in the last 4 KB sector of the serial flash.
+ * Old stand-alone record (0.3.x to 0.5.x), read at start-up only. From 0.6.0
+ * the table is saved inside the settings record (cfg.c); this sector is left
+ * as it was, so flashing an older firmware still finds its cal.
  * ------------------------------------------------------------------------ */
 #define CAL_FLASH_ADDR  0x7FF000UL
-#define CAL_MAGIC       0x4C414350UL  // "PCAL"
-#define CAL_VERSION     4   // 4: bench two-point; 1 to 3 (CAL ATM era) are not loaded
-
-typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t npts;
-    char id[CAL_ID_LEN];
-    int32_t r_ppb[CAL_MAX_POINTS];     // ratio, ppb, strictly ascending
-    int32_t p_mmbar[CAL_MAX_POINTS];   // pressure, 0.001 mbar
-    int32_t kind;            // CAL_KIND_TABLE or CAL_KIND_BENCH
-    int32_t vac_unc_mmbar;   // bench: uncertainty of the vacuum point's pressure
-    int32_t air_unc_mmbar;   // bench: uncertainty of the air point's pressure
-    uint32_t crc;
-} cal_rec_t;
 
 // Nominal: 0 mV and 100 mV at 10 V = 0 and 10 mV/V over 0-15 psia.
 static const cal_rec_t cal_default = {
@@ -45,6 +32,7 @@ static bool active_is_default = true;
 static bool active_saved;          // active matches what is in flash
 static bool flash_ok;
 static uint32_t old_version;       // version of a stored record not loaded, 0 = none
+static bool from_old;              // active came from the old record at start-up
 
 /*
  * Bench two-point capture. Each point is the mean of CAPTURE_N readings
@@ -114,17 +102,51 @@ void cal_init(void)
         return;
     }
     if (rec_check(&r) == NULL && r.crc == rec_crc(&r)) {
-        r.id[CAL_ID_LEN - 1] = '\0';
-        active = r;
-        active_is_default = false;
-        active_saved = true;
-        if (r.kind == CAL_KIND_BENCH) {
-            bench.have_vac = bench.have_air = true;
-            bench.r_vac = r.r_ppb[0]; bench.p_vac = r.p_mmbar[0]; bench.u_vac = r.vac_unc_mmbar;
-            bench.r_air = r.r_ppb[1]; bench.p_air = r.p_mmbar[1]; bench.u_air = r.air_unc_mmbar;
-        }
+        cal_set_record(&r, true);
+        from_old = true;
     }
 }
+
+bool cal_from_old_record(void) { return from_old; }
+
+bool cal_record_ok(const cal_rec_t *r)
+{
+    return r->version == CAL_VERSION && rec_check(r) == NULL && r->crc == rec_crc(r);
+}
+
+void cal_get_record(cal_rec_t *r)
+{
+    *r = active;
+    r->crc = rec_crc(r);
+}
+
+bool cal_set_record(const cal_rec_t *r, bool saved)
+{
+    if (!cal_record_ok(r))
+        return false;
+    active = *r;
+    active.id[CAL_ID_LEN - 1] = '\0';
+    active_is_default = false;
+    active_saved = saved;
+    old_version = 0;
+    memset(&bench, 0, sizeof bench);
+    if (r->kind == CAL_KIND_BENCH) {
+        bench.have_vac = bench.have_air = true;
+        bench.r_vac = r->r_ppb[0]; bench.p_vac = r->p_mmbar[0]; bench.u_vac = r->vac_unc_mmbar;
+        bench.r_air = r->r_ppb[1]; bench.p_air = r->p_mmbar[1]; bench.u_air = r->air_unc_mmbar;
+    }
+    return true;
+}
+
+void cal_set_default(bool saved)
+{
+    active = cal_default;
+    active_is_default = true;
+    active_saved = saved;
+    memset(&bench, 0, sizeof bench);
+}
+
+void cal_set_saved(bool saved) { active_saved = saved; }
 
 int64_t cal_pressure_mmbar(int64_t r)
 {
@@ -232,29 +254,6 @@ static void show(void)
     link_printf("OK\r\n");
 }
 
-static void save(void)
-{
-    cal_rec_t back;
-
-    if (!flash_ok) { link_printf("ERR serial flash not found\r\n"); return; }
-    if (active_is_default) { link_printf("ERR nothing applied (CAL NEW, PT, APPLY first)\r\n"); return; }
-    active.crc = rec_crc(&active);
-    if (!extflash_erase_4k(CAL_FLASH_ADDR) ||
-        !extflash_write(CAL_FLASH_ADDR, &active, sizeof active)) {
-        link_printf("ERR flash write timed out\r\n");
-        return;
-    }
-    extflash_read(CAL_FLASH_ADDR, &back, sizeof back);
-    if (memcmp(&back, &active, sizeof back) != 0) {
-        link_printf("ERR flash verify failed\r\n");
-        return;
-    }
-    active_is_default = false;
-    active_saved = true;
-    old_version = 0;
-    link_printf("OK saved %s\r\n", active.id);
-}
-
 /*
  * Bench two-point cal, through the INA228 as wired:
  *   CAL VAC [mbar] [unc]   pump the sensor down; pressure taken as 0 unless
@@ -354,16 +353,17 @@ void cal_update(const clicks_state_t *s)
         link_printf("OK now CAL %s\r\n", vac ? "AIR <mbar>" : "VAC");
 }
 
+// Back to nominal: erase the old record too, then save the settings so
+// neither comes back at the next start-up.
 static void erase(void)
 {
     if (!flash_ok) { link_printf("ERR serial flash not found\r\n"); return; }
     if (!extflash_erase_4k(CAL_FLASH_ADDR)) { link_printf("ERR erase timed out\r\n"); return; }
-    active = cal_default;
-    active_is_default = true;
-    active_saved = false;
+    cal_set_default(false);
     old_version = 0;
-    memset(&bench, 0, sizeof bench);
-    link_printf("OK erased, using nominal\r\n");
+    from_old = false;
+    link_printf("CAL old record erased, using nominal\r\n");
+    cfg_save();
 }
 
 bool cal_command(const char *line)
@@ -410,7 +410,7 @@ bool cal_command(const char *line)
     } else if (strcmp(a, " AIR") == 0 || strncmp(a, " AIR ", 5) == 0) {
         capture_start(2, a + 4);
     } else if (strcmp(a, " SAVE") == 0) {
-        save();
+        cfg_save();   // the whole settings record, cal included
     } else if (strcmp(a, " ERASE") == 0) {
         erase();
     } else {

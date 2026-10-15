@@ -7,12 +7,18 @@
 #include "ethlink.h"
 #include "link.h"
 
+// Spaces and tabs at either end are dropped, so "MOT STOP " is MOT STOP.
 static bool line_take(link_line_t *l, char *out, size_t n)
 {
-    l->text[l->len] = '\0';
-    lv_strlcpy(out, l->text, n);
+    size_t a = 0, b = l->len;
+    while (a < b && (l->text[a] == ' ' || l->text[a] == '\t'))
+        a++;
+    while (b > a && (l->text[b - 1] == ' ' || l->text[b - 1] == '\t'))
+        b--;
+    l->text[b] = '\0';
+    lv_strlcpy(out, l->text + a, n);
     l->len = 0;
-    return true;
+    return b > a;
 }
 
 bool link_line_feed(link_line_t *l, char c, char *out, size_t n)

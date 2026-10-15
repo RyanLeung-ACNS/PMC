@@ -196,7 +196,9 @@ static void size_event(lv_event_t *e)
 static void move_event(lv_event_t *e)
 {
     int32_t steps = step_sizes[size_sel] * (int32_t)event_arg(e);
-    if (stepper3_move(steps))
+    if (stepper3_locked())
+        link_printf("MOT screen: move refused, %s\r\n", stepper3_locked());
+    else if (stepper3_move(steps))
         link_printf("MOT screen: move %ld\r\n", (long)steps);
     refresh();
 }
@@ -275,7 +277,7 @@ static void hold_event(lv_event_t *e)
 static void zero_event(lv_event_t *e)
 {
     (void)e;
-    if (!stepper3_busy()) {
+    if (!stepper3_busy() && !stepper3_locked()) {
         stepper3_zero();
         link_printf("MOT screen: zero\r\n");
     }

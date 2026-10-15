@@ -22,8 +22,10 @@
  *
  * Commands over the link, one per line, replies end with OK or ERR:
  *   MOT?                  state, position and settings
- *   MOT MOVE <steps>      relative move, + open, - close
+ *   MOT MOVE <steps>      relative move, + open, - close (1 to 400000)
+ *   MOT GOTO <pos> [sps]  absolute move, optional rate; retargets a running move
  *   MOT STOP              stop now (coils as per MOT HOLD)
+ *   MOT STOP RAMP         ramp down, then stop
  *   MOT OFF               stop now and switch all coils off
  *   MOT ZERO              set the position count to 0
  *   MOT OVERRIDE          let the next move close past an open limit
@@ -35,7 +37,7 @@
  *   MOT HOLD 0|1          keep the coils on when idle
  *   MOT DIR 0|1           1 reverses the direction
  *   MOT ORDER <abcd>      coil order on the outputs, e.g. 0123 or 0213
- * Settings are RAM only and return to the defaults at reset.
+ * Settings are kept by CFG SAVE (cfg.c) and loaded at start-up.
  */
 
 typedef enum {
@@ -48,19 +50,45 @@ typedef enum {
     STEPPER3_STOP_NONE,     // no move yet
     STEPPER3_STOP_DONE,     // reached the target
     STEPPER3_STOP_CMD,      // MOT STOP / MOT OFF / stepper3_stop()
-    STEPPER3_STOP_LIMIT     // limit input open during a closing move
+    STEPPER3_STOP_LIMIT,    // limit input open during a closing move
+    STEPPER3_STOP_TIMEOUT   // F-13: still moving after |distance| / rate + 2 s
 } stepper3_stop_t;
 
 // Pins low (coils off). Does not move the motor.
 void stepper3_init(void);
 
-// Starts a relative move in steps of the current mode. Returns false if a
-// move is running, steps is 0, or |steps| is over STEPPER3_MAX_MOVE.
-#define STEPPER3_MAX_MOVE 100000
+// Moves to an absolute position (steps of the current mode) at sps steps/s
+// (0 = the MOT RATE setting). During a move this retargets it: a target
+// further on extends it; a target behind ramps down to the start rate, then
+// turns. Returns false for a rate out of range, a target more than
+// STEPPER3_MAX_MOVE from here, or (from rest) a closing move with the limit
+// open. A target equal to the position returns true without moving.
+#define STEPPER3_MAX_MOVE 400000   // > 1.1 x the largest POS_MAX (300000)
+#define STEPPER3_TIMEOUT_MARGIN_MS 2000
+bool stepper3_goto_rate(int32_t target, uint32_t sps);
+bool stepper3_goto(int32_t target);
+// Relative move; during a move, relative to where that move ends.
 bool stepper3_move(int32_t steps);
+// Where the running move ends, or the position when idle.
+int32_t stepper3_target(void);
 
 // Stops at once. Coils stay on only if hold is set.
 void stepper3_stop(void);
+// Ramps down at the normal deceleration, then stops (last stop "stopped").
+void stepper3_stop_ramped(void);
+// From the main loop: F-13 motion timeout, stops at once.
+void stepper3_poll(void);
+// Goes up by one each time a move ends (done, stopped, limit, timeout);
+// stepper3_last_stop() then says why.
+uint32_t stepper3_move_seq(void);
+// Sets the position count (refused while moving; fine while settling).
+bool stepper3_set_position(int32_t p);
+// While set (non-NULL), MOT MOVE/GOTO/OVERRIDE/ZERO and the motor screen
+// moves are refused with this text. MOT STOP and MOT OFF always work. The
+// valve layer uses it while calibrating or with a fault latched.
+void stepper3_lock(const char *why);
+const char *stepper3_locked(void);
+void stepper3_override_cancel(void);
 // Stops at once and switches every coil off.
 void stepper3_off(void);
 
@@ -68,6 +96,9 @@ bool stepper3_busy(void);
 int32_t stepper3_position(void);
 void stepper3_zero(void);
 stepper3_stop_t stepper3_last_stop(void);
+// The last move started: where from and how long it took (so far, while
+// it runs). False if none since power-up.
+bool stepper3_last_move(int32_t *from, uint32_t *ms);
 
 // Limit input state: true if fitted and the NC contact is open.
 bool stepper3_limit_open(void);
@@ -76,8 +107,12 @@ bool stepper3_override(void);
 void stepper3_override_arm(void);
 bool stepper3_limit_fitted(void);
 
-// Settings (RAM only). Setters return false while a move is running or for
-// a value out of range (rates 16-1000 steps/s, accel 10-20000 steps/s^2).
+// Settings (saved by cfg.c). Setters return false while a move is running or
+// for a value out of range.
+#define STEPPER3_RATE_MIN  16      // steps/s, 1 MHz / 65536, the 16-bit ARR limit
+#define STEPPER3_RATE_MAX  1000
+#define STEPPER3_ACCEL_MIN 10      // steps/s^2
+#define STEPPER3_ACCEL_MAX 20000
 bool stepper3_set_rate(uint32_t sps);
 bool stepper3_set_start(uint32_t sps);
 bool stepper3_set_accel(uint32_t sps2);

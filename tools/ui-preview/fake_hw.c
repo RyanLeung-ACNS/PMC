@@ -10,6 +10,7 @@
 #include "cal.h"
 #include "rtclock.h"
 #include "uncert.h"
+#include "fixed.h"
 
 static clicks_state_t st;
 static bool fake_wdt;
@@ -168,3 +169,31 @@ const char *stepper3_stop_name(stepper3_stop_t s) { return s == STEPPER3_STOP_DO
 /* Limit switch: closed, except in the trip scenario. */
 limit_state_t limit_state(void) { return st.boost_tripped ? LIMIT_OPEN : LIMIT_CLOSED; }
 const char *limit_text(void) { return limit_state() == LIMIT_OPEN ? "OPEN" : "closed"; }
+
+/* Valve layer, as far as the screens use it. */
+#include "valve.h"
+const char *stepper3_locked(void) { return NULL; }
+void valve_sense(const clicks_state_t *s) { (void)s; }
+const char *valve_status(void) { return "Valve: MANUAL"; }
+
+/* A pump-down (sim_main.c "hist"): sets the reading for step t of 600. */
+void fake_hw_pumpdown(int t)
+{
+    static const int32_t mmbar[] = { 967819, 961000, 640000, 210000, 52000, 9100, 2100, 812, 305, 240, 236 };
+    int i = t / 60, f = t % 60;
+    st.p_mmbar = mmbar[i] + (mmbar[i + 1] - mmbar[i]) * f / 60;
+    st.reading_ok = st.pm_found && !(t > 250 && t < 272);   // a short loss shows as a gap
+    if (st.reading_ok)
+        fixed_fmt(value, sizeof value, fixed_round(st.p_mmbar, 1), 2);
+    else
+        strcpy(value, "----");
+}
+
+/* A fast rise from 0 (sim_main.c "rise"): 0 and a little below while pumped
+ * down, then up to atmosphere. Step t of 60. */
+void fake_hw_rise(int t)
+{
+    st.reading_ok = st.pm_found;
+    st.p_mmbar = t < 40 ? (t % 2 ? -400 : 0) : (t - 39) * (t - 39) * 2400;
+    fixed_fmt(value, sizeof value, fixed_round(st.p_mmbar, 1), 2);
+}

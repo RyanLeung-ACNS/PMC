@@ -28,6 +28,9 @@
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
+#include "valve.h"
+#include "cfg.h"
+#include "ui.h"
 #include "limit.h"
 #include "main_screen.h"
 
@@ -72,45 +75,99 @@ static bool perf_command(const char *line)
 }
 
 // HELP (or ?): every command the link takes. Keep in step with README.md.
-static bool help_command(const char *line)
-{
-    static const char *const lines[] = {
-        "Commands (upper case, one per line, CR or LF ends a line):",
-        "  HELP or ?                  this list",
-        "  VER?                       firmware version and build time",
-        "  DATA ON | DATA OFF         once-a-second DATA lines and status lines on or off",
-        "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-        "  LIM?                       valve limit switch state",
-        "  UNC?                       pressure uncertainty budget",
-        "  TOUCH?                     touch controller counters",
-        "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+// HELP prints the groups; HELP <group> prints one group, short enough to
+// read in the terminal without scrolling.
+static const char *const help_top[] = {
+    "Commands (upper case, one per line, CR or LF ends a line). Groups:",
+    "  HELP SYS     version, data lines, time, timing, diagnostics",
+    "  HELP CFG     save and load settings",
+    "  HELP CAL     pressure calibration",
+    "  HELP VALVE   valve calibration, % position, STOP, faults, events",
+    "  HELP MOT     valve motor and limit switch (engineering)",
+};
+static const char *const help_valve[] = {
+    "Valve (nothing moves at boot; VALVE CAL first):",
+    "  VALVE?                     mode, position, settings, switch question",
+    "  VALVE CAL                  calibrate to the closed switch (0 %)",
+    "  VALVE GOTO <0-100>         go to % open, one decimal",
+    "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
+    "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
+    "  CTRL STOP                  stop now, latch F-12",
+    "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
+    "  EVT? [1-200]               last events (default 20)",
+};
+static const char *const help_sys[] = {
+    "System:",
+    "  VER?                       firmware version and build time",
+    "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
+    "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+    "  UNC?                       pressure uncertainty budget",
+    "  TOUCH?                     touch controller counters",
+    "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
 #if PMC_PM_DIAG
-        "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
+    "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
-        "Calibration:",
-        "  CAL?                       active cal and bench points",
-        "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
-        "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
-        "  CAL SAVE                   write the active cal to flash",
-        "  CAL ERASE                  erase the saved cal, use nominal",
-        "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
-        "Valve motor:",
-        "  MOT?                       position, settings, limit",
-        "  MOT MOVE <steps>           + opens, - closes (1 to 100000)",
-        "  MOT STOP | MOT OFF         stop / stop and de-energise",
-        "  MOT ZERO                   call this position 0",
-        "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
-        "  MOT RATE <16-1000>         run rate, steps/s",
-        "  MOT START <16-1000>        start rate, steps/s",
-        "  MOT ACCEL <10-20000>       steps/s^2",
-        "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
-    };
+};
+static const char *const help_cfg[] = {
+    "Settings (motor, valve, pressure cal; changes are live, unsaved until saved):",
+    "  CFG?                       saved records, what was loaded, unsaved count",
+    "  CFG DIFF?                  settings that differ from the newest save",
+    "  CFG SAVE                   save everything (CAL SAVE does the same)",
+    "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
+    "  CFG LOAD DEFAULTS          factory motor and valve settings, cal kept",
+    "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
+};
+static const char *const help_cal[] = {
+    "Calibration:",
+    "  CAL?                       active cal and bench points",
+    "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
+    "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+    "  CAL SAVE                   save all settings, cal included (= CFG SAVE)",
+    "  CAL ERASE                  use nominal and save (old cal record erased)",
+    "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
+};
+static const char *const help_mot[] = {
+    "Valve motor (+ opens, - closes):",
+    "  MOT?                       position, target, settings, limit",
+    "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
+    "  MOT MOVE <steps>           relative, 1 to 400000",
+    "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
+    "  MOT ZERO                   call this position 0",
+    "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
+    "  LIM?                       limit switch state",
+    "Motor settings (refused during a move; CFG SAVE keeps):",
+    "  MOT RATE <16-1000>         run rate, steps/s",
+    "  MOT START <16-1000>        start rate, steps/s",
+    "  MOT ACCEL <10-20000>       steps/s^2",
+    "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
+};
 
-    if (strcmp(line, "HELP") != 0 && strcmp(line, "?") != 0)
-        return false;
-    for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++)
+static void help_print(const char *const *lines, size_t n)
+{
+    for (size_t i = 0; i < n; i++)
         link_printf("%s\r\n", lines[i]);
     link_printf("OK\r\n");
+}
+#define HELP_PRINT(a) help_print(a, sizeof a / sizeof a[0])
+
+static bool help_command(const char *line)
+{
+    if (strcmp(line, "HELP") == 0 || strcmp(line, "?") == 0)
+        HELP_PRINT(help_top);
+    else if (strcmp(line, "HELP SYS") == 0)
+        HELP_PRINT(help_sys);
+    else if (strcmp(line, "HELP CFG") == 0)
+        HELP_PRINT(help_cfg);
+    else if (strcmp(line, "HELP CAL") == 0)
+        HELP_PRINT(help_cal);
+    else if (strcmp(line, "HELP VALVE") == 0 || strcmp(line, "HELP CTRL") == 0)
+        HELP_PRINT(help_valve);
+    else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
+        HELP_PRINT(help_mot);
+    else if (strncmp(line, "HELP ", 5) == 0)
+        link_printf("ERR expected: HELP, HELP SYS, HELP CFG, HELP CAL, HELP VALVE or HELP MOT\r\n");
+    else
+        return false;
     return true;
 }
 
@@ -120,6 +177,12 @@ static bool help_command(const char *line)
 void board_init()
 {
     lv_init();
+#if PMC_UI_NEW
+    // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
+    // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
+    static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
+    lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
+#endif
     lv_port_disp_init();
     lv_port_indev_init();
 
@@ -146,13 +209,22 @@ void application_init()
     // on a MOT MOVE command.
     clicks_init();
     limit_init();
+    valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
+    // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
+    cfg_init();
 
+#if PMC_UI_NEW
+    // The new frame and Home. The 0.6.0 screens are built the first time
+    // Menu > Service opens them, which keeps their LVGL heap free until then.
+    ui_init();
+#else
     // Initialize all available screens.
     init_screens();
 
     // Show the main screen.
     // To display another screen, call its respective show function.
     show_main_screen();
+#endif
 
     // Draw the screen once first, so a link start-up fault cannot leave it blank.
     lv_timer_handler();
@@ -202,14 +274,26 @@ int main(void)
 
     ////////////////////////// LVGL timing routine (DO NOT REMOVE) //////////////////////////
     char line[96];
+    uint32_t sense_ms = lv_tick_get();
     while (1)
     {
         link_task();
         touch_poll();
         rtclock_poll();
         limit_poll();
-        if (link_getline(line, sizeof line) && !help_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+        stepper3_poll();
+        valve_task();
+        if (lv_tick_elaps(sense_ms) >= 1000) {
+            sense_ms += 1000;
+            if (lv_tick_elaps(sense_ms) >= 1000)   // fell behind: no catch-up burst
+                sense_ms = lv_tick_get();
+            main_screen_sense();
+        }
+        bool got = link_getline(line, sizeof line);
+        if (got)
+            link_printf("> %s\r\n", line);   // echo, so the log shows what was received
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+            !limit_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !main_screen_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

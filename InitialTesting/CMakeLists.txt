@@ -38,10 +38,21 @@ add_executable(InitialTesting
     clicks.c
     stepper3.h
     stepper3.c
+    valve.h
+    valve.c
     extflash.h
     extflash.c
     cal.h
     cal.c
+    cfg.h
+    cfg.c
+    ui.h
+    ui.c
+    ui_home.c
+    ui_valve.c
+    ui_font_12.c
+    ui_font_16.c
+    ui_font_26.c
     sysinfo.h
     sysinfo.c
     rtclock.c

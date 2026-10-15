@@ -1,0 +1,951 @@
+#include <stdlib.h>
+#include <string.h>
+
+#include "lvgl.h"
+#include "pmc_config.h"
+#include "rtclock.h"
+#include "stepper3.h"
+#include "valve.h"
+#include "main_screen.h"
+#include "screens.h"
+#include "ui.h"
+
+/* --------------------------------------------------------------------------
+ * Fonts: tabular digits. Every digit takes the width of the widest, so a
+ * right-aligned reading does not shift as it changes.
+ * ------------------------------------------------------------------------ */
+lv_font_t ui_num_16, ui_num_26;
+
+static bool num_glyph_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter, uint32_t next)
+{
+    const lv_font_t *base = font->user_data;
+    if (!base->get_glyph_dsc(base, dsc, letter, next))
+        return false;
+    if (letter >= '0' && letter <= '9') {
+        int32_t widest = 0;
+        lv_font_glyph_dsc_t d;
+        for (uint32_t c = '0'; c <= '9'; c++)
+            if (base->get_glyph_dsc(base, &d, c, 0) && d.adv_w > widest)
+                widest = d.adv_w;
+        dsc->ofs_x += (widest - dsc->adv_w) / 2;
+        dsc->adv_w = widest;
+    }
+    return true;
+}
+
+static void num_font(lv_font_t *f, const lv_font_t *base)
+{
+    *f = *base;
+    f->get_glyph_dsc = num_glyph_dsc;
+    f->kerning = LV_FONT_KERNING_NONE;
+    f->user_data = (void *)base;
+}
+
+/* --------------------------------------------------------------------------
+ * Styles (STYLE-GUIDE.md section 6)
+ * ------------------------------------------------------------------------ */
+#define UI_EDGE    lv_color_hex(0xAEB9C4)
+#define UI_PRESS   lv_color_hex(0xE3E9EF)
+#define UI_DIS_BG  lv_color_hex(0xE9EEF2)
+#define UI_DIS_TX  lv_color_hex(0x9AA4AE)
+#define UI_CHEV    lv_color_hex(0x7B8794)
+
+static lv_style_t st_btn, st_btn_pr, st_btn_dis, st_act, st_act_pr, st_act_small,
+                  st_red, st_red_pr, st_dark, st_dark_pr, st_card, st_stop_op, st_stop_op_pr;
+#define ST_DIS LV_STATE_USER_1   // greyed, still clickable so it can say why
+
+static void styles_init(void)
+{
+    lv_style_init(&st_btn);
+    lv_style_set_bg_opa(&st_btn, LV_OPA_COVER);
+    lv_style_set_bg_color(&st_btn, UI_CARD);
+    lv_style_set_radius(&st_btn, 6);
+    lv_style_set_border_side(&st_btn, LV_BORDER_SIDE_BOTTOM);   // the raised edge
+    lv_style_set_border_width(&st_btn, 2);
+    lv_style_set_border_color(&st_btn, UI_EDGE);
+    lv_style_set_text_color(&st_btn, UI_TEXT);
+    lv_style_set_text_font(&st_btn, &ui_font_16);
+
+    lv_style_init(&st_btn_pr);
+    lv_style_set_bg_color(&st_btn_pr, UI_PRESS);
+    lv_style_set_border_width(&st_btn_pr, 0);
+
+    lv_style_init(&st_btn_dis);
+    lv_style_set_bg_color(&st_btn_dis, UI_DIS_BG);
+    lv_style_set_text_color(&st_btn_dis, UI_DIS_TX);
+    lv_style_set_border_width(&st_btn_dis, 0);
+
+    lv_style_init(&st_act);
+    lv_style_set_bg_color(&st_act, UI_BLUE);
+    lv_style_set_text_color(&st_act, lv_color_white());
+    lv_style_set_border_width(&st_act, 0);
+    lv_style_init(&st_act_pr);
+    lv_style_set_bg_color(&st_act_pr, lv_color_hex(0x24475F));
+    lv_style_init(&st_act_small);
+    lv_style_set_text_color(&st_act_small, lv_color_hex(0xD5E2EC));
+
+    lv_style_init(&st_red);
+    lv_style_set_bg_color(&st_red, UI_FAULT);
+    lv_style_set_text_color(&st_red, lv_color_white());
+    lv_style_set_border_width(&st_red, 0);
+    lv_style_init(&st_red_pr);
+    lv_style_set_bg_color(&st_red_pr, lv_color_hex(0xAA1E1E));
+
+    // STOP outside AUTO (no latch): white with a red edge and red word.
+    lv_style_init(&st_stop_op);
+    lv_style_set_bg_color(&st_stop_op, UI_CARD);
+    lv_style_set_text_color(&st_stop_op, UI_FAULT);
+    lv_style_set_border_side(&st_stop_op, LV_BORDER_SIDE_FULL);
+    lv_style_set_border_width(&st_stop_op, 3);
+    lv_style_set_border_color(&st_stop_op, UI_FAULT);
+    lv_style_set_pad_all(&st_stop_op, -3);      // the word keeps its place
+    lv_style_init(&st_stop_op_pr);
+    lv_style_set_bg_color(&st_stop_op_pr, lv_color_hex(0xF6D5D5));
+
+    lv_style_init(&st_dark);
+    lv_style_set_bg_color(&st_dark, UI_TEXT);
+    lv_style_set_text_color(&st_dark, lv_color_white());
+    lv_style_set_radius(&st_dark, 0);
+    lv_style_set_border_width(&st_dark, 0);
+    lv_style_init(&st_dark_pr);
+    lv_style_set_bg_color(&st_dark_pr, lv_color_hex(0x3C4856));
+
+    lv_style_init(&st_card);
+    lv_style_set_bg_opa(&st_card, LV_OPA_COVER);
+    lv_style_set_bg_color(&st_card, UI_CARD);
+    lv_style_set_radius(&st_card, 6);
+    lv_style_set_border_color(&st_card, UI_FAULT);   // alarm edge, width 0 until set
+    lv_style_set_border_width(&st_card, 0);
+}
+
+static lv_obj_t *plain(lv_obj_t *parent)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_remove_style_all(o);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    return o;
+}
+
+lv_obj_t *ui_card(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h)
+{
+    lv_obj_t *o = plain(parent);
+    lv_obj_add_style(o, &st_card, 0);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_size(o, w, h);
+    return o;
+}
+
+lv_obj_t *ui_label(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, const lv_font_t *font,
+                   lv_color_t color, lv_text_align_t align, const char *text)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_pos(l, x, y);
+    if (w > 0) {
+        lv_obj_set_width(l, w);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+    }
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, color, 0);
+    lv_obj_set_style_text_align(l, align, 0);
+    lv_label_set_text(l, text);
+    return l;
+}
+
+void ui_set_text(lv_obj_t *l, const char *text)
+{
+    if (strcmp(lv_label_get_text(l), text) != 0)
+        lv_label_set_text(l, text);
+}
+
+void ui_set_color(lv_obj_t *o, lv_color_t c)
+{
+    if (!lv_color_eq(lv_obj_get_style_text_color(o, LV_PART_MAIN), c))
+        lv_obj_set_style_text_color(o, c, 0);
+}
+
+lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, const char *caption)
+{
+    lv_obj_t *c = ui_card(parent, x, y, w, h);
+    ui_label(c, 10, 5, w - 20, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, caption);
+    return ui_label(c, 10, 22, w - 20, &ui_num_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+}
+
+const char *ui_date(char *buf, size_t n, const char *iso)
+{
+    static const char *const mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    int m = (iso[5] - '0') * 10 + iso[6] - '0';
+    lv_snprintf(buf, n, "%c%c %s %.5s", iso[8] == '0' ? ' ' : iso[8], iso[9],
+                m >= 1 && m <= 12 ? mon[m - 1] : "?", iso + 11);
+    return iso[8] == '0' ? buf + 1 : buf;
+}
+
+const char *ui_when(char *buf, size_t n, uint32_t age_ms)
+{
+    const char *iso = rtclock_iso();
+    if (iso[0]) {
+        int32_t tod = ((iso[11] - '0') * 10 + iso[12] - '0') * 3600 + ((iso[14] - '0') * 10 + iso[15] - '0') * 60
+                      + (iso[17] - '0') * 10 + iso[18] - '0';
+        tod = (int32_t)((tod - (int32_t)(age_ms / 1000) % 86400 + 86400) % 86400);
+        lv_snprintf(buf, n, "%02ld:%02ld:%02ld", (long)(tod / 3600), (long)(tod / 60 % 60), (long)(tod % 60));
+    } else {
+        uint32_t t = (lv_tick_get() - age_ms) / 1000;
+        lv_snprintf(buf, n, "up %lu:%02lu:%02lu", (unsigned long)(t / 3600), (unsigned long)(t / 60 % 60),
+                    (unsigned long)(t % 60));
+    }
+    return buf;
+}
+
+const char *ui_fmt1(char *buf, size_t n, int64_t milli)
+{
+    bool neg = milli < 0;
+    int64_t t = ((neg ? -milli : milli) + 50) / 100;
+    lv_snprintf(buf, n, "%s%ld.%ld", neg && t ? "-" : "", (long)(t / 10), (long)(t % 10));
+    return buf;
+}
+
+/* --------------------------------------------------------------------------
+ * Buttons. Child 0 is the main label, then the chevron (nav only), then the
+ * 12 px state line, made on first use (most buttons never have one).
+ * ------------------------------------------------------------------------ */
+#define BTN_NAV   LV_OBJ_FLAG_USER_1    // on the button
+#define BTN_SMALL LV_OBJ_FLAG_USER_1    // on its state line
+
+static lv_obj_t *btn_small(lv_obj_t *b)
+{
+    uint32_t n = lv_obj_get_child_count(b);
+    lv_obj_t *last = lv_obj_get_child(b, (int32_t)n - 1);
+    return n > 1 && lv_obj_has_flag(last, BTN_SMALL) ? last : NULL;
+}
+
+static void btn_layout(lv_obj_t *b)
+{
+    lv_obj_t *main = lv_obj_get_child(b, 0), *small = btn_small(b);
+    bool two = small && !lv_obj_has_flag(small, LV_OBJ_FLAG_HIDDEN);
+    bool nav = lv_obj_has_flag(b, BTN_NAV);
+    lv_align_t al = nav ? LV_ALIGN_LEFT_MID : LV_ALIGN_CENTER;
+    int32_t x = nav ? 12 : 0;
+    lv_obj_align(main, al, x, two ? -8 : 0);
+    if (small)
+        lv_obj_align(small, al, x, 10);
+}
+
+lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
+                 ui_btn_kind_t kind, const char *text, lv_event_cb_t cb, void *user)
+{
+    lv_obj_t *b = lv_obj_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(b, x, y);
+    lv_obj_set_size(b, w, h);
+    lv_obj_add_style(b, &st_btn, 0);
+    lv_obj_add_style(b, &st_btn_pr, LV_STATE_PRESSED);
+    if (kind == UI_PRIMARY) {
+        lv_obj_add_style(b, &st_act, 0);
+        lv_obj_add_style(b, &st_act_pr, LV_STATE_PRESSED);
+    } else if (kind == UI_RED) {
+        lv_obj_add_style(b, &st_red, 0);
+        lv_obj_add_style(b, &st_red_pr, LV_STATE_PRESSED);
+    } else if (kind == UI_DARK) {
+        lv_obj_add_style(b, &st_dark, 0);
+        lv_obj_add_style(b, &st_dark_pr, LV_STATE_PRESSED);
+    }
+    lv_obj_add_style(b, &st_btn_dis, ST_DIS);
+    if (kind == UI_NAV)
+        lv_obj_add_flag(b, BTN_NAV);
+    if (kind == UI_PRIMARY)
+        lv_obj_add_flag(b, LV_OBJ_FLAG_USER_2);   // its state line is light
+
+    lv_obj_t *main = lv_label_create(b);
+    lv_obj_set_width(main, w - (kind == UI_NAV ? 36 : 8));
+    lv_obj_set_style_text_align(main, kind == UI_NAV || kind == UI_DARK ? LV_TEXT_ALIGN_LEFT
+                                                                         : LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(main, text);
+    if (kind == UI_NAV) {
+        lv_obj_t *chev = lv_label_create(b);
+        lv_obj_set_style_text_font(chev, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(chev, UI_CHEV, 0);
+        lv_label_set_text(chev, LV_SYMBOL_RIGHT);
+        lv_obj_align(chev, LV_ALIGN_RIGHT_MID, -8, 0);
+    }
+    btn_layout(b);
+    if (cb)
+        lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, user);
+    return b;
+}
+
+void ui_btn_text(lv_obj_t *b, const char *text, const char *small)
+{
+    lv_obj_t *m = lv_obj_get_child(b, 0), *s = btn_small(b);
+    bool has = small && *small;
+    ui_set_text(m, text);
+    if (!s && !has)
+        return;
+    if (!s) {
+        s = lv_label_create(b);
+        lv_obj_add_flag(s, BTN_SMALL | LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(s, lv_obj_get_style_width(m, 0));
+        lv_obj_set_style_text_align(s, lv_obj_get_style_text_align(m, 0), 0);
+        lv_obj_set_style_text_font(s, &ui_font_12, 0);
+        lv_obj_set_style_text_color(s, UI_MUTED, 0);
+        if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_2))
+            lv_obj_add_style(s, &st_act_small, 0);
+    }
+    bool had = !lv_obj_has_flag(s, LV_OBJ_FLAG_HIDDEN);
+    ui_set_text(s, has ? small : "");
+    if (had != has) {
+        if (has) lv_obj_remove_flag(s, LV_OBJ_FLAG_HIDDEN);
+        else     lv_obj_add_flag(s, LV_OBJ_FLAG_HIDDEN);
+        btn_layout(b);
+    }
+}
+
+void ui_btn_enable(lv_obj_t *b, bool on)
+{
+    if (on == !lv_obj_has_state(b, ST_DIS))
+        return;
+    if (on) lv_obj_remove_state(b, ST_DIS);
+    else    lv_obj_add_state(b, ST_DIS);
+}
+
+bool ui_btn_disabled(lv_event_t *e)
+{
+    return lv_obj_has_state(lv_event_get_current_target(e), ST_DIS);
+}
+
+/* --------------------------------------------------------------------------
+ * Frame on lv_layer_top(): header, status strip, STOP
+ * ------------------------------------------------------------------------ */
+static lv_obj_t *frame, *hdr, *back_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
+static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
+static lv_obj_t *stop_btn;
+
+static lv_obj_t *home_scr, *cur_scr, *overlay;
+// Screens to go Back to (Home is under them all), e.g. Menu under Faults and log.
+static const ui_screen_t *back_stack[4];
+static int back_n;
+static bool overlay_q;          // the overlay is the closed-switch question
+static bool kp_open;            // the overlay is the keypad
+static void kp_side(void);
+static void question_check(void);
+static lv_obj_t *overlay_new(void);
+static const ui_screen_t *cur = &ui_scr_home;
+static bool service;
+
+static char msg_text[96];
+static uint32_t msg_until;
+
+static ui_strip_kind_t line_kind;
+static lv_color_t line_dot;
+static char line_text[96];
+static lv_event_cb_t act_cb;
+static int32_t strip_w = 343;
+
+static void open_screen(const ui_screen_t *s);
+
+static void frame_refresh(void);
+
+static void back_event(lv_event_t *e)
+{
+    (void)e;
+    if (overlay)
+        ui_overlay_close();
+    else if (back_n)
+        open_screen(back_stack[--back_n]);
+    else if (cur != &ui_scr_home)
+        ui_home();
+}
+
+static void stop_event(lv_event_t *e)
+{
+    (void)e;
+    ui_overlay_close();
+    valve_stop();
+    frame_refresh();
+}
+
+static void ok_event(lv_event_t *e)
+{
+    (void)e;
+    msg_until = 0;
+}
+
+static void act_event(lv_event_t *e)
+{
+    if (act_cb)
+        act_cb(e);
+}
+
+static void build_frame(void)
+{
+    frame = plain(lv_layer_top());
+    lv_obj_set_size(frame, 480, 272);
+    lv_obj_add_flag(frame, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    hdr = plain(frame);
+    lv_obj_set_size(hdr, 480, 40);
+    lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(hdr, UI_TEXT, 0);
+    lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);    // touches on the header stop here
+    fault_rule = plain(hdr);
+    lv_obj_set_pos(fault_rule, 0, 36);
+    lv_obj_set_size(fault_rule, 480, 4);
+    lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
+    lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
+    back_btn = ui_btn(hdr, 0, 0, 119, 40, UI_DARK, LV_SYMBOL_LEFT " Back", back_event, NULL);
+    // A touch in the 8 px gap under the header is Back's, not the page's.
+    lv_obj_set_ext_click_area(hdr, 8);
+    lv_obj_set_ext_click_area(back_btn, 8);
+    lv_obj_align(lv_obj_get_child(back_btn, 0), LV_ALIGN_LEFT_MID, 4, 0);
+    pmc_lbl = ui_label(hdr, 10, 11, 109, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "PMC");
+    title_lbl = ui_label(hdr, 127, 11, 166, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
+    lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
+    mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
+    mode_dot = plain(hdr);
+    lv_obj_set_pos(mode_dot, 460, 15);
+    lv_obj_set_size(mode_dot, 10, 10);
+    lv_obj_set_style_radius(mode_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_color(mode_dot, lv_color_hex(0xC3CDD7), 0);
+    lv_obj_set_style_bg_color(mode_dot, UI_FAULT, 0);
+
+    strip = plain(frame);
+    lv_obj_set_pos(strip, 10, 216);
+    lv_obj_set_size(strip, 343, 48);
+    lv_obj_add_style(strip, &st_card, 0);
+    lv_obj_add_flag(strip, LV_OBJ_FLAG_CLICKABLE);
+    strip_dot = plain(strip);
+    lv_obj_set_pos(strip_dot, 12, 20);
+    lv_obj_set_size(strip_dot, 8, 8);
+    lv_obj_set_style_radius(strip_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(strip_dot, LV_OPA_COVER, 0);
+    strip_icon = ui_label(strip, 6, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
+                          LV_SYMBOL_WARNING);
+    strip_text = ui_label(strip, 28, 0, 303, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    lv_label_set_long_mode(strip_text, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(strip_text, 4, 0);
+    strip_ok = ui_btn(strip, 279, 4, 60, 40, UI_SECONDARY, "OK", ok_event, NULL);
+    strip_act = ui_btn(strip, 239, 4, 100, 40, UI_PRIMARY, "", act_event, NULL);
+
+    stop_btn = ui_btn(frame, 361, 216, 109, 48, UI_RED, "STOP", NULL, NULL);
+    lv_obj_set_style_text_font(lv_obj_get_child(stop_btn, 0), &ui_font_26, 0);
+    lv_obj_add_event_cb(stop_btn, stop_event, LV_EVENT_PRESSED, NULL);   // on press, not release
+    lv_obj_add_style(stop_btn, &st_stop_op, LV_STATE_USER_2);
+    lv_obj_add_style(stop_btn, &st_stop_op_pr, LV_STATE_USER_2 | LV_STATE_PRESSED);
+}
+
+static void show(lv_obj_t *o, bool on)
+{
+    if (on == !lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+        return;
+    if (on) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_msg(const char *text)
+{
+    lv_strlcpy(msg_text, text, sizeof msg_text);
+    msg_until = lv_tick_get() + 5000;
+    if (!msg_until)
+        msg_until = 1;
+}
+
+void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text)
+{
+    line_kind = kind;
+    line_dot = dot;
+    lv_strlcpy(line_text, text, sizeof line_text);
+}
+
+void ui_strip_width(int32_t w) { strip_w = w; }
+
+void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb)
+{
+    act_cb = text ? cb : NULL;
+    if (text)
+        ui_btn_text(strip_act, text, small);
+}
+
+static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, bool ok, bool act)
+{
+    static const uint32_t bg[] = { 0xFFFFFF, 0xE0E0E0, 0x3F3F3F, 0x000000 };
+    lv_color_t b = lv_color_hex(bg[kind]);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(strip, 0), b))
+        lv_obj_set_style_bg_color(strip, b, 0);
+    int32_t bw = kind == UI_STRIP_FAULT ? 3 : kind == UI_STRIP_PROMPT ? 1 : 0;
+    lv_color_t bc = kind == UI_STRIP_FAULT ? UI_FAULT : UI_WARN;
+    if (lv_obj_get_style_border_width(strip, 0) != bw || !lv_color_eq(lv_obj_get_style_border_color(strip, 0), bc)) {
+        lv_obj_set_style_border_width(strip, bw, 0);
+        lv_obj_set_style_pad_all(strip, -bw, 0);    // children keep their place
+        lv_obj_set_style_border_color(strip, bc, 0);
+    }
+    show(strip_dot, kind == UI_STRIP_INFO);
+    if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
+        lv_obj_set_style_bg_color(strip_dot, dot, 0);
+    show(strip_icon, kind >= UI_STRIP_WARN);
+    ui_set_color(strip_icon, kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    ui_set_color(strip_text, kind >= UI_STRIP_WARN ? lv_color_white()
+                             : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
+    int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
+    int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
+    if (lv_obj_get_width(strip) != strip_w) {
+        lv_obj_set_width(strip, strip_w);
+        lv_obj_set_x(strip_ok, strip_w - 64);
+        lv_obj_set_x(strip_act, strip_w - 104);
+    }
+    if (lv_obj_get_x(strip_text) != x || lv_obj_get_width(strip_text) != w) {
+        lv_obj_set_x(strip_text, x);
+        lv_obj_set_width(strip_text, w);
+    }
+    ui_set_text(strip_text, text);
+    lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
+    show(strip_ok, ok);
+    show(strip_act, act);
+}
+
+static void frame_refresh(void)
+{
+    const char *tag, *text;
+    int nf = valve_fault_count();
+    bool f12 = valve_fault_is("F-12");
+    valve_mode_t m = valve_mode();
+
+    // Header.
+    bool home = cur == &ui_scr_home;
+    show(back_btn, !home || overlay);
+    show(pmc_lbl, home && !overlay);
+    show(title_lbl, !home);
+    if (!home)
+        ui_set_text(title_lbl, cur->title);
+    ui_set_text(mode_lbl, f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name());
+    show(fault_rule, nf > 0);
+    bool op = !valve_stop_latches();
+    if (op != lv_obj_has_state(stop_btn, LV_STATE_USER_2)) {
+        if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
+        else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
+    }
+    // Dot: red with a fault, filled grey in AUTO (not built), else a ring.
+    lv_opa_t opa = nf ? LV_OPA_COVER : LV_OPA_TRANSP;
+    if (lv_obj_get_style_bg_opa(mode_dot, 0) != opa) {
+        lv_obj_set_style_bg_opa(mode_dot, opa, 0);
+        lv_obj_set_style_border_width(mode_dot, nf ? 0 : 2, 0);
+    }
+
+    question_check();
+
+    // The screen's own line and Home's action, then the frame's priorities.
+    act_cb = NULL;
+    if (cur->refresh)
+        cur->refresh();
+    show(strip, !overlay);
+    if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
+        msg_until = 0;
+    char buf[96];
+    if (msg_until) {
+        strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
+    } else if (valve_fault_first(&tag, &text)) {
+        if (f12)
+            lv_strlcpy(buf, "Stopped. Valve held, not closed.", sizeof buf);
+        else if (nf > 1)
+            lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
+        else
+            lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
+        strip_draw(UI_STRIP_FAULT, UI_IDLE, buf, false, act_cb != NULL);
+    } else if (stepper3_override()) {
+        strip_draw(UI_STRIP_WARN, UI_IDLE, "Limit override on", false, act_cb != NULL);
+    } else {
+        strip_draw(line_kind, line_dot, line_text, false, act_cb != NULL);
+    }
+}
+
+static void fast_timer(lv_timer_t *t)
+{
+    (void)t;
+    if (service)
+        return;
+    if (cur->fast)
+        cur->fast();
+    if (kp_open)
+        kp_side();             // the keypad's present value follows the valve
+}
+
+static void refresh_timer(lv_timer_t *t)
+{
+    (void)t;
+    if (service) {
+        // Back on Home once the 0.6.0 screens are left (their Back goes to
+        // the old main screen; its "Home" button calls ui_home()).
+        return;
+    }
+    frame_refresh();
+}
+
+/* --------------------------------------------------------------------------
+ * Screens
+ * ------------------------------------------------------------------------ */
+static lv_obj_t *new_screen(void)
+{
+    lv_obj_t *s = lv_obj_create(NULL);
+    lv_obj_remove_style_all(s);
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(s, UI_BG, 0);
+    lv_obj_set_style_text_font(s, &ui_font_16, 0);
+    lv_obj_set_style_text_color(s, UI_TEXT, 0);
+    return s;
+}
+
+void ui_open(const ui_screen_t *s)
+{
+    if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
+        back_stack[back_n++] = cur;
+    open_screen(s);
+}
+
+static void open_screen(const ui_screen_t *s)
+{
+    ui_overlay_close();
+    lv_obj_t *old = cur_scr;
+    lv_obj_t *scr = new_screen();
+    cur = s;
+    cur_scr = scr;
+    strip_w = 343;
+    s->build(scr);
+    lv_screen_load(scr);
+    if (old != home_scr)
+        lv_obj_delete(old);
+    msg_until = 0;
+    frame_refresh();
+}
+
+void ui_home(void)
+{
+    back_n = 0;
+    ui_overlay_close();
+    lv_obj_t *old = cur_scr;
+    cur = &ui_scr_home;
+    cur_scr = home_scr;
+    strip_w = 343;
+    lv_screen_load(home_scr);
+    if (service) {
+        service = false;
+        show(frame, true);
+    } else if (old != home_scr) {
+        lv_obj_delete(old);
+    }
+    frame_refresh();
+}
+
+void ui_service(void)
+{
+    ui_overlay_close();
+    show(frame, false);
+    service = true;
+    static bool built;
+    if (!built) {
+        init_screens();       // the 0.6.0 screens, kept once built
+        built = true;
+    }
+    show_main_screen();
+    if (cur_scr != home_scr)
+        lv_obj_delete(cur_scr);
+    cur = &ui_scr_home;
+    cur_scr = home_scr;
+}
+
+bool ui_on_service(void) { return service; }
+
+/* --------------------------------------------------------------------------
+ * Overlays: keypad and confirm, over 0,40 480x232 (STOP stays on top)
+ * ------------------------------------------------------------------------ */
+bool ui_overlay_open(void) { return overlay != NULL; }
+
+void ui_overlay_close(void)
+{
+    if (overlay) {
+        lv_obj_delete(overlay);
+        overlay = NULL;
+    }
+    overlay_q = false;
+    kp_open = false;
+}
+
+lv_obj_t *ui_overlay(void) { return overlay_new(); }
+
+static lv_obj_t *overlay_new(void)
+{
+    ui_overlay_close();
+    overlay = plain(cur_scr);
+    lv_obj_set_pos(overlay, 0, 40);
+    lv_obj_set_size(overlay, 480, 232);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_CLICKABLE);   // nothing under it is touched
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(overlay, UI_BG, 0);
+    return overlay;
+}
+
+// Keypad.
+static struct {
+    char entry[10];
+    int32_t min10, max10;
+    ui_keypad_set_t on_set;
+    lv_obj_t *value, *title, *info, *err, *side;
+    int32_t (*side10)(void);   // live side value, 0.1 units
+} kp;
+
+static void kp_side(void)
+{
+    char v[16];
+    if (kp.side && kp.side10)
+        ui_set_text(kp.side, ui_fmt1(v, sizeof v, (int64_t)kp.side10() * 100));
+}
+
+static void kp_show_err(const char *why)
+{
+    show(kp.title, why == NULL);
+    show(kp.info, why == NULL);
+    show(kp.err, why != NULL);
+    if (why)
+        ui_set_text(kp.err, why);
+}
+
+static bool kp_parse(int32_t *v10)
+{
+    const char *s = kp.entry;
+    int32_t whole = 0, frac = 0;
+    bool neg = *s == '-';
+    if (neg) s++;
+    if (!*s)
+        return false;
+    while (*s >= '0' && *s <= '9')
+        whole = whole * 10 + (*s++ - '0');
+    if (*s == '.') {
+        s++;
+        if (*s >= '0' && *s <= '9')
+            frac = *s - '0';
+    }
+    *v10 = (neg ? -1 : 1) * (whole * 10 + frac);
+    return true;
+}
+
+static void kp_key(lv_event_t *e)
+{
+    const char *k = lv_event_get_user_data(e);
+    size_t n = strlen(kp.entry);
+    char *dot = strchr(kp.entry, '.');
+    kp_show_err(NULL);
+    if (strcmp(k, "<") == 0) {
+        if (n) kp.entry[n - 1] = '\0';
+    } else if (strcmp(k, "set") == 0) {
+        int32_t v10;
+        const char *why = NULL;
+        if (!kp_parse(&v10)) {
+            ui_overlay_close();
+            return;
+        }
+        if (v10 < kp.min10 || v10 > kp.max10) {
+            char a[16], b[16], t[48];
+            lv_snprintf(t, sizeof t, "Outside %s to %s", ui_fmt1(a, sizeof a, kp.min10 * 100),
+                        ui_fmt1(b, sizeof b, kp.max10 * 100));
+            kp_show_err(t);
+            return;
+        }
+        if (!kp.on_set(v10, &why)) {
+            kp_show_err(why ? why : "Refused");
+            return;
+        }
+        ui_overlay_close();
+        return;
+    } else if (n < sizeof kp.entry - 1) {
+        if (*k == '.') {
+            if (dot) return;
+            if (!n) { strcpy(kp.entry, "0"); n = 1; }
+        } else if (dot && strlen(dot) > 1) {
+            return;                           // one decimal
+        } else if (n == 1 && kp.entry[0] == '0') {
+            n = 0;                            // no leading zero
+        }
+        kp.entry[n] = *k;
+        kp.entry[n + 1] = '\0';
+    }
+    ui_set_text(kp.value, kp.entry);
+}
+
+void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10,
+               const char *side_label, int32_t (*side10)(void), ui_keypad_set_t on_set)
+{
+    lv_obj_t *o = overlay_new();
+    memset(&kp, 0, sizeof kp);
+    kp.min10 = min10;
+    kp.max10 = max10;
+    kp.on_set = on_set;
+    kp.side10 = side10;
+    kp_open = true;
+
+    lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
+    kp.title = ui_label(card, 10, 6, 180, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
+    kp.info = ui_label(card, 10, 24, 180, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, info);
+    kp.err = ui_label(card, 10, 6, 176, &ui_font_12, UI_FAULT, LV_TEXT_ALIGN_LEFT, "");
+    lv_label_set_long_mode(kp.err, LV_LABEL_LONG_WRAP);
+    lv_obj_add_flag(kp.err, LV_OBJ_FLAG_HIDDEN);
+    kp.value = ui_label(card, 190, 10, 143, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "");
+
+    static const char *const keys[3][4] = { { "7", "8", "9", "<" }, { "4", "5", "6", "0" }, { "1", "2", "3", "." } };
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 4; c++) {
+            const char *k = keys[r][c];
+            bool bs = *k == '<';
+            lv_obj_t *b = ui_btn(o, 10 + c * 70, 64 + r * 56, bs ? 132 : 62, 48, UI_SECONDARY,
+                                 bs ? LV_SYMBOL_BACKSPACE : k, kp_key, (void *)k);
+            if (bs)
+                lv_obj_set_style_text_font(lv_obj_get_child(b, 0), &lv_font_montserrat_14, 0);
+        }
+    ui_btn(o, 290, 120, 62, 104, UI_PRIMARY, "Set", kp_key, (void *)"set");
+
+    lv_obj_t *side = ui_card(o, 361, 8, 109, 160);
+    ui_label(side, 10, 52, 89, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, side_label);
+    kp.side = ui_label(side, 4, 72, 97, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "");
+    kp_side();
+    frame_refresh();
+}
+
+// Confirm and question dialogs.
+static void (*confirm_ok)(void), (*confirm_cancel)(void);
+
+static void confirm_event(lv_event_t *e)
+{
+    bool ok = lv_event_get_user_data(e) != NULL;
+    void (*f)(void) = ok ? confirm_ok : confirm_cancel;
+    ui_overlay_close();
+    if (f)
+        f();
+    frame_refresh();
+}
+
+void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void))
+{
+    lv_obj_t *o = overlay_new();
+    lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
+    lv_obj_set_style_bg_opa(o, 140, 0);
+    confirm_ok = on_ok;
+    confirm_cancel = on_cancel;
+    lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
+    lv_obj_set_style_radius(box, 8, 0);
+    lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_obj_update_layout(t);
+    int32_t th = lv_obj_get_height(t);
+    if (th > 84) th = 84;
+    int32_t by = 14 + th + 10, h = by + 60;
+    lv_obj_set_height(t, th);
+    lv_obj_set_size(box, 340, h);
+    lv_obj_set_y(box, (168 - h) / 2);
+    ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+    ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    frame_refresh();
+}
+
+void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
+{
+    ui_ask(text, "Cancel", NULL, ok, on_ok);
+}
+
+// Text page over the screen (Help). Header Back closes it. Up and
+// Down jump a page without animation (a drag redraws the card every frame).
+static lv_obj_t *tv_card;
+
+static void tv_page(lv_event_t *e)
+{
+    int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
+    int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(tv_card) : lv_obj_get_scroll_top(tv_card);
+    int32_t d = room < 114 ? room : 114;     // a page less one line
+    if (d > 0)
+        lv_obj_scroll_by(tv_card, 0, -dir * d, LV_ANIM_OFF);
+}
+
+void ui_text_view(const char *title, const char *text)
+{
+    lv_obj_t *o = overlay_new();
+    // Kept 16 px clear of the header so a drag never starts near Back, and
+    // no momentum or elastic: the scroll stops when the finger lifts.
+    lv_obj_t *c = ui_card(o, 10, 16, 460, 152);
+    tv_card = c;
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_scroll_dir(c, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_width(c, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(c, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(c, UI_IDLE, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_right(c, 4, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_ver(c, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_all(c, 10, 0);
+    lv_obj_set_style_pad_right(c, 20, 0);
+    lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
+    t = ui_label(c, 0, 26, 430, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(t, 3, 0);
+    // On press (not release); held, it repeats every 0.1 s after 0.4 s.
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = ui_btn(o, 10 + i * 117, 176, 109, 48, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN " Down" : LV_SYMBOL_UP " Up", NULL, NULL);
+        lv_obj_add_event_cb(b, tv_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, tv_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+    }
+    frame_refresh();
+}
+
+// The limit switch pressed during a move: asks on every screen until answered.
+static void q_answer(bool zero)
+{
+    const char *why;
+    if (!valve_answer(zero, &why))
+        ui_msg(why);
+    else if (zero)
+        ui_msg("Set as 0 %.");
+}
+static void q_zero(void) { q_answer(true); }
+static void q_skip(void) { q_answer(false); }
+
+static void question_check(void)
+{
+    int32_t q;
+    if (!valve_question(&q)) {
+        if (overlay_q)
+            ui_overlay_close();
+        return;
+    }
+    static bool asking;
+    if (overlay_q || asking)
+        return;
+    static char t[80];
+    char v[16];
+    lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
+                ui_fmt1(v, sizeof v, (int64_t)q * 100));
+    asking = true;
+    ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
+    asking = false;
+    overlay_q = true;
+}
+
+/* --------------------------------------------------------------------------
+ * Start-up
+ * ------------------------------------------------------------------------ */
+void ui_init(void)
+{
+    num_font(&ui_num_16, &ui_font_16);
+    num_font(&ui_num_26, &ui_font_26);
+    styles_init();
+    home_scr = new_screen();
+    cur_scr = home_scr;
+    ui_scr_home.build(home_scr);
+    build_frame();
+    lv_screen_load(home_scr);
+    frame_refresh();
+    lv_timer_create(refresh_timer, 500, NULL);
+    lv_timer_create(fast_timer, 100, NULL);
+    // Drags start after 3 px, not LVGL's 10, so Help follows the finger sooner.
+    for (lv_indev_t *in = lv_indev_get_next(NULL); in; in = lv_indev_get_next(in))
+        lv_indev_set_scroll_limit(in, 3);
+}
