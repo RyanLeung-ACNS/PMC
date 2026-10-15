@@ -46,11 +46,12 @@ python3 "$HERE/render.py" "$OUT/motor-trip.raw" "$OUT/motor-trip.png"
 rm "$OUT/motor-trip.raw"
 python3 "$HERE/render.py" "$OUT/motor.raw" "$OUT/motor.png"
 rm "$OUT/motor.raw"
-# Stage 4 screens (ui.c): Home states, Menu, keypad, confirm.
+# New screens (ui.c): Home states, Menu, keypad, confirm, stage 5 pages.
 gcc $CFLAGS -o "$OUT/ui_new" "$HERE/ui_new_main.c" "$HERE/fake_hw.c" \
-  "$PROJ/ui.c" "$PROJ/ui_home.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" \
+  "$PROJ/ui.c" "$PROJ/ui_home.c" "$PROJ/ui_valve.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" \
   "$PROJ/fixed.c" "$OUT/liblvgl.a" -lm
-for s in notcal manual calib moving nodruck stop neg menu keypad confirm; do
+for s in notcal manual calib moving nodruck stop neg menu keypad confirm \
+         valve valvenc limithit calpage faults detail diag; do
   "$OUT/ui_new" "$s" "$OUT/new-$s.raw"
   python3 "$HERE/render.py" "$OUT/new-$s.raw" "$OUT/new-$s.png"
   rm "$OUT/new-$s.raw"

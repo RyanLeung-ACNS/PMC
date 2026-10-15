@@ -96,6 +96,9 @@ bool stepper3_busy(void);
 int32_t stepper3_position(void);
 void stepper3_zero(void);
 stepper3_stop_t stepper3_last_stop(void);
+// The last move started: where from and how long it took (so far, while
+// it runs). False if none since power-up.
+bool stepper3_last_move(int32_t *from, uint32_t *ms);
 
 // Limit input state: true if fitted and the NC contact is open.
 bool stepper3_limit_open(void);

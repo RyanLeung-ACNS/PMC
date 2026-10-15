@@ -3,6 +3,7 @@
 
 #include "lvgl.h"
 #include "pmc_config.h"
+#include "rtclock.h"
 #include "stepper3.h"
 #include "valve.h"
 #include "main_screen.h"
@@ -151,6 +152,29 @@ void ui_set_color(lv_obj_t *o, lv_color_t c)
         lv_obj_set_style_text_color(o, c, 0);
 }
 
+lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, const char *caption)
+{
+    lv_obj_t *c = ui_card(parent, x, y, w, h);
+    ui_label(c, 10, 5, w - 20, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, caption);
+    return ui_label(c, 10, 22, w - 20, &ui_num_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+}
+
+const char *ui_when(char *buf, size_t n, uint32_t age_ms)
+{
+    const char *iso = rtclock_iso();
+    if (iso[0]) {
+        int32_t tod = ((iso[11] - '0') * 10 + iso[12] - '0') * 3600 + ((iso[14] - '0') * 10 + iso[15] - '0') * 60
+                      + (iso[17] - '0') * 10 + iso[18] - '0';
+        tod = (int32_t)((tod - (int32_t)(age_ms / 1000) % 86400 + 86400) % 86400);
+        lv_snprintf(buf, n, "%02ld:%02ld:%02ld", (long)(tod / 3600), (long)(tod / 60 % 60), (long)(tod % 60));
+    } else {
+        uint32_t t = (lv_tick_get() - age_ms) / 1000;
+        lv_snprintf(buf, n, "up %lu:%02lu:%02lu", (unsigned long)(t / 3600), (unsigned long)(t / 60 % 60),
+                    (unsigned long)(t % 60));
+    }
+    return buf;
+}
+
 const char *ui_fmt1(char *buf, size_t n, int64_t milli)
 {
     bool neg = milli < 0;
@@ -257,6 +281,9 @@ static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
+static bool overlay_q;          // the overlay is the closed-switch question
+static void question_check(void);
+static lv_obj_t *overlay_new(void);
 static const ui_screen_t *cur = &ui_scr_home;
 static bool service;
 
@@ -442,6 +469,8 @@ static void frame_refresh(void)
         lv_obj_set_style_border_width(mode_dot, nf ? 0 : 2, 0);
     }
 
+    question_check();
+
     // The screen's own line and Home's action, then the frame's priorities.
     act_cb = NULL;
     if (cur->refresh)
@@ -556,7 +585,10 @@ void ui_overlay_close(void)
         lv_obj_delete(overlay);
         overlay = NULL;
     }
+    overlay_q = false;
 }
+
+lv_obj_t *ui_overlay(void) { return overlay_new(); }
 
 static lv_obj_t *overlay_new(void)
 {
@@ -684,25 +716,26 @@ void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10
     frame_refresh();
 }
 
-// Confirm.
-static void (*confirm_ok)(void);
+// Confirm and question dialogs.
+static void (*confirm_ok)(void), (*confirm_cancel)(void);
 
 static void confirm_event(lv_event_t *e)
 {
     bool ok = lv_event_get_user_data(e) != NULL;
-    void (*f)(void) = confirm_ok;
+    void (*f)(void) = ok ? confirm_ok : confirm_cancel;
     ui_overlay_close();
-    if (ok && f)
+    if (f)
         f();
     frame_refresh();
 }
 
-void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
+void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void))
 {
     lv_obj_t *o = overlay_new();
     lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
     lv_obj_set_style_bg_opa(o, 140, 0);
     confirm_ok = on_ok;
+    confirm_cancel = on_cancel;
     lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
     lv_obj_set_style_radius(box, 8, 0);
     lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
@@ -714,9 +747,62 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
     lv_obj_set_height(t, th);
     lv_obj_set_size(box, 340, h);
     lv_obj_set_y(box, (168 - h) / 2);
-    ui_btn(box, 16, by, 150, 48, UI_SECONDARY, "Cancel", confirm_event, NULL);
+    ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
     ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     frame_refresh();
+}
+
+void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
+{
+    ui_ask(text, "Cancel", NULL, ok, on_ok);
+}
+
+// Text page over the screen (Help). Header Back closes it.
+void ui_text_view(const char *title, const char *text)
+{
+    lv_obj_t *o = overlay_new();
+    lv_obj_t *c = ui_card(o, 10, 8, 460, 168);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(c, LV_DIR_VER);
+    lv_obj_set_style_pad_all(c, 10, 0);
+    lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
+    t = ui_label(c, 0, 26, 440, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(t, 3, 0);
+    frame_refresh();
+}
+
+// The closed switch pressed during a move: asks on every screen until answered.
+static void q_answer(bool zero)
+{
+    const char *why;
+    if (!valve_answer(zero, &why))
+        ui_msg(why);
+    else if (zero)
+        ui_msg("Set as 0 %.");
+}
+static void q_zero(void) { q_answer(true); }
+static void q_skip(void) { q_answer(false); }
+
+static void question_check(void)
+{
+    int32_t q;
+    if (!valve_question(&q)) {
+        if (overlay_q)
+            ui_overlay_close();
+        return;
+    }
+    static bool asking;
+    if (overlay_q || asking)
+        return;
+    static char t[80];
+    char v[16];
+    lv_snprintf(t, sizeof t, "Closed switch pressed at %s %%. Set this point as 0 %%?",
+                ui_fmt1(v, sizeof v, (int64_t)q * 100));
+    asking = true;
+    ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
+    asking = false;
+    overlay_q = true;
 }
 
 /* --------------------------------------------------------------------------

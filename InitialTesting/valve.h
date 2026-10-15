@@ -36,7 +36,7 @@
  *   VALVE?                       mode, position, settings, pending question
  *   VALVE CAL                    calibrate (MANUAL or NOT CALIBRATED, no fault)
  *   VALVE GOTO <0-100>           go to % open (one decimal), once calibrated
- *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question
+ *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question (or the screen)
  *   VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (idle)
  *   CTRL STOP                    stop now, latch F-12, cancel calibration
  *   CTRL RESET                   clear latches whose cause has gone
@@ -82,6 +82,24 @@ int valve_fault_count(void);
 bool valve_fault_first(const char **tag, const char **text);   // highest priority
 bool valve_fault_is(const char *tag);            // e.g. "F-12" latched
 bool valve_question(int32_t *pct10);             // switch question waiting, where
+bool valve_answer(bool set_zero, const char **why);   // VALVE SETZERO / VALVE SKIP
+
+// Latched fault i (0 = highest priority, below valve_fault_count()).
+typedef struct {
+    const char *tag, *text;
+    uint32_t age_ms;          // since it latched
+    valve_mode_t mode;        // mode when it latched
+    bool can_reset;           // its cause has gone
+} valve_fault_t;
+bool valve_fault_get(int i, valve_fault_t *f);
+
+// Event log: i = 0 is the newest, below valve_event_count() (up to 200).
+int valve_event_count(void);
+uint32_t valve_event_total(void);                // since boot
+bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **text);
+bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s);   // false: not since boot
+// While the closed switch is pressed: steps closed past where it opened.
+bool valve_beyond_switch(int32_t *steps);
 
 // Adds an event to the log (tag up to 5 characters).
 void valve_event(const char *tag, const char *fmt, ...);

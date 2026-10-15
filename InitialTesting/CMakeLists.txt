@@ -49,6 +49,7 @@ add_executable(InitialTesting
     ui.h
     ui.c
     ui_home.c
+    ui_valve.c
     ui_font_12.c
     ui_font_16.c
     ui_font_26.c

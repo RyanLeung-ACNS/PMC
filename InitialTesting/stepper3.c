@@ -99,6 +99,9 @@ static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
 static uint32_t deadline_ms;            // F-13: lv_tick_get() past this = timeout
 static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
+static int32_t move_from;                // last move: start position and times
+static uint32_t move_t0;
+static volatile uint32_t move_t1;       // 0 while it runs
 static const char *lock_why;            // MOT and screen moves refused while set
 
 static char status_text[160];
@@ -231,6 +234,7 @@ static void finish(stepper3_stop_t why)
     stop_ramp = false;
     last_stop = why;
     moves_ended++;
+    move_t1 = lv_tick_get() | 1;
     run_state = ST_SETTLE;
     TIM7->ARR = SETTLE_US - 1;
 }
@@ -398,6 +402,9 @@ from_rest:
     dir = dist > 0 ? 1 : -1;
     target = to;
     move_rate = sps;
+    move_from = position;
+    move_t0 = lv_tick_get();
+    move_t1 = 0;
     v_start_fp = (rate_start < sps ? rate_start : sps) << 8;
     v_run_fp = sps << 8;
     v_fp = v_start_fp;
@@ -465,6 +472,7 @@ void stepper3_stop(void)
     if (run_state == ST_MOVING) {
         last_stop = STEPPER3_STOP_CMD;
         moves_ended++;
+        move_t1 = lv_tick_get() | 1;
     }
     run_state = ST_IDLE;
     if (!hold)
@@ -579,6 +587,16 @@ bool stepper3_set_order(const uint8_t o[4])
     memcpy(order, o, sizeof order);
     if (energised)
         coils_off();
+    return true;
+}
+
+bool stepper3_last_move(int32_t *from, uint32_t *ms)
+{
+    if (!move_t0)
+        return false;
+    *from = move_from;
+    uint32_t t1 = move_t1;
+    *ms = (t1 ? t1 : lv_tick_get()) - move_t0;
     return true;
 }
 

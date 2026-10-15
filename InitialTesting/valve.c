@@ -87,6 +87,8 @@ static const char *const fault_short[F_N] = {
     "Limit still active after clearance", "Motion timeout", "Operator STOP" };
 
 static bool latched[F_N];
+static uint32_t latched_ms[F_N];    // when each latched
+static valve_mode_t latched_mode[F_N];
 static bool cause_f01, cause_f03;   // from the last sensor read
 static bool sensed;                 // at least one sensor read since boot
 
@@ -105,6 +107,10 @@ static uint32_t seq_seen;         // stepper3_move_seq() last handled
 
 static bool question;             // switch-pressed question waiting
 static int32_t question_at;       // count where the switch was pressed
+
+static uint32_t cal_done_ms, cal_took_s;   // last good calibration
+static int32_t switch_at;         // count where the switch last opened
+static bool switch_was_open;
 
 static char status_text[160];
 
@@ -161,6 +167,8 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
     lv_vsnprintf(text, sizeof text, fmt, args);
     va_end(args);
     latched[f] = true;
+    latched_ms[f] = lv_tick_get();
+    latched_mode[f] = mode;
     ev(fault_tag[f], "%s", text);
     stepper3_stop();
     cal_abort(fault_tag[f]);
@@ -244,8 +252,9 @@ static void cal_move_ended(stepper3_stop_t why)
                 break;
             }
             calibrated = true;
-            ev("REF", "Calibrated in %lu s, position %ld",
-               (unsigned long)(lv_tick_elaps(cal_t0) / 1000), (long)n_offset);
+            cal_done_ms = lv_tick_get() | 1;
+            cal_took_s = lv_tick_elaps(cal_t0) / 1000;
+            ev("REF", "Calibrated in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
             cal_end(VALVE_MANUAL);
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F07, true, "Calibrating: switch not found on the creep close");
@@ -279,7 +288,7 @@ static void limit_hit(void)
     question_at = stepper3_position();
     question = true;
     char p[16];
-    ev("W-01", "Closed switch pressed at count %ld (%s %%): VALVE SETZERO or VALVE SKIP",
+    ev("W-01", "Closed switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)question_at, pct_text(p, sizeof p, question_at));
 }
 
@@ -308,6 +317,10 @@ void valve_task(void)
     }
     if (mode == VALVE_CALIBRATING && cal_settle_from && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
+    bool open = limit_open_now();
+    if (open && !switch_was_open)
+        switch_at = stepper3_position();
+    switch_was_open = open;
 }
 
 void valve_sense(const clicks_state_t *s)
@@ -642,6 +655,71 @@ bool valve_question(int32_t *pct10)
     return question;
 }
 
+bool valve_answer(bool set_zero, const char **why)
+{
+    if (!question)          { *why = "no switch question waiting"; return false; }
+    if (set_zero && stepper3_busy()) { *why = "moving, wait for it to stop"; return false; }
+    question = false;
+    if (set_zero) {
+        int32_t d = stepper3_position() - question_at;
+        stepper3_set_position(n_offset + d);
+        switch_at += n_offset - question_at;
+        ev("W-01", "Point set as 0 %%, count %ld", (long)n_offset);
+    } else {
+        ev("W-01", "Zero skipped, count kept at %ld", (long)question_at);
+    }
+    return true;
+}
+
+bool valve_fault_get(int i, valve_fault_t *f)
+{
+    int n = 0;
+    for (int k = 0; k < F_N; k++) {
+        if (!latched[k])
+            continue;
+        if (n++ != i)
+            continue;
+        f->tag = fault_tag[k];
+        f->text = fault_short[k];
+        f->age_ms = lv_tick_elaps(latched_ms[k]);
+        f->mode = latched_mode[k];
+        f->can_reset = can_reset((fault_t)k);
+        return true;
+    }
+    return false;
+}
+
+int valve_event_count(void) { return evt_count < EVT_N ? (int)evt_count : EVT_N; }
+uint32_t valve_event_total(void) { return evt_count; }
+
+bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **text)
+{
+    if (i < 0 || i >= valve_event_count())
+        return false;
+    const event_t *e = &events[(evt_count - 1 - (uint32_t)i) % EVT_N];
+    *age_ms = lv_tick_elaps(e->t_ms);
+    *tag = e->tag;
+    *text = e->text;
+    return true;
+}
+
+bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s)
+{
+    if (!cal_done_ms)
+        return false;
+    *age_ms = lv_tick_elaps(cal_done_ms);
+    *took_s = cal_took_s;
+    return true;
+}
+
+bool valve_beyond_switch(int32_t *steps)
+{
+    if (!switch_was_open)
+        return false;
+    *steps = switch_at - stepper3_position();
+    return true;
+}
+
 bool valve_command(const char *line)
 {
     const char *err;
@@ -671,26 +749,14 @@ bool valve_command(const char *line)
         else
             link_printf("OK going to %s %% (count %ld) from %ld\r\n",
                         fixed_fmt(p, sizeof p, pct10, 1), (long)stepper3_target(), (long)stepper3_position());
-    } else if (strcmp(line, "VALVE SETZERO") == 0) {
-        if (!question)
-            link_printf("ERR no switch question waiting\r\n");
-        else if (stepper3_busy())
-            link_printf("ERR moving, wait for it to stop\r\n");
-        else {
-            int32_t d = stepper3_position() - question_at;
-            stepper3_set_position(n_offset + d);
-            question = false;
-            ev("W-01", "Point set as 0 %%, count %ld", (long)n_offset);
+    } else if (strcmp(line, "VALVE SETZERO") == 0 || strcmp(line, "VALVE SKIP") == 0) {
+        bool zero = line[6] == 'S' && line[7] == 'E';
+        if (!valve_answer(zero, &err))
+            link_printf("ERR %s\r\n", err);
+        else if (zero)
             link_printf("OK count %ld\r\n", (long)stepper3_position());
-        }
-    } else if (strcmp(line, "VALVE SKIP") == 0) {
-        if (!question)
-            link_printf("ERR no switch question waiting\r\n");
-        else {
-            question = false;
-            ev("W-01", "Zero skipped, count kept at %ld", (long)question_at);
+        else
             link_printf("OK count kept\r\n");
-        }
     } else if (strncmp(line, "VALVE ", 6) == 0) {
         setting_command(line + 6);
     } else {

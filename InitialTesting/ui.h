@@ -59,6 +59,11 @@ lv_obj_t *ui_label(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, const lv_f
 void ui_set_text(lv_obj_t *label, const char *text);
 void ui_set_color(lv_obj_t *obj, lv_color_t c);
 
+// Card with a 12 px caption; returns the 16 px value label under it.
+lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, const char *caption);
+// When something happened age_ms ago: "14:03:22" once the clock is set, else "up 0:12:05".
+const char *ui_when(char *buf, size_t n, uint32_t age_ms);
+
 // "12.3" from 0.001 units, one decimal, rounded half away from zero.
 const char *ui_fmt1(char *buf, size_t n, int64_t milli);
 
@@ -94,11 +99,22 @@ void ui_keypad(const char *title, const char *info, int32_t min10, int32_t max10
 // Confirm dialog: Cancel and OK (OK primary). Buttons sit inside x70-410,
 // clear of the Home mode button.
 void ui_confirm(const char *text, const char *ok, void (*on_ok)(void));
+// Same with a named cancel button and its own action.
+void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void));
+// Scrolling text over the screen (Help); header Back closes it.
+void ui_text_view(const char *title, const char *text);
+// Empty overlay over 0,40 480x232 (STOP stays on top) for a screen's own dialog.
+lv_obj_t *ui_overlay(void);
+// The closed-switch question opens itself on every screen (ui.c).
 
 bool ui_overlay_open(void);
 void ui_overlay_close(void);
 
 // Home and Menu (ui_home.c).
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
+void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
+void ui_calibrate_ask(void);   // the Calibrate valve confirm
+// Valve, Calibrate valve, Faults and log, Diagnostics (ui_valve.c).
+extern const ui_screen_t ui_scr_valve, ui_scr_calib, ui_scr_faults, ui_scr_diag;
 
 #endif // _UI_H_

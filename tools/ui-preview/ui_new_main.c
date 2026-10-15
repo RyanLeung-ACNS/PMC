@@ -1,11 +1,12 @@
 /*
- * Host render of the stage 4 screens (ui.c, ui_home.c): Home, Menu, the
- * keypad and the confirm dialog, against fake readings (fake_hw.c) and a
- * fake valve layer below. Writes one 480 x 272 frame as raw RGB565 and
+ * Host render of the new screens (ui.c, ui_home.c, ui_valve.c): Home, Menu,
+ * the keypad and dialogs, and the stage 5 pages, against fake readings
+ * (fake_hw.c) and a fake valve layer below. Writes one 480 x 272 frame as raw RGB565 and
  * checks the LVGL heap comes back after opening and leaving screens.
  *
  *   ./ui_new <state> <out.raw>
  *   state: notcal | manual | calib | moving | nodruck | stop | neg | menu | keypad | confirm
+ *          | valve | valvenc | limithit | calpage | faults | detail | diag
  */
 #include <assert.h>
 #include <stdio.h>
@@ -58,7 +59,39 @@ bool valve_fault_is(const char *tag)
     return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-12"));
 }
 int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
-bool valve_question(int32_t *p) { (void)p; return false; }
+static bool v_q;
+bool valve_question(int32_t *p) { if (v_q && p) *p = 187; return v_q; }
+bool valve_answer(bool z, const char **why) { (void)z; (void)why; v_q = false; return true; }
+bool valve_fault_get(int i, valve_fault_t *f)
+{
+    const char *tags[2] = { "F-01", "F-12" }, *texts[2] = { "No Druck signal", "Operator STOP" };
+    int k = 0;
+    for (int j = 0; j < 2; j++) {
+        if (!(j ? v_f12 : v_f01)) continue;
+        if (k++ != i) continue;
+        f->tag = tags[j]; f->text = texts[j]; f->age_ms = j ? 64000 : 312000;
+        f->mode = VALVE_MANUAL; f->can_reset = j == 1;
+        return true;
+    }
+    return false;
+}
+static const char *const ev_tag[] = { "F-12", "W-01", "REF", "REF", "F-14" };
+static const char *const ev_text[] = { "Operator stop at count 33880", "Point set as 0 %, count 0",
+    "Calibrated in 15 s, position 0", "Calibrating started at count 1203", "Power-up (event only), valve not calibrated" };
+int valve_event_count(void) { return 5; }
+uint32_t valve_event_total(void) { return 5; }
+bool valve_event_get(int i, uint32_t *age, const char **tag, const char **text)
+{
+    if (i < 0 || i >= 5) return false;
+    *age = 64000 + i * 61000; *tag = ev_tag[i]; *text = ev_text[i];
+    return true;
+}
+bool valve_last_cal(uint32_t *age, uint32_t *took) { if (!v_cal) return false; *age = 186000; *took = 15; return true; }
+bool valve_beyond_switch(int32_t *s) { *s = 0; return false; }
+bool limit_open_now(void) { return v_cal && v_pct10 == 0; }
+const char *rtclock_iso(void) { return "2026-10-15 14:32:05"; }
+bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false; *from = 0; *ms = 41300; return true; }
+void stepper3_stop_ramped(void) {}
 void show_main_screen(void) {}
 void init_screens(void) {}
 bool stepper3_busy(void);
@@ -112,13 +145,16 @@ int main(int argc, char **argv)
     }
     const char *st = argv[1];
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
+    bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
+                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
-        !strcmp(st, "neg")) {
+        !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
     }
     if (!strcmp(st, "moving")) { moving = true; v_target10 = 500; }
     if (!strcmp(st, "calib")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
+    if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
     lv_init();
     lv_display_t *d = lv_display_create(W, H);
@@ -140,9 +176,18 @@ int main(int argc, char **argv)
     }
     tap(300, 184);              // Go to box (opens the keypad in MANUAL)
     tap(60, 20);                // Back closes it
+    for (int i = 0; i < 5; i++) {
+        tap(415, 128); tap(60, 20);                             // Valve
+        tap(415, 184); tap(350, 72); tap(60, 20); tap(60, 20);  // Faults and log
+        tap(415, 184); tap(120, 128); tap(60, 20); tap(60, 20); // Calibrate valve
+        tap(415, 184); tap(120, 184); tap(60, 20); tap(60, 20); // Diagnostics
+    }
     run(1200);
     size_t after = heap_used();
-    fprintf(stderr, "%s: heap used %zu B, after 10 x Menu and a keypad %zu B\n", st, before, after);
+    lv_mem_monitor_t mm;
+    lv_mem_monitor(&mm);
+    fprintf(stderr, "%s: heap used %zu B, after the round trips %zu B, peak %zu B\n", st, before, after,
+            (size_t)mm.max_used);
     if (after > before + 64) {
         fprintf(stderr, "heap grew\n");
         return 1;
@@ -152,6 +197,12 @@ int main(int argc, char **argv)
     if (!strcmp(st, "menu")) tap(415, 184);
     if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); }
     if (!strcmp(st, "confirm")) tap(415, 72);
+    if (!strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit")) tap(415, 128);
+    if (!strcmp(st, "limithit")) v_q = true;
+    if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
+    if (!strcmp(st, "detail")) tap(150, 72);
+    if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }
+    if (!strcmp(st, "diag")) { tap(415, 184); tap(120, 184); }
     run(1200);
 
     FILE *f = fopen(argv[2], "wb");

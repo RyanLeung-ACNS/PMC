@@ -210,28 +210,32 @@ static void calibrate(void)
         ui_msg(valve_fault_count() ? "Reset the fault first" : why);
 }
 
+void ui_calibrate_ask(void)
+{
+    static char q[96];
+    uint32_t s = valve_cal_budget_s();
+    lv_snprintf(q, sizeof q, "Calibrate the valve? It closes to the seat to find 0 %%, up to %lu min.",
+                (unsigned long)((s + 59) / 60));
+    ui_confirm(q, "Start calibration", calibrate);
+}
+
 static void mode_event(lv_event_t *e)
 {
     (void)e;
-    if (valve_mode() == VALVE_CALIBRATING) {
+    if (valve_mode() == VALVE_CALIBRATING)
         ui_msg("Calibrating: STOP to cancel");
-    } else if (valve_mode() == VALVE_MANUAL) {
+    else if (valve_mode() == VALVE_MANUAL)
         ui_msg("AUTO is not built yet");
-    } else if (valve_fault_count()) {
+    else if (valve_fault_count())
         ui_msg("Reset the fault first");
-    } else {
-        static char q[96];
-        uint32_t s = valve_cal_budget_s();
-        lv_snprintf(q, sizeof q, "Calibrate the valve? It closes to the seat to find 0 %%, up to %lu min.",
-                    (unsigned long)((s + 59) / 60));
-        ui_confirm(q, "Start calibration", calibrate);
-    }
+    else
+        ui_calibrate_ask();
 }
 
 static void valve_event_cb(lv_event_t *e)
 {
     (void)e;
-    ui_msg("Valve page comes in a later firmware");
+    ui_open(&ui_scr_valve);
 }
 
 static void menu_event(lv_event_t *e)
@@ -258,7 +262,6 @@ static void home_build(lv_obj_t *scr)
     make_tile(scr, &vt, 186, "Valve", "%", "Go to", false, goto_event);
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Calibrate valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
-    ui_btn_enable(valve_btn, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
 
@@ -310,7 +313,16 @@ static void home_refresh(void)
         ui_btn_enable(mode_btn, true);
     }
 
-    // Status line; the frame puts faults and messages over it.
+    ui_status_line();
+}
+
+// Status line and Reset fault, for Home and the operator screens; the
+// frame puts faults and messages over it.
+void ui_status_line(void)
+{
+    char buf[32];
+    valve_mode_t m = valve_mode();
+    int step = valve_cal_step();
     int nf = valve_fault_count();
     if (nf) {
         lv_snprintf(buf, sizeof buf, "%d faults", nf);
@@ -319,7 +331,7 @@ static void home_refresh(void)
     int32_t q;
     if (valve_question(&q)) {
         char t[64], v[16];
-        lv_snprintf(t, sizeof t, "W-01 Closed switch pressed at %s %%: VALVE SETZERO or SKIP",
+        lv_snprintf(t, sizeof t, "W-01 Closed switch pressed at %s %%",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_strip_set(UI_STRIP_WARN, UI_IDLE, t);
     } else if (m == VALVE_NOT_CAL) {
@@ -340,13 +352,18 @@ static void home_refresh(void)
 const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh };
 
 /* --------------------------------------------------------------------------
- * Menu: the six v63 tiles, greyed until their screens are built, and a
+ * Menu: the six v63 tiles (those not built yet greyed), and a
  * temporary Service button for the 0.6.0 screens (until the settings stage).
  * ------------------------------------------------------------------------ */
+static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, NULL, &ui_scr_diag, NULL };
+
 static void menu_tile_event(lv_event_t *e)
 {
-    (void)e;
-    ui_msg("Comes in a later firmware");
+    const ui_screen_t *s = lv_event_get_user_data(e);
+    if (s)
+        ui_open(s);
+    else
+        ui_msg("Comes in a later firmware");
 }
 
 static void service_event(lv_event_t *e)
@@ -361,8 +378,8 @@ static void menu_build(lv_obj_t *scr)
                                           "Calibrate sensor", "Diagnostics", "Settings" };
     for (int i = 0; i < 6; i++) {
         lv_obj_t *b = ui_btn(scr, i % 2 ? 244 : 10, 48 + (i / 2) * 56, 226, 48, UI_NAV, names[i],
-                             menu_tile_event, NULL);
-        ui_btn_enable(b, false);
+                             menu_tile_event, (void *)menu_scr[i]);
+        ui_btn_enable(b, menu_scr[i] != NULL);
     }
     ui_strip_width(226);
     ui_btn(scr, 244, 216, 109, 48, UI_NAV, "Service", service_event, NULL);
