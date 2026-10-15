@@ -8,6 +8,9 @@
  *   state: notcal | manual | calib | moving | nodruck | stop | neg | menu | keypad | confirm
  *          | valve | valvenc | limithit | calpage | faults | detail | diag | help
  */
+#ifndef TVX
+#define TVX 444
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -168,7 +171,7 @@ int main(int argc, char **argv)
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
                 !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
-                !strcmp(st, "help") || !strcmp(st, "back") || !strcmp(st, "svc");
+                !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -239,7 +242,9 @@ int main(int argc, char **argv)
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
-    if (!strcmp(st, "help")) { tap(415, 128); tap(415, 184); drag(240, 160, 100); }
+    if (!strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3")) { tap(415, 128); tap(415, 184); }
+    if (!strcmp(st, "help2")) tap(TVX, 172);
+    if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }

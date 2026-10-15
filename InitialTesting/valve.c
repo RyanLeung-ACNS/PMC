@@ -100,6 +100,7 @@ typedef enum { CAL_NONE, CAL_CLEAR, CAL_FAST, CAL_BACK, CAL_CREEP } cal_stage_t;
 
 static valve_mode_t mode = VALVE_NOT_CAL;
 static bool calibrated;
+static bool cal_was;     // calibrated before this calibration started
 static cal_stage_t cal_stage;
 static bool cal_moving;           // a calibration move is running
 static uint32_t cal_settle_from;  // non-zero: waiting SETTLE_MS before the next stage
@@ -155,8 +156,12 @@ static void cal_abort(const char *why)
         return;
     stepper3_stop();
     seq_seen = stepper3_move_seq();
-    ev("REF", "Calibrating aborted (%s)", why);
-    cal_end(VALVE_NOT_CAL);
+    // An operator STOP keeps the earlier calibration: the step count kept
+    // counting through the cancelled moves, so the position is still known.
+    bool keep = cal_was && !strcmp(why, "STOP");
+    ev("REF", "Calibrating aborted (%s)%s", why, keep ? ", earlier calibration kept" : "");
+    calibrated = keep;
+    cal_end(keep ? VALVE_MANUAL : VALVE_NOT_CAL);
 }
 
 static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
@@ -210,6 +215,7 @@ static bool cal_start(const char **err)
     stepper3_stop();
     stepper3_override_cancel();
     question = false;
+    cal_was = calibrated;
     calibrated = false;
     mode = VALVE_CALIBRATING;
     cal_t0 = lv_tick_get();

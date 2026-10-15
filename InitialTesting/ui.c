@@ -368,6 +368,7 @@ static void ok_event(lv_event_t *e)
 {
     (void)e;
     msg_until = 0;
+    frame_refresh();   // clear now, not at the next 0.5 s refresh
 }
 
 static void act_event(lv_event_t *e)
@@ -850,28 +851,55 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void))
     ui_ask(text, "Cancel", NULL, ok, on_ok);
 }
 
-// Text page over the screen (Help). Header Back closes it. Up and
-// Down jump a page without animation (a drag redraws the card every frame).
-static lv_obj_t *tv_card;
+// Text page over the screen (Help). Header Back closes it. No dragging (a
+// drag redraws the card every frame and crowded Back): small Up and Down
+// buttons on the right jump a page less one line, without animation.
+// Layout A: wide text card, 52 px buttons at the right edge.
+// Layout B: taller text card down to the bottom row, buttons over STOP.
+#ifndef TV_LAYOUT_B
+#define TV_W 400
+#define TV_H 152
+#define TV_BX 418
+#define TV_BW 52
+#else
+#define TV_W 341
+#define TV_H 208
+#define TV_BX 361
+#define TV_BW 109
+#endif
+#define TV_STEP (TV_H - 38)   // a page less one line
+static lv_obj_t *tv_card, *tv_btn[2];
+
+static void tv_buttons(void)
+{
+    for (int i = 0; i < 2; i++) {
+        bool room = i ? lv_obj_get_scroll_bottom(tv_card) > 0 : lv_obj_get_scroll_top(tv_card) > 0;
+        ui_btn_enable(tv_btn[i], room);
+    }
+}
 
 static void tv_page(lv_event_t *e)
 {
+    if (ui_btn_disabled(e))
+        return;
     int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
     int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(tv_card) : lv_obj_get_scroll_top(tv_card);
-    int32_t d = room < 114 ? room : 114;     // a page less one line
+    int32_t d = room < TV_STEP ? room : TV_STEP;
     if (d > 0)
         lv_obj_scroll_by(tv_card, 0, -dir * d, LV_ANIM_OFF);
+    tv_buttons();
 }
 
 void ui_text_view(const char *title, const char *text)
 {
     lv_obj_t *o = overlay_new();
-    // Kept 16 px clear of the header so a drag never starts near Back, and
-    // no momentum or elastic: the scroll stops when the finger lifts.
-    lv_obj_t *c = ui_card(o, 10, 16, 460, 152);
+    // Not clickable, so a touch on the text does nothing; it still scrolls
+    // from the buttons and shows where it is with the scroll bar.
+    lv_obj_t *c = ui_card(o, 10, 16, TV_W, TV_H);
     tv_card = c;
-    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                          LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_set_scroll_dir(c, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ON);
     lv_obj_set_style_width(c, 6, LV_PART_SCROLLBAR);
@@ -883,16 +911,20 @@ void ui_text_view(const char *title, const char *text)
     lv_obj_set_style_pad_all(c, 10, 0);
     lv_obj_set_style_pad_right(c, 20, 0);
     lv_obj_t *t = ui_label(c, 0, 0, 0, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, title);
-    t = ui_label(c, 0, 26, 430, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    t = ui_label(c, 0, 26, TV_W - 30, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(t, 3, 0);
     // On press (not release); held, it repeats every 0.1 s after 0.4 s.
+    // Greyed at the top and the bottom.
     for (int i = 0; i < 2; i++) {
-        lv_obj_t *b = ui_btn(o, 10 + i * 117, 176, 109, 48, UI_SECONDARY,
-                             i ? LV_SYMBOL_DOWN " Down" : LV_SYMBOL_UP " Up", NULL, NULL);
+        lv_obj_t *b = ui_btn(o, TV_BX, i ? 96 : 16, TV_BW, 72, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN : LV_SYMBOL_UP, NULL, NULL);
         lv_obj_add_event_cb(b, tv_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
         lv_obj_add_event_cb(b, tv_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+        tv_btn[i] = b;
     }
+    lv_obj_update_layout(c);
+    tv_buttons();
     frame_refresh();
 }
 
