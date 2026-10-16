@@ -97,7 +97,7 @@ static void bar_draw(lv_event_t *e)
     text.font = &ui_font_12;
     text.color = UI_MUTED;
     r.bg_color = UI_TICK;
-    static const char *const plab[5] = { "0.1", "1", "10", NULL, "1k" };
+    static const char *const plab[5] = { "0.1", "1", "10", "100", "1k" };
     static const char *const vlab[3] = { "0", "50", "100" };
     int n = t->log ? 5 : 3;
     for (int k = 0; k < n; k++) {
