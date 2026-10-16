@@ -127,10 +127,15 @@ static const char *pct_text(char *buf, size_t n, int32_t pos)
     return fixed_fmt(buf, n, pct10_of(pos), 1);
 }
 
+// The sensor faults (F-01 no Druck, F-03 excitation) do not stop or block
+// the motor: manual moves and calibrating use the step count and the limit
+// switch, not the pressure (Ryan 16 Oct). AUTO will need the reading.
+static bool sensor_fault(fault_t f) { return f == F01 || f == F03; }
+
 static bool any_latched(void)
 {
     for (int i = 0; i < F_N; i++)
-        if (latched[i])
+        if (latched[i] && !sensor_fault((fault_t)i))
             return true;
     return false;
 }
@@ -177,8 +182,10 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
     latched_ms[f] = lv_tick_get();
     latched_mode[f] = mode;
     ev(fault_tag[f], "%s", text);
-    stepper3_stop();
-    cal_abort(fault_tag[f]);
+    if (!sensor_fault(f)) {
+        stepper3_stop();
+        cal_abort(fault_tag[f]);
+    }
     if (uncalibrate) {
         calibrated = false;
         mode = VALVE_NOT_CAL;
@@ -351,11 +358,42 @@ void valve_sense(const clicks_state_t *s)
     }
 }
 
+void valve_uncalibrate(const char *why)
+{
+    if (mode == VALVE_CALIBRATING) {
+        cal_abort(why);
+        cal_was = false;
+    }
+    if (!calibrated)
+        return;
+    calibrated = false;
+    question = false;
+    mode = VALVE_NOT_CAL;
+    ev("REF", "Calibration cleared (%s)", why);
+    update_lock();
+}
+
+bool valve_restore(int32_t count, const char **why)
+{
+    if (mode == VALVE_CALIBRATING) { *why = "calibrating"; return false; }
+    if (calibrated)                 { *why = "already calibrated"; return false; }
+    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    if (stepper3_busy() || !stepper3_set_position(count)) { *why = "motor busy"; return false; }
+    calibrated = true;
+    mode = VALVE_MANUAL;
+    char p[16];
+    ev("REF", "Saved position used: count %ld (%s %%), not checked against the switch",
+       (long)count, pct_text(p, sizeof p, count));
+    update_lock();
+    return true;
+}
+
 valve_mode_t valve_mode(void)   { return mode; }
 bool valve_calibrated(void)     { return calibrated; }
 int32_t valve_pos_max(void)     { return pos_max; }
 int32_t valve_pct10(void)       { return pct10_of(stepper3_position()); }
 bool valve_fault_latched(void)  { return any_latched(); }
+bool valve_motion_blocked(void) { return any_latched(); }
 
 const char *valve_mode_name(void)
 {
@@ -626,7 +664,18 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     return true;
 }
 
+bool valve_move_steps(int32_t steps, const char **why)
+{
+    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
+    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
+    if (!stepper3_goto(from + steps)) { *why = "limit open, closing move refused"; return false; }
+    return true;
+}
+
 bool valve_calibrate(const char **why) { return cal_start(why); }
+
+uint32_t valve_cal_elapsed_s(void) { return mode == VALVE_CALIBRATING ? lv_tick_elaps(cal_t0) / 1000 : 0; }
 
 uint32_t valve_cal_budget_s(void)
 {

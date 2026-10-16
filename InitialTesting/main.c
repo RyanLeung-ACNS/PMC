@@ -19,7 +19,6 @@
 #include "display_lvgl.h"
 #include "lv_port_indev.h"
 #include "1ms_Timer.h"
-#include "screens.h"
 #include "pmc_config.h"
 #include "link.h"
 #include "sysinfo.h"
@@ -32,7 +31,8 @@
 #include "cfg.h"
 #include "ui.h"
 #include "limit.h"
-#include "main_screen.h"
+#include "sense.h"
+#include "valvepos.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -91,6 +91,7 @@ static const char *const help_valve[] = {
     "  VALVE CAL                  calibrate to the closed switch (0 %)",
     "  VALVE GOTO <0-100>         go to % open, one decimal",
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
+    "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
     "  CTRL STOP                  stop now, latch F-12",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
@@ -109,12 +110,12 @@ static const char *const help_sys[] = {
 #endif
 };
 static const char *const help_cfg[] = {
-    "Settings (motor, valve, pressure cal; changes are live, unsaved until saved):",
+    "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
     "  CFG?                       saved records, what was loaded, unsaved count",
     "  CFG DIFF?                  settings that differ from the newest save",
     "  CFG SAVE                   save everything (CAL SAVE does the same)",
     "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
-    "  CFG LOAD DEFAULTS          factory motor and valve settings, cal kept",
+    "  CFG LOAD DEFAULTS          factory motor, valve and tuning settings, sensors kept",
     "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
 };
 static const char *const help_cal[] = {
@@ -177,12 +178,10 @@ static bool help_command(const char *line)
 void board_init()
 {
     lv_init();
-#if PMC_UI_NEW
     // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
     // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
     static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
     lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
-#endif
     lv_port_disp_init();
     lv_port_indev_init();
 
@@ -212,19 +211,13 @@ void application_init()
     valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
+    // The valve position saved at the last standstill: offered on the
+    // screen (Use saved / Calibrate), never used by itself.
+    valvepos_init();
 
-#if PMC_UI_NEW
-    // The new frame and Home. The 0.6.0 screens are built the first time
-    // Menu > Service opens them, which keeps their LVGL heap free until then.
+    // The frame and Home. The 0.6.0 motor screen is built the first time
+    // Menu > Motor opens it, which keeps its LVGL heap free until then.
     ui_init();
-#else
-    // Initialize all available screens.
-    init_screens();
-
-    // Show the main screen.
-    // To display another screen, call its respective show function.
-    show_main_screen();
-#endif
 
     // Draw the screen once first, so a link start-up fault cannot leave it blank.
     lv_timer_handler();
@@ -283,18 +276,19 @@ int main(void)
         limit_poll();
         stepper3_poll();
         valve_task();
+        valvepos_task();
         if (lv_tick_elaps(sense_ms) >= 1000) {
             sense_ms += 1000;
             if (lv_tick_elaps(sense_ms) >= 1000)   // fell behind: no catch-up burst
                 sense_ms = lv_tick_get();
-            main_screen_sense();
+            sense_second();
         }
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
         if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
-            !main_screen_data_command(line))
+            !limit_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+            !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();

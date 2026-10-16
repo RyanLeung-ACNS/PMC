@@ -14,12 +14,34 @@
  * ui.c, on every screen.
  * ------------------------------------------------------------------------ */
 
+// Close, Open, -5 % and +5 % work before a calibration too (by steps);
+// Go to, Fully close and Fully open need the zero.
+static const char *why_no_steps(void)
+{
+    if (valve_motion_blocked()) return "Reset the fault first";
+    if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
+    return NULL;
+}
+
 static const char *why_not_manual(void)
 {
-    if (valve_fault_count()) return "Reset the fault first";
-    if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
+    const char *why = why_no_steps();
+    if (why) return why;
     if (valve_mode() != VALVE_MANUAL) return "Calibrate the valve first";
     return NULL;
+}
+
+// Before a calibration: a move by steps (d in 0.1 % of the travel).
+static bool vp_steps(int32_t d)
+{
+    const char *why = why_no_steps();
+    if (!why && d < 0 && limit_open_now())
+        why = "Limit switch pressed, cannot close";
+    if (!why && !valve_move_steps((int32_t)((int64_t)d * valve_pos_max() / 1000), &why))
+        why = "Limit switch pressed, cannot close";
+    if (why)
+        ui_msg(why);
+    return why == NULL;
 }
 
 static void reset_cb(lv_event_t *e)
@@ -63,7 +85,9 @@ static const char *const valve_help =
     "-5 %, +5 %: step from where the valve is going.\n"
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
-    "Moves only in MANUAL with no fault. The limit switch stops any closing move.\n"
+    "Moves only with no fault. Before a calibration Close, Open, -5 % and +5 % still move, by steps "
+    "(5 % of the travel setting); Go to, Fully close and Fully open need the calibration.\n"
+    "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
 static bool vp_goto(int32_t pct10)
@@ -81,7 +105,10 @@ static bool vp_goto(int32_t pct10)
 static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
-    vp.jog = vp_goto(open ? 1000 : 0);
+    if (valve_mode() == VALVE_NOT_CAL)
+        vp.jog = vp_steps(open ? 1000 : -1000);   // a full travel; let go to stop
+    else
+        vp.jog = vp_goto(open ? 1000 : 0);
 }
 
 static void jog_release(lv_event_t *e)
@@ -95,7 +122,10 @@ static void jog_release(lv_event_t *e)
 static void step_cb(lv_event_t *e)
 {
     int32_t d = (int32_t)(intptr_t)lv_event_get_user_data(e);
-    vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
+    if (valve_mode() == VALVE_NOT_CAL)
+        vp_steps(d);
+    else
+        vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
 }
 
 static bool goto_set(int32_t v100, const char **why)
@@ -209,9 +239,8 @@ static void valve_fast(void)
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
-    int32_t p = valve_pct10();
-    p = !cal || p < 0 ? 0 : p > 1000 ? 1000 : p;
-    bar_width(vp.fill, p * 128 / 1000);
+    int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
+    bar_width(vp.fill, p * 128 / 10000);
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
@@ -225,10 +254,10 @@ static void valve_refresh(void)
     ui_set_color(vp.p, ok ? UI_TEXT : UI_FAULT);
     bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     valve_fast();
-    bool on = why_not_manual() == NULL;
+    bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
     for (int i = 0; i < 7; i++)
         if (vp.btn[i])
-            ui_btn_enable(vp.btn[i], on);
+            ui_btn_enable(vp.btn[i], i < 4 ? steps : on);
     if (vp.jog && !stepper3_busy())
         vp.jog = false;
     ui_status_line();
@@ -241,10 +270,13 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * ------------------------------------------------------------------------ */
 static struct {
     lv_obj_t *state, *v, *last, *seat, *start;
+    lv_obj_t *tile[3], *tcap[3], *tval[3], *time;
 } cp;
 
 static const char *const calib_help =
-    "Finds 0 % at the limit switch: close fast, back off, close slowly.\n"
+    "Finds 0 % at the limit switch in three steps: 1 fast close to the switch, "
+    "2 back off it, 3 slow close onto it. The step running is filled dark; "
+    "Motor, steps counts the motor as it moves; Time counts up, then shows how long it took.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
     "reset the fault, calibrate again.";
@@ -254,7 +286,7 @@ static void start_cb(lv_event_t *e)
     (void)e;
     if (valve_mode() == VALVE_CALIBRATING)
         ui_msg("Calibrating: STOP to cancel");
-    else if (valve_fault_count())
+    else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
         ui_calibrate_ask();
@@ -264,7 +296,7 @@ static void start_cb(lv_event_t *e)
 static void calib_switch(lv_timer_t *t)
 {
     (void)t;
-    ui_set_text(cp.seat, limit_open_now() ? "Pressed" : "Not pressed");
+    ui_set_text(cp.seat, limit_open_now() ? "Pressed" : "Released");
 }
 
 static void timer_deleted(lv_event_t *e)
@@ -275,49 +307,79 @@ static void timer_deleted(lv_event_t *e)
 static void calib_build(lv_obj_t *scr)
 {
     cp.state = ui_info(scr, 10, 48, 226, 48, "Valve calibration");
-    cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
+    cp.v = ui_info(scr, 244, 48, 109, 48, "Motor, steps");
     right(cp.v);
-    cp.seat = ui_info(scr, 10, 104, 148, 48, "Limit switch");
-    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated, took");   // "15 Oct 14:28, 15 s"
+    cp.last = ui_info(scr, 10, 104, 226, 48, "Last calibrated");   // "15/10/26 14:28"
+    cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
+    // The three steps; the one running is filled dark (Ryan, 16 Oct).
+    static const char *const cap[3] = { "1 Fast close", "2 Back off", "3 Slow close" };
+    for (int i = 0; i < 3; i++) {
+        cp.tval[i] = ui_info(scr, 10 + i * 117, 160, 109, 48, cap[i]);
+        cp.tile[i] = lv_obj_get_parent(cp.tval[i]);
+        cp.tcap[i] = lv_obj_get_child(cp.tile[i], 0);
+    }
+    // Time into the calibration, then how long the last one took.
+    cp.time = ui_info(scr, 361, 160, 109, 48, "Time taken");
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
     calib_switch(t);
 }
 
+// Step count at 10 Hz: it moves in every step, where the valve % cannot.
 static void calib_fast(void)
 {
     char buf[16];
-    bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
-    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
-    ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
+    lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
+    ui_set_text(cp.v, buf);
+}
+
+static void tile_set(int i, int state)   // 0 waiting, 1 running, 2 done
+{
+    static const char *const word[3] = { "--", "Moving", "Done" };
+    lv_color_t bg = state == 1 ? UI_TEXT : UI_CARD;
+    ui_set_text(cp.tval[i], word[state]);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(cp.tile[i], 0), bg)) {
+        lv_obj_set_style_bg_color(cp.tile[i], bg, 0);
+        lv_obj_set_style_text_color(cp.tcap[i], state == 1 ? lv_color_white() : UI_MUTED, 0);
+        lv_obj_set_style_text_color(cp.tval[i], state == 1 ? lv_color_white() : UI_TEXT, 0);
+    }
 }
 
 static void calib_refresh(void)
 {
-    char buf[40], w[16];
+    char w[16];
     bool calib = valve_mode() == VALVE_CALIBRATING;
     int step = valve_cal_step();
-    if (calib) {
-        lv_snprintf(buf, sizeof buf, "Calibrating, step %d of 3", step < 1 ? 1 : step);
-        ui_set_text(cp.state, step == 0 ? "Calibrating, moving off" : buf);
-    } else {
+    static const char *const doing[4] = { "Moving off the switch", "Fast close to switch",
+                                          "Backing off switch", "Slow close to switch" };
+    if (calib)
+        ui_set_text(cp.state, doing[step < 0 ? 0 : step]);
+    else
         ui_set_text(cp.state, valve_calibrated() ? "Calibrated" : "Not calibrated");
-    }
+    // Done after a calibration this power-up, not after Use saved position.
+    uint32_t age = 0, took = 0;
+    bool ran = valve_last_cal(&age, &took);
+    for (int i = 0; i < 3; i++)
+        tile_set(i, calib ? (step > i + 1 ? 2 : step == i + 1 ? 1 : 0) : valve_calibrated() && ran ? 2 : 0);
+    char tm[16];
+    uint32_t s = calib ? valve_cal_elapsed_s() : took;
+    if (calib || (ran && valve_calibrated()))
+        lv_snprintf(tm, sizeof tm, "%lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
+    else
+        lv_strlcpy(tm, "--", sizeof tm);
+    ui_set_text(cp.time, tm);
     calib_fast();
-    uint32_t age, took;
-    if (valve_last_cal(&age, &took)) {
+    if (ran) {
         const char *iso = valve_last_cal_iso();
         char d[20];
-        lv_snprintf(buf, sizeof buf, "%s, %lu s", iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age),
-                    (unsigned long)took);
-        ui_set_text(cp.last, buf);
+        ui_set_text(cp.last, iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age));
     } else {
         ui_set_text(cp.last, "Not since power-up");
     }
     ui_btn_text(cp.start, calib ? "Calibrating" : "Start calibration", NULL);
-    ui_btn_enable(cp.start, !calib && !valve_fault_count());
+    ui_btn_enable(cp.start, !calib && !valve_motion_blocked());
     ui_status_line();
 }
 
@@ -328,7 +390,7 @@ const ui_screen_t ui_scr_calib = { "Calibrate valve", calib_build, calib_refresh
  * ------------------------------------------------------------------------ */
 #define LOG_ROWS 40
 static struct {
-    lv_obj_t *list, *none, *reset, *log;
+    lv_obj_t *list, *none, *reset, *log, *box, *page[2];
     int nf;                   // rows built
     char sig[64];             // tags shown, to rebuild on change
     uint32_t log_total;
@@ -343,11 +405,11 @@ typedef struct {
 
 static const fault_help_t fault_help[] = {
     { "F-01", "The Druck reading is missing or outside 0.005-11 mV/V.",
-      "Stopped the valve and holds it. Pressure shows ----.",
+      "Pressure shows ----. The valve still moves.",
       "The Druck cable and plug, and the Power Monitor Click.",
       "The reading is back." },
     { "F-03", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
-      "Stopped the valve and holds it.",
+      "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
     { "F-07", "Calibrating, the valve closed 1.1 x full travel without the limit switch.",
@@ -469,6 +531,27 @@ static void faults_reset_cb(lv_event_t *e)
     reset_cb(e);
 }
 
+// Events Up / Down, as on Help: on press, repeating while held, greyed at
+// the ends. The list itself does not drag.
+static void log_buttons(void)
+{
+    lv_obj_update_layout(fp.box);
+    ui_btn_enable(fp.page[0], lv_obj_get_scroll_top(fp.box) > 0);
+    ui_btn_enable(fp.page[1], lv_obj_get_scroll_bottom(fp.box) > 0);
+}
+
+static void log_page(lv_event_t *e)
+{
+    if (ui_btn_disabled(e))
+        return;
+    int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
+    int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(fp.box) : lv_obj_get_scroll_top(fp.box);
+    int32_t d = room < 48 ? room : 48;   // three lines
+    if (d > 0)
+        lv_obj_scroll_by(fp.box, 0, -dir * d, LV_ANIM_OFF);
+    log_buttons();
+}
+
 static void faults_build(lv_obj_t *scr)
 {
     memset(&fp, 0, sizeof fp);
@@ -480,14 +563,29 @@ static void faults_build(lv_obj_t *scr)
     lv_obj_set_scroll_snap_y(fp.list, LV_SCROLL_SNAP_START);
     fp.reset = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Reset fault", faults_reset_cb, NULL);
 
-    lv_obj_t *ev = ui_card(scr, 10, 104, 460, 104);
+    lv_obj_t *ev = ui_card(scr, 10, 104, 343, 104);
     ui_label(ev, 10, 4, 300, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Events, newest first");
     lv_obj_t *box = lv_obj_create(ev);
     lv_obj_remove_style_all(box);
     lv_obj_set_pos(box, 10, 22);
-    lv_obj_set_size(box, 446, 80);
+    lv_obj_set_size(box, 329, 80);
     lv_obj_set_scroll_dir(box, LV_DIR_VER);
-    fp.log = ui_label(box, 0, 0, 436, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                            LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_width(box, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(box, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(box, UI_IDLE, LV_PART_SCROLLBAR);
+    fp.box = box;
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = ui_btn(scr, 361, i ? 160 : 104, 109, 48, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN : LV_SYMBOL_UP, NULL, NULL);
+        lv_obj_add_event_cb(b, log_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, log_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+        fp.page[i] = b;
+    }
+    fp.log = ui_label(box, 0, 0, 317, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(fp.log, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(fp.log, 2, 0);
     fp.log_total = (uint32_t)-1;
@@ -547,6 +645,7 @@ static void faults_log(void)
         len += strlen(log_text + len);
     }
     lv_label_set_text_static(fp.log, log_text);
+    log_buttons();
 }
 
 static void faults_refresh(void)
@@ -582,7 +681,7 @@ static void diag_motor(lv_timer_t *t)
     lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
     ui_set_text(dp.v[3], buf);
     bool pressed = limit_open_now();
-    ui_set_text(dp.v[4], pressed ? "Pressed" : "Not pressed");
+    ui_set_text(dp.v[4], pressed ? "Pressed" : "Released");
     int32_t beyond;
     if (pressed && valve_beyond_switch(&beyond))
         lv_snprintf(buf, sizeof buf, "%ld", (long)beyond);

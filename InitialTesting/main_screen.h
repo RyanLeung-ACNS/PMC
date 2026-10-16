@@ -1,19 +1,11 @@
 #ifndef _MAIN_SCREEN_H_
 #define _MAIN_SCREEN_H_
 
-#include <stdbool.h>
 #include "scr_main_screen.h"
 
-void init_main_screen();
+// Empty: kept for the code NECTO generates from main_screen.mscr (see
+// main_screen.c). The screens are in ui*.c.
+void init_main_screen(void);
+void show_main_screen(void);
 
-void show_main_screen();
-
-// DATA ON / DATA OFF: start or pause the once-a-second DATA lines.
-// Returns false if the line is not a DATA command.
-bool main_screen_data_command(const char *line);
-
-// Once a second from the main loop: read the boards, update the checks,
-// print the status and DATA lines.
-void main_screen_sense(void);
-
-#endif // !__MAIN_SCREEN_H__H_
+#endif // _MAIN_SCREEN_H_

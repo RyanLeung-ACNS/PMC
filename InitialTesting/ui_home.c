@@ -45,9 +45,17 @@ static int32_t log2_q8(uint32_t v)
     return n;
 }
 
+// The pressure as the screen shows it (1 dp), so a bar never moves while
+// the number stands still.
+static int32_t p_shown(int32_t p_mmbar)
+{
+    return p_mmbar < 0 ? 0 : (p_mmbar + 50) / 100 * 100;
+}
+
 int32_t ui_log_px(int32_t p_mmbar, int32_t w)
 {
     const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar
+    p_mmbar = p_shown(p_mmbar);
     int32_t l = log2_q8(p_mmbar > 1 ? (uint32_t)p_mmbar : 1);
     int32_t x = (l - lo) * w / (hi - lo);
     return x < 0 ? 0 : x > w ? w : x;
@@ -56,6 +64,7 @@ int32_t ui_log_px(int32_t p_mmbar, int32_t w)
 static int32_t pbar_x(int32_t p_mmbar)
 {
     const int32_t lo = log2_q8(100), hi = log2_q8(1000000);   // 0.1, 1000 mbar
+    p_mmbar = p_shown(p_mmbar);
     int32_t l = log2_q8(p_mmbar > 1 ? (uint32_t)p_mmbar : 1);
     int32_t x = PPAD + (l - lo) * (BAR_W - 2 * PPAD) / (hi - lo);
     return x < 0 ? 0 : x > BAR_W ? BAR_W : x;
@@ -125,7 +134,7 @@ static void box_set(tile_t *t, bool active, const char *text)
         lv_obj_set_style_bg_color(b, bg, 0);
         lv_obj_set_style_border_width(b, active ? 3 : 0, 0);
         lv_obj_set_style_radius(b, 4, 0);
-        lv_obj_set_width(t->box_text, active ? 56 : 66);
+        lv_obj_set_width(t->box_text, active ? 74 : 84);
         if (active) lv_obj_remove_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
         else        lv_obj_add_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
     }
@@ -161,16 +170,16 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     t->box = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->box);
     lv_obj_remove_flag(t->box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(t->box, 73, 116);
-    lv_obj_set_size(t->box, 82, 40);
+    lv_obj_set_pos(t->box, 55, 116);   // wide enough for "100.00" and the chevron
+    lv_obj_set_size(t->box, 100, 40);
     lv_obj_set_style_bg_opa(t->box, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(t->box, lv_color_hex(0xEEF2F6), 0);
     lv_obj_set_style_radius(t->box, 4, 0);
     lv_obj_set_style_border_side(t->box, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(t->box, UI_BLUE, 0);
     lv_obj_add_event_cb(t->box, box_cb, LV_EVENT_CLICKED, NULL);
-    t->box_text = ui_label(t->box, 4, 11, 66, &ui_num_16, UI_IDLE, LV_TEXT_ALIGN_RIGHT, "");
-    t->box_chev = ui_label(t->box, 64, 12, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT,
+    t->box_text = ui_label(t->box, 4, 11, 84, &ui_num_16, UI_IDLE, LV_TEXT_ALIGN_RIGHT, "");
+    t->box_chev = ui_label(t->box, 82, 12, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT,
                            LV_SYMBOL_RIGHT);
     lv_obj_add_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
 }
@@ -178,7 +187,7 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
 /* Actions ---------------------------------------------------------------- */
 static const char *not_manual_why(void)
 {
-    if (valve_fault_count()) return "Reset the fault first";
+    if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
     return "Calibrate the valve first";
 }
@@ -193,7 +202,7 @@ static void target_event(lv_event_t *e)
 static bool goto_set(int32_t v100, const char **why)
 {
     if (!valve_goto_pct100(v100, why)) {
-        *why = valve_fault_count() ? "Reset the fault first" : "Limit switch pressed, cannot close";
+        *why = valve_motion_blocked() ? "Reset the fault first" : "Limit switch pressed, cannot close";
         return false;
     }
     return true;
@@ -202,7 +211,7 @@ static bool goto_set(int32_t v100, const char **why)
 static void goto_event(lv_event_t *e)
 {
     (void)e;
-    if (valve_mode() != VALVE_MANUAL || valve_fault_count()) {
+    if (valve_mode() != VALVE_MANUAL || valve_motion_blocked()) {
         ui_msg(not_manual_why());
         return;
     }
@@ -213,7 +222,9 @@ static void calibrate(void)
 {
     const char *why;
     if (!valve_calibrate(&why))
-        ui_msg(valve_fault_count() ? "Reset the fault first" : why);
+        ui_msg(valve_motion_blocked() ? "Reset the fault first" : why);
+    else if (!ui_showing(&ui_scr_calib))
+        ui_open(&ui_scr_calib);   // the steps show there; Back returns (Ryan, 16 Oct)
 }
 
 void ui_calibrate_ask(void)
@@ -232,7 +243,7 @@ static void mode_event(lv_event_t *e)
         ui_msg("Calibrating: STOP to cancel");
     else if (valve_mode() == VALVE_MANUAL)
         ui_msg("AUTO is not built yet");
-    else if (valve_fault_count())
+    else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
         ui_calibrate_ask();
@@ -288,9 +299,8 @@ static void home_fast(void)
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
-    int32_t p = valve_pct10();
-    p = p < 0 ? 0 : p > 1000 ? 1000 : p;
-    bar_set(&vt, cal ? p * BAR_W / 1000 : -1);
+    int32_t p = ui_pct_shown(valve_pct_milli());
+    bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
 }
 
 static void home_refresh(void)
@@ -309,7 +319,7 @@ static void home_refresh(void)
 
     home_fast();
     alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-13"));
-    bool manual = m == VALVE_MANUAL && !valve_fault_count();
+    bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
     box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "");
 
     // Mode button.
@@ -350,26 +360,30 @@ void ui_status_line(void)
     } else if (m == VALVE_NOT_CAL) {
         ui_strip_set(UI_STRIP_PROMPT, UI_IDLE, "Valve not calibrated");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Moving off the switch", "Calibrating 1 of 3: closing to the switch",
-                                             "Calibrating 2 of 3: backing off", "Calibrating 3 of 3: slow approach" };
+        static const char *const what[4] = { "Calibrating: moving off the switch", "Calibrating 1 of 3: fast close to the switch",
+                                             "Calibrating 2 of 3: backing off the switch",
+                                             "Calibrating 3 of 3: slow close onto the switch" };
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
     } else {
-        ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Valve held");
+        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct).
+        char t[32], v[16];
+        lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
+        ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
     }
 }
 
 const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh, home_fast };
 
 /* --------------------------------------------------------------------------
- * Menu: the six v63 tiles in three captioned rows (those not built yet
- * greyed), and a
- * temporary Service button for the 0.6.0 screens (until the settings stage).
+ * Menu: the six v63 tiles in three captioned rows (Trend greyed until it
+ * is built). The 0.6.0 motor screen is Settings > Motor override.
  * ------------------------------------------------------------------------ */
-static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, NULL, &ui_scr_diag, NULL };
+static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, &ui_scr_sensor_cal,
+                                                &ui_scr_diag, &ui_scr_settings };
 
 static void menu_tile_event(lv_event_t *e)
 {
@@ -380,34 +394,28 @@ static void menu_tile_event(lv_event_t *e)
         ui_msg("Comes in a later firmware");
 }
 
-static void service_event(lv_event_t *e)
-{
-    (void)e;
-    ui_service();
-}
-
 static void menu_build(lv_obj_t *scr)
 {
     // Grouped in rows with a caption on the left, as on Diagnostics.
     static const char *const rows[3] = { "Records", "Calibrate", "System" };
     static const char *const names[6] = { "Trend", "Faults and log", "Valve",
                                           "Sensor", "Diagnostics", "Settings" };
+    // Caption and two tiles in 1 : 1.5 : 1.5, the caption centred on its row.
     for (int r = 0; r < 3; r++) {
-        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
+        lv_obj_t *l = ui_label(scr, 10, 0, 111, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
+        lv_obj_update_layout(l);
+        lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
     }
     for (int i = 0; i < 6; i++) {
-        lv_obj_t *b = ui_btn(scr, i % 2 ? 288 : 98, 48 + (i / 2) * 56, 182, 48, UI_NAV, names[i],
+        lv_obj_t *b = ui_btn(scr, i % 2 ? 303 : 129, 48 + (i / 2) * 56, i % 2 ? 167 : 166, 48, UI_NAV, names[i],
                              menu_tile_event, (void *)menu_scr[i]);
         ui_btn_enable(b, menu_scr[i] != NULL);
     }
-    ui_strip_width(226);
-    ui_btn(scr, 244, 216, 109, 48, UI_NAV, "Service", service_event, NULL);
 }
 
 static void menu_refresh(void)
 {
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Service: the 0.6.0 screens");
+    ui_status_line();
 }
 
 const ui_screen_t ui_scr_menu = { "Menu", menu_build, menu_refresh, NULL };

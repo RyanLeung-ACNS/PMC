@@ -81,6 +81,7 @@ const char *clicks_druck_status(void) { return "Druck: fake"; }
 const char *clicks_druck_value(void) { return value; }
 bool clicks_druck_cal_nominal(void) { return st.cal_nominal; }
 const clicks_state_t *clicks_state(void) { return &st; }
+#ifndef REAL_CAL
 bool cal_is_default(void) { return st.cal_nominal; }
 const char *cal_id(void) { return fake_bench ? "5880156 bench" : "5880156"; }
 bool cal_saved(void) { return fake_saved; }
@@ -96,6 +97,7 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
     *r_air = 9798300; *p_air = 1013250;
     return true;
 }
+#endif
 int32_t clicks_boost10_set_mv(int32_t mv) { return st.boost_tripped ? -1 : mv; }
 
 void link_init(void) {}

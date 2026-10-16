@@ -31,7 +31,8 @@
 #define COL_WARN     lv_color_make(214, 130, 0)
 #define COL_IDLE     lv_color_make(150, 158, 166)
 
-static lv_obj_t *screen, *back_to;
+static lv_obj_t *screen;
+static void (*on_back)(void);
 static lv_obj_t *state_label, *pos_label, *last_label;
 static lv_obj_t *size_btn[5], *mode_btn[3];
 static lv_obj_t *rate_val, *start_val, *accel_val;
@@ -184,7 +185,7 @@ static void refresh(void);
 static void back_event(lv_event_t *e)
 {
     (void)e;
-    lv_screen_load(back_to);
+    on_back();
 }
 
 static void size_event(lv_event_t *e)
@@ -389,9 +390,9 @@ static lv_obj_t *make_adjust_row(lv_obj_t *parent, int32_t y, const char *captio
     return v;
 }
 
-void motor_screen_init(lv_obj_t *return_screen)
+void motor_screen_init(void (*go_back)(void))
 {
-    back_to = return_screen;
+    on_back = go_back;
     screen = lv_obj_create(NULL);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, COL_BG, 0);
