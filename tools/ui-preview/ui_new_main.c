@@ -251,7 +251,7 @@ int main(int argc, char **argv)
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
     }
     if (!strcmp(st, "moving")) { moving = true; v_target10 = 500; }
-    if (!strcmp(st, "calib")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
+    if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
@@ -361,7 +361,7 @@ int main(int argc, char **argv)
     if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
-    if (!strcmp(st, "calpage")) { tap(415, 184); tap(120, 128); }
+    if (!strcmp(st, "calpage") || !strcmp(st, "calpage2")) { tap(415, 184); tap(210, 128); }
     if (!strcmp(st, "diag")) { tap(415, 184); tap(120, 184); }
     run(1200);
 

@@ -328,7 +328,7 @@ bool ui_btn_disabled(lv_event_t *e)
 /* --------------------------------------------------------------------------
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
-static lv_obj_t *frame, *hdr, *back_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
+static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
 
@@ -369,6 +369,12 @@ static void back_event(lv_event_t *e)
         ui_home();
 }
 
+static void home_event(lv_event_t *e)
+{
+    (void)e;
+    ui_home();
+}
+
 static void stop_event(lv_event_t *e)
 {
     (void)e;
@@ -407,13 +413,20 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
     lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
-    back_btn = ui_btn(hdr, 0, 0, 119, 40, UI_DARK, LV_SYMBOL_LEFT " Back", back_event, NULL);
+    // Back and Home share the first column; Home is hidden on Home and
+    // under popups, where Back closes the popup.
+    back_btn = ui_btn(hdr, 0, 0, 88, 40, UI_DARK, LV_SYMBOL_LEFT " Back", back_event, NULL);
+    home_btn = ui_btn(hdr, 89, 0, 54, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
     // A touch in the 8 px gap under the header is Back's, not the page's.
     lv_obj_set_ext_click_area(hdr, 8);
     lv_obj_set_ext_click_area(back_btn, 8);
+    lv_obj_set_ext_click_area(home_btn, 8);
     lv_obj_align(lv_obj_get_child(back_btn, 0), LV_ALIGN_LEFT_MID, 4, 0);
-    pmc_lbl = ui_label(hdr, 10, 11, 109, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "PMC");
-    title_lbl = ui_label(hdr, 127, 11, 166, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_set_style_text_align(lv_obj_get_child(home_btn, 0), LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(lv_obj_get_child(home_btn, 0));
+    pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT,
+                       "Needle valve controller");
+    title_lbl = ui_label(hdr, 151, 11, 142, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
     mode_dot = plain(hdr);
@@ -543,6 +556,7 @@ static void frame_refresh(void)
     // Header.
     bool home = cur == &ui_scr_home;
     show(back_btn, !home || overlay);
+    show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
     if (!home)

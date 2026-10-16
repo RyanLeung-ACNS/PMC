@@ -10,7 +10,7 @@
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
- * Settings (stage 6, simulator v63): Settings, Pressure sensor, Valve
+ * Settings (stage 6, simulator v63): Settings, Choose sensor, Valve
  * setup, Control tuning, Review and save, and Calibrate sensor (Menu >
  * Calibrate > Sensor).
  *
@@ -113,9 +113,9 @@ static const field_t F[CFG_N] = {
     [CFG_POSMAX]  = { "100 % travel", "turns", 2, K_TURNS, "Output turns from closed to fully open" },
     [CFG_REVERSE] = { "Motor direction", NULL, 0, K_TOGGLE, "Reversed if Open drives the valve closed; saving it clears the zero" },
     [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count set at the closed limit" },
-    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Off the switch before the slow approach" },
-    [CFG_FHOME]   = { "Ref. speed", "steps/s", 0, K_NUM, "Speed closing to the switch" },
-    [CFG_FCREEP]  = { "Creep speed", "steps/s", 0, K_NUM, "Slow final approach to the switch" },
+    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Calibration step 2: off the switch before the slow close" },
+    [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Calibration step 1: closing fast to the switch" },
+    [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Calibration step 3: closing slowly onto the switch" },
     [CFG_RATE]    = { "Run speed", "steps/s", 0, K_NUM, "Normal move speed" },
     [CFG_START]   = { "Start speed", "steps/s", 0, K_NUM, "Speed at the start and end of a move" },
     [CFG_ACCEL]   = { "Acceleration", "steps/s/s", 0, K_NUM, "Ramp between start and run" },
@@ -564,7 +564,7 @@ static void motor_cb(lv_event_t *e)
 
 static void settings_build(lv_obj_t *scr)
 {
-    static const char *const names[4] = { "Pressure sensor", "Valve setup", "Control tuning", "Review and save" };
+    static const char *const names[4] = { "Choose sensor", "Valve setup", "Control tuning", "Review and save" };
     const ui_screen_t *const to[4] = { &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune, &ui_scr_review };
     for (int i = 0; i < 4; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
@@ -584,16 +584,12 @@ static void settings_build(lv_obj_t *scr)
 
 static void settings_refresh(void)
 {
-    char t[48], p[16], d[24];
+    char t[48], p[32], d[24];
     cfg_sensor_t s;
+    // Which sensor is read; calibrating it is Menu > Calibrate > Sensor.
     if (cfg_sensor(cfg_sensor_active(), &s)) {
-        if (!s.has_cal)
-            lv_snprintf(t, sizeof t, "%s, not calibrated", psi_text(p, sizeof p, s.psi10));
-        else if (cal_date(d, sizeof d, s.cal))
-            lv_snprintf(t, sizeof t, "%s, cal %s", psi_text(p, sizeof p, s.psi10), d);
-        else
-            lv_snprintf(t, sizeof t, "%s, calibrated", psi_text(p, sizeof p, s.psi10));
-        ui_btn_text(st.tile[0], "Pressure sensor", t);
+        lv_snprintf(t, sizeof t, "In use: %s", sensor_name(p, sizeof p, s.serial));
+        ui_btn_text(st.tile[0], "Choose sensor", t);
     }
     lv_snprintf(t, sizeof t, "%s turns", value_text(d, sizeof d, CFG_POSMAX, live(CFG_POSMAX)));
     ui_btn_text(st.tile[1], "Valve setup", t);
@@ -629,7 +625,7 @@ static void settings_refresh(void)
 const ui_screen_t ui_scr_settings = { "Settings", settings_build, settings_refresh, NULL };
 
 /* --------------------------------------------------------------------------
- * Pressure sensor
+ * Choose sensor
  * ------------------------------------------------------------------------ */
 static struct {
     ecard_t use, cal;
@@ -816,7 +812,7 @@ static void ps_build(lv_obj_t *scr)
     ui_btn(scr, 244, RY[0], 109, RH, UI_SECONDARY, "Add\nsensor", add_cb, NULL);   // two lines, as Remove sensor
     ecard_make(&ps.cal, scr, 10, RY[1], 226, "Calibration", cal_detail_cb, NULL);
     ps.rm = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Remove sensor", rm_cb, NULL);
-    side_make(scr, "Pressure sensor", ps_help);
+    side_make(scr, "Choose sensor", ps_help);
 }
 
 static void ps_refresh(void)
@@ -830,7 +826,7 @@ static void ps_refresh(void)
     side_refresh();
 }
 
-const ui_screen_t ui_scr_sensor_set = { "Pressure sensor", ps_build, ps_refresh, NULL };
+const ui_screen_t ui_scr_sensor_set = { "Choose sensor", ps_build, ps_refresh, NULL };
 
 /* --------------------------------------------------------------------------
  * Valve setup (three tabs) and Control tuning

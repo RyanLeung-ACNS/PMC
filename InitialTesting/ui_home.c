@@ -358,15 +358,19 @@ void ui_status_line(void)
     } else if (m == VALVE_NOT_CAL) {
         ui_strip_set(UI_STRIP_PROMPT, UI_IDLE, "Valve not calibrated");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Moving off the switch", "Calibrating 1 of 3: closing to the switch",
-                                             "Calibrating 2 of 3: backing off", "Calibrating 3 of 3: slow approach" };
+        static const char *const what[4] = { "Calibrating: moving off the switch", "Calibrating 1 of 3: fast close to the switch",
+                                             "Calibrating 2 of 3: backing off the switch",
+                                             "Calibrating 3 of 3: slow close onto the switch" };
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
     } else {
-        ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Valve stopped");
+        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct).
+        char t[32], v[16];
+        lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
+        ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
     }
 }
 

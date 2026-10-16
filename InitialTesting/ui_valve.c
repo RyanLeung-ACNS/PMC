@@ -270,10 +270,13 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * ------------------------------------------------------------------------ */
 static struct {
     lv_obj_t *state, *v, *last, *seat, *start;
+    lv_obj_t *tile[3], *tcap[3], *tval[3];
 } cp;
 
 static const char *const calib_help =
-    "Finds 0 % at the limit switch: close fast, back off, close slowly.\n"
+    "Finds 0 % at the limit switch in three steps: 1 fast close to the switch, "
+    "2 back off it, 3 slow close onto it. The step running is filled dark; "
+    "Motor, steps counts the motor as it moves.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
     "reset the fault, calibrate again.";
@@ -304,39 +307,62 @@ static void timer_deleted(lv_event_t *e)
 static void calib_build(lv_obj_t *scr)
 {
     cp.state = ui_info(scr, 10, 48, 226, 48, "Valve calibration");
-    cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
+    cp.v = ui_info(scr, 244, 48, 109, 48, "Motor, steps");
     right(cp.v);
     cp.last = ui_info(scr, 10, 104, 226, 48, "Last calibrated");   // "15/10/26 14:28"
     cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
+    // The three steps; the one running is filled dark (Ryan, 16 Oct).
+    static const char *const cap[3] = { "1 Fast close", "2 Back off", "3 Slow close" };
+    for (int i = 0; i < 3; i++) {
+        cp.tval[i] = ui_info(scr, 10 + i * 117, 160, 109, 48, cap[i]);
+        cp.tile[i] = lv_obj_get_parent(cp.tval[i]);
+        cp.tcap[i] = lv_obj_get_child(cp.tile[i], 0);
+    }
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
     calib_switch(t);
 }
 
+// Step count at 10 Hz: it moves in every step, where the valve % cannot.
 static void calib_fast(void)
 {
     char buf[16];
-    bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
-    ui_set_text(cp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
-    ui_set_color(cp.v, cal ? UI_TEXT : UI_IDLE);
+    lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
+    ui_set_text(cp.v, buf);
+}
+
+static void tile_set(int i, int state)   // 0 waiting, 1 running, 2 done
+{
+    static const char *const word[3] = { "--", "Moving", "Done" };
+    lv_color_t bg = state == 1 ? UI_TEXT : UI_CARD;
+    ui_set_text(cp.tval[i], word[state]);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(cp.tile[i], 0), bg)) {
+        lv_obj_set_style_bg_color(cp.tile[i], bg, 0);
+        lv_obj_set_style_text_color(cp.tcap[i], state == 1 ? lv_color_white() : UI_MUTED, 0);
+        lv_obj_set_style_text_color(cp.tval[i], state == 1 ? lv_color_white() : UI_TEXT, 0);
+    }
 }
 
 static void calib_refresh(void)
 {
-    char buf[40], w[16];
+    char w[16];
     bool calib = valve_mode() == VALVE_CALIBRATING;
     int step = valve_cal_step();
-    if (calib) {
-        lv_snprintf(buf, sizeof buf, "Calibrating, step %d of 3", step < 1 ? 1 : step);
-        ui_set_text(cp.state, step == 0 ? "Calibrating, moving off" : buf);
-    } else {
+    static const char *const doing[4] = { "Moving off the switch", "Fast close to switch",
+                                          "Backing off switch", "Slow close to switch" };
+    if (calib)
+        ui_set_text(cp.state, doing[step < 0 ? 0 : step]);
+    else
         ui_set_text(cp.state, valve_calibrated() ? "Calibrated" : "Not calibrated");
-    }
-    calib_fast();
+    // Done after a calibration this power-up, not after Use saved position.
     uint32_t age, took;
-    if (valve_last_cal(&age, &took)) {
+    bool ran = valve_last_cal(&age, &took);
+    for (int i = 0; i < 3; i++)
+        tile_set(i, calib ? (step > i + 1 ? 2 : step == i + 1 ? 1 : 0) : valve_calibrated() && ran ? 2 : 0);
+    calib_fast();
+    if (ran) {
         const char *iso = valve_last_cal_iso();
         char d[20];
         (void)took;   // how long it took is in Faults and log ("Calibrated in 15 s")
