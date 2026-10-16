@@ -710,6 +710,8 @@ void ui_service(void)
 
 bool ui_on_service(void) { return service; }
 
+bool ui_showing(const ui_screen_t *s) { return cur == s && !service; }
+
 /* --------------------------------------------------------------------------
  * Overlays: keypad and confirm, over 0,40 480x232 (STOP stays on top)
  * ------------------------------------------------------------------------ */

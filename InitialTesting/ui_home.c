@@ -223,6 +223,8 @@ static void calibrate(void)
     const char *why;
     if (!valve_calibrate(&why))
         ui_msg(valve_motion_blocked() ? "Reset the fault first" : why);
+    else if (!ui_showing(&ui_scr_calib))
+        ui_open(&ui_scr_calib);   // the steps show there; Back returns (Ryan, 16 Oct)
 }
 
 void ui_calibrate_ask(void)
