@@ -329,6 +329,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
+#define UI_HOME_TITLE "Needle valve"   // the HMI's name, Home's title
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
@@ -432,7 +433,7 @@ static void build_frame(void)
         lv_obj_center(l);
     }
     pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER,
-                       "Needle valve controller");
+                       UI_HOME_TITLE);
     lv_label_set_long_mode(pmc_lbl, LV_LABEL_LONG_DOT);
     title_lbl = ui_label(hdr, 100, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
@@ -600,7 +601,11 @@ static void frame_refresh(void)
             ui_set_text(title_lbl, cur->title);
             title_fit(title_lbl, cur->title, mode_txt, 2 * HDR_BTN_W + 4);
         }
-        title_fit(pmc_lbl, "Needle valve controller", mode_txt, 10);
+        // Home's title sits on the left (Ryan, 16 Oct: centred left the
+        // top left empty); it is centred in the gap only if it is too long.
+        title_fit(pmc_lbl, UI_HOME_TITLE, mode_txt, 10);
+        if (text_w(UI_HOME_TITLE) < 454 - text_w(mode_txt) - 8 - 12)
+            lv_obj_set_x(pmc_lbl, 12);
     }
     show(fault_rule, nf > 0);
     bool op = !valve_stop_latches();
