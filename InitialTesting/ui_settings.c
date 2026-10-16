@@ -1118,6 +1118,8 @@ static const char *cs_help(void)
            "Capture air: vent the sensor to the room, then type the lab barometer reading in mB, for example "
            "1013.2.\n"
            "Each capture averages 10 readings. Either point can be redone on its own; the other is kept.\n"
+           "Signal is the Druck output in mV. The points are held as mV/V (output over excitation), so a "
+           "change of excitation does not move them.\n"
            "Once both are held the new calibration is in use and unsaved: check Reading against New cal, "
            "then Save settings. Discard changes puts the last save back.";
 }
@@ -1192,7 +1194,7 @@ static void air_cb(lv_event_t *e)
 
 static void cs_build(lv_obj_t *scr)
 {
-    cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV/V");
+    cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV");
     cs.now = ui_info(scr, 127, RY[0], 109, RH, "Reading, mB");
     cs.nw = ui_info(scr, 244, RY[0], 109, RH, "New cal, mB");
     cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB @ mV/V");
@@ -1208,7 +1210,7 @@ static void cs_refresh(void)
     char t[40];
     const clicks_state_t *s = clicks_state();
     bool ok = reading_ok();
-    ui_set_text(cs.sig, ok ? fixed_fmt(t, sizeof t, fixed_round(s->r_ppb, 2), 4) : "----");
+    ui_set_text(cs.sig, ok ? fixed_fmt(t, sizeof t, fixed_round(s->shunt_nv, 3), 3) : "----");   // 93.676
     // Reading with the saved cal of this sensor; New cal with the one in use, if different.
     cfg_sensor_t q;
     const cal_rec_t *saved = NULL;

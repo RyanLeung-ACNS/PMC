@@ -327,7 +327,7 @@ const ui_screen_t ui_scr_calib = { "Calibrate valve", calib_build, calib_refresh
  * ------------------------------------------------------------------------ */
 #define LOG_ROWS 40
 static struct {
-    lv_obj_t *list, *none, *reset, *log;
+    lv_obj_t *list, *none, *reset, *log, *box, *page[2];
     int nf;                   // rows built
     char sig[64];             // tags shown, to rebuild on change
     uint32_t log_total;
@@ -468,6 +468,27 @@ static void faults_reset_cb(lv_event_t *e)
     reset_cb(e);
 }
 
+// Events Up / Down, as on Help: on press, repeating while held, greyed at
+// the ends. The list itself does not drag.
+static void log_buttons(void)
+{
+    lv_obj_update_layout(fp.box);
+    ui_btn_enable(fp.page[0], lv_obj_get_scroll_top(fp.box) > 0);
+    ui_btn_enable(fp.page[1], lv_obj_get_scroll_bottom(fp.box) > 0);
+}
+
+static void log_page(lv_event_t *e)
+{
+    if (ui_btn_disabled(e))
+        return;
+    int32_t dir = lv_event_get_user_data(e) ? 1 : -1;
+    int32_t room = dir > 0 ? lv_obj_get_scroll_bottom(fp.box) : lv_obj_get_scroll_top(fp.box);
+    int32_t d = room < 48 ? room : 48;   // three lines
+    if (d > 0)
+        lv_obj_scroll_by(fp.box, 0, -dir * d, LV_ANIM_OFF);
+    log_buttons();
+}
+
 static void faults_build(lv_obj_t *scr)
 {
     memset(&fp, 0, sizeof fp);
@@ -479,14 +500,29 @@ static void faults_build(lv_obj_t *scr)
     lv_obj_set_scroll_snap_y(fp.list, LV_SCROLL_SNAP_START);
     fp.reset = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Reset fault", faults_reset_cb, NULL);
 
-    lv_obj_t *ev = ui_card(scr, 10, 104, 460, 104);
+    lv_obj_t *ev = ui_card(scr, 10, 104, 343, 104);
     ui_label(ev, 10, 4, 300, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Events, newest first");
     lv_obj_t *box = lv_obj_create(ev);
     lv_obj_remove_style_all(box);
     lv_obj_set_pos(box, 10, 22);
-    lv_obj_set_size(box, 446, 80);
+    lv_obj_set_size(box, 329, 80);
     lv_obj_set_scroll_dir(box, LV_DIR_VER);
-    fp.log = ui_label(box, 0, 0, 436, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                            LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_width(box, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(box, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(box, UI_IDLE, LV_PART_SCROLLBAR);
+    fp.box = box;
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = ui_btn(scr, 361, i ? 160 : 104, 109, 48, UI_SECONDARY,
+                             i ? LV_SYMBOL_DOWN : LV_SYMBOL_UP, NULL, NULL);
+        lv_obj_add_event_cb(b, log_page, LV_EVENT_PRESSED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, log_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
+        fp.page[i] = b;
+    }
+    fp.log = ui_label(box, 0, 0, 317, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(fp.log, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(fp.log, 2, 0);
     fp.log_total = (uint32_t)-1;
@@ -546,6 +582,7 @@ static void faults_log(void)
         len += strlen(log_text + len);
     }
     lv_label_set_text_static(fp.log, log_text);
+    log_buttons();
 }
 
 static void faults_refresh(void)
