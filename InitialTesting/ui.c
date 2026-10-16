@@ -613,11 +613,18 @@ static void frame_refresh(void)
         if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
         else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
     }
-    // Dot: red with a fault, filled grey in AUTO (not built), else a ring.
-    lv_opa_t opa = nf ? LV_OPA_COVER : LV_OPA_TRANSP;
-    if (lv_obj_get_style_bg_opa(mode_dot, 0) != opa) {
-        lv_obj_set_style_bg_opa(mode_dot, opa, 0);
-        lv_obj_set_style_border_width(mode_dot, nf ? 0 : 2, 0);
+    // Mode dot (simulator WP023 S4): red and filled with a latched fault,
+    // filled grey in AUTO, a grey ring in every other mode; shape, not
+    // colour, tells AUTO apart. (Before 0.10.5 the ring never drew: its
+    // border was only set on a change of fill, and the first was none.)
+    static int dot_kind = -1;
+    bool in_auto = false;      // AUTO comes in stage 8
+    int kind = nf ? 2 : in_auto ? 1 : 0;
+    if (kind != dot_kind) {
+        dot_kind = kind;
+        lv_obj_set_style_bg_opa(mode_dot, kind ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(mode_dot, kind == 2 ? UI_FAULT : lv_color_hex(0xC3CDD7), 0);
+        lv_obj_set_style_border_width(mode_dot, kind ? 0 : 2, 0);
     }
 
     question_check();
