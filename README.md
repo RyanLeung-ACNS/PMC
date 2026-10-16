@@ -1,6 +1,25 @@
 # PMC
 
-Pressure-based needle-valve controller for Oxford Instruments cryostats, replacing the Mercury iTC's valve control. The operator sets a target pressure (a rough proxy for helium flow, which is not measured) and the controller drives the needle valve's stepper motor. This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`; the screen simulator it was ported from is in `simulator/`.
+Pressure-based needle-valve controller for helium-flow cryostats, developed during a 12-week graduate placement in a sample environment group.
+
+## Context
+
+Oxford Instruments cryostats (CF-10, CF-11, HM-2, AVM-1, AVM-2) draw helium through a needle valve, driven by a geared stepper motor and regulated today by a Mercury iTC. The iTC holds the pressure measured by a Druck transducer on the pumping line. Pressure is a rough proxy for the helium flow; the flow itself is not measured. This project replaces the iTC's valve control with a standalone controller that keeps the existing Druck transducer and stepper valve.
+
+How it is used: operators set a target pressure for each cryostat from experience (typically 1 to 25 mbar) and switch between MANUAL and AUTO. They do not tune the control loop. They watch the sample temperature on another controller, so the pressure trend on this one matters.
+
+Constraints: bought modules only (no PCB design), no PLC, Modbus TCP and a small touchscreen, 0.1 mbar resolution. The valve's limit switch is the closing stop and is read in firmware; there is no hardware interlock.
+
+Two hardware options are being built and compared; neither is final:
+
+- **Option C (this repository):** a MikroE Mikromedia 4 (STM32F407) touchscreen board with Click boards for the stepper driver, the Druck excitation and the Druck reading. All control and the screens are in this firmware.
+- **Option A:** a Eurotherm EPC3008 controller with an Applied Motion STF06-R stepper drive in Modbus position mode. The EPC runs the PID and writes the valve target to the drive over RS-485. Not in this repository.
+
+`simulator/` holds the screen simulator (HTML) the firmware screens are ported from.
+
+## This repository
+
+This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
 Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.5 at the time of writing). Commit titles start with the version they build.
 
@@ -143,7 +162,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
 | `PM DIAG` | Steps the excitation from 9 to 11 V, one step a second, then puts it back (only when `PMC_PM_DIAG` is 1) |
 
-Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, and the save time, in one record in serial flash; version 2 from 0.9.0, and a 0.6.0 to 0.8.x record still loads as one sensor, s/n 5880156 at 15 psi). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
+Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, and the save time, in one record in serial flash; version 2 from 0.9.0, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 
 | Command | What it does |
 | --- | --- |
