@@ -675,6 +675,8 @@ bool valve_move_steps(int32_t steps, const char **why)
 
 bool valve_calibrate(const char **why) { return cal_start(why); }
 
+uint32_t valve_cal_elapsed_s(void) { return mode == VALVE_CALIBRATING ? lv_tick_elaps(cal_t0) / 1000 : 0; }
+
 uint32_t valve_cal_budget_s(void)
 {
     return (uint32_t)(((int64_t)pos_max * 11 / 10 + n_clear + 2 * n_backoff) / f_home

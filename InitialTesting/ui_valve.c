@@ -270,13 +270,13 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * ------------------------------------------------------------------------ */
 static struct {
     lv_obj_t *state, *v, *last, *seat, *start;
-    lv_obj_t *tile[3], *tcap[3], *tval[3];
+    lv_obj_t *tile[3], *tcap[3], *tval[3], *time;
 } cp;
 
 static const char *const calib_help =
     "Finds 0 % at the limit switch in three steps: 1 fast close to the switch, "
     "2 back off it, 3 slow close onto it. The step running is filled dark; "
-    "Motor, steps counts the motor as it moves.\n"
+    "Motor, steps counts the motor as it moves; Time counts up, then shows how long it took.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
     "reset the fault, calibrate again.";
@@ -320,6 +320,8 @@ static void calib_build(lv_obj_t *scr)
         cp.tile[i] = lv_obj_get_parent(cp.tval[i]);
         cp.tcap[i] = lv_obj_get_child(cp.tile[i], 0);
     }
+    // Time into the calibration, then how long the last one took.
+    cp.time = ui_info(scr, 361, 160, 109, 48, "Time taken");
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
     calib_switch(t);
@@ -357,15 +359,21 @@ static void calib_refresh(void)
     else
         ui_set_text(cp.state, valve_calibrated() ? "Calibrated" : "Not calibrated");
     // Done after a calibration this power-up, not after Use saved position.
-    uint32_t age, took;
+    uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     for (int i = 0; i < 3; i++)
         tile_set(i, calib ? (step > i + 1 ? 2 : step == i + 1 ? 1 : 0) : valve_calibrated() && ran ? 2 : 0);
+    char tm[16];
+    uint32_t s = calib ? valve_cal_elapsed_s() : took;
+    if (calib || (ran && valve_calibrated()))
+        lv_snprintf(tm, sizeof tm, "%lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
+    else
+        lv_strlcpy(tm, "--", sizeof tm);
+    ui_set_text(cp.time, tm);
     calib_fast();
     if (ran) {
         const char *iso = valve_last_cal_iso();
         char d[20];
-        (void)took;   // how long it took is in Faults and log ("Calibrated in 15 s")
         ui_set_text(cp.last, iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age));
     } else {
         ui_set_text(cp.last, "Not since power-up");

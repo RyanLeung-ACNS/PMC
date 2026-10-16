@@ -77,6 +77,7 @@ void valve_uncalibrate(const char *why);         // e.g. motor direction changed
 // Takes a saved step count as the position (operator's choice at boot).
 bool valve_restore(int32_t count, const char **why);
 uint32_t valve_cal_budget_s(void);               // longest calibration, s
+uint32_t valve_cal_elapsed_s(void);              // into the calibration running, s; 0 if none
 int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
 bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
 bool valve_goto_pct100(int32_t pct100, const char **why); // the same in 0.01 % (keypad)
