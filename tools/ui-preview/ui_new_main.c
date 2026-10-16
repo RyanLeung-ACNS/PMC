@@ -330,10 +330,13 @@ int main(int argc, char **argv)
     // Settings (stage 6).
     bool set = !strncmp(st, "set-", 4);
     if (set) { tap(415, 184); tap(379, 184); }
-    if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strcmp(st, "set-add") ||
+    if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strncmp(st, "set-add", 7) ||
         !strcmp(st, "set-caldetail")) tap(120, 72);
     if (!strcmp(st, "set-pick")) tap(120, 72);
-    if (!strcmp(st, "set-add")) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
+    if (!strncmp(st, "set-add", 7)) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
+    if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(120, 180);   // 30 psi
+    if (!strcmp(st, "set-addcal")) tap(318, 164);   // Calibrate
+
     if (!strcmp(st, "set-caldetail")) tap(120, 128);
     if (!strncmp(st, "set-valve", 9)) tap(356, 72);
     if (!strcmp(st, "set-valve2")) tap(182, 72);

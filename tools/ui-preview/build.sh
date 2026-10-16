@@ -27,7 +27,7 @@ gcc $CFLAGS -DREAL_CAL -o "$OUT/ui_new" "$HERE/ui_new_main.c" "$HERE/fake_hw.c" 
   "$PROJ/fixed.c" "$OUT/liblvgl.a" -lm
 for s in notcal manual calib moving nodruck stop neg menu keypad confirm \
          valve valvenc limithit calpage faults detail diag help help3 back bootask \
-         set-main set-sensor set-pick set-add set-caldetail set-valve set-valve2 set-valve3 set-valvepos \
+         set-main set-sensor set-pick set-add set-addask set-addcal set-caldetail set-valve set-valve2 set-valve3 set-valvepos \
          set-tune set-tunekp set-tunedraft set-saveask set-saved set-review set-load set-override \
          calsensor calvac; do
   "$OUT/ui_new" "$s" "$OUT/new-$s.raw"

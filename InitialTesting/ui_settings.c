@@ -614,7 +614,8 @@ static const char *ps_help(void)
     static const cfg_key_t k[1] = { CFG_SENSOR };
     return field_help(buf, sizeof buf,
                       "Add sensor: type its serial number and pick its range in psi. It starts uncalibrated: "
-                      "select it, Save settings, then Menu > Calibrate > Sensor.\n"
+                      "Calibrate puts it in use and opens Calibrate sensor; Later leaves it to select "
+                      "in Sensor in use.\n"
                       "Remove sensor: removes a sensor that is not in use.\n"
                       "Calibration: tap for its points and state.", k, 1);
 }
@@ -680,6 +681,20 @@ static void cal_detail_cb(lv_event_t *e)
 
 static uint32_t add_serial;
 
+// After Add sensor: the new sensor in use now, then Calibrate sensor.
+static void add_cal(void)
+{
+    const char *why;
+    char t[80];
+    if (!cfg_sensor_use(add_serial, &why)) {
+        lv_snprintf(t, sizeof t, "Not in use: %s", why);
+        ui_msg(t);
+        return;
+    }
+    draft_set[CFG_SENSOR] = false;
+    ui_open(&ui_scr_sensor_cal);
+}
+
 static void add_range(int i)
 {
     static const int32_t psi10[6] = { 50, 100, 150, 300, 500, 1000 };
@@ -690,9 +705,10 @@ static void add_range(int i)
         ui_msg(t);
         return;
     }
-    lv_snprintf(t, sizeof t, "%s added. Select it in Sensor in use to calibrate it.",
-                sensor_name(n, sizeof n, add_serial));
-    ui_msg(t);
+    static char q[140];
+    lv_snprintf(q, sizeof q, "%s added. Calibrate it now? It goes in use straight away, not saved; "
+                "Discard changes puts the last save back.", sensor_name(n, sizeof n, add_serial));
+    ui_ask(q, "Later", NULL, "Calibrate", add_cal);
 }
 
 static bool add_serial_set(int32_t v, const char **why)
@@ -1082,6 +1098,17 @@ static struct {
     lv_obj_t *sig, *now, *nw, *vac, *air, *bv, *ba;
 } cs;
 
+// The header names the sensor being calibrated: "Calibrate 5880156" (with
+// "s/n" it does not fit beside NOT CALIBRATED).
+static char cs_title[32] = "Calibrate sensor";
+
+static void cs_title_set(void)
+{
+    cfg_sensor_t q;
+    if (cfg_sensor(cfg_sensor_active(), &q))
+        lv_snprintf(cs_title, sizeof cs_title, "Calibrate %lu", (unsigned long)q.serial);
+}
+
 static const char *cs_help(void)
 {
     return "A two-point calibration of the sensor in use, read live through the board, so the board input "
@@ -1173,6 +1200,7 @@ static void cs_build(lv_obj_t *scr)
     cs.bv = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Capture vacuum", vac_cb, NULL);
     cs.ba = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Capture air", air_cb, NULL);
     side_make(scr, "Calibrate sensor", cs_help);
+    cs_title_set();
 }
 
 static void cs_refresh(void)
@@ -1203,7 +1231,8 @@ static void cs_refresh(void)
     ui_set_text(cs.air, cap == 2 ? u : pt_text(u, sizeof u, a.have, a.p_mmbar, a.r_ppb));
     ui_btn_enable(cs.bv, ok && !cap);
     ui_btn_enable(cs.ba, ok && !cap);
+    cs_title_set();
     side_refresh();
 }
 
-const ui_screen_t ui_scr_sensor_cal = { "Calibrate sensor", cs_build, cs_refresh, NULL };
+const ui_screen_t ui_scr_sensor_cal = { cs_title, cs_build, cs_refresh, NULL };

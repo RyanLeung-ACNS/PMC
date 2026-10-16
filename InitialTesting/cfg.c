@@ -728,6 +728,21 @@ bool cfg_sensor_remove(uint32_t serial, const char **why)
     return false;
 }
 
+bool cfg_sensor_use(uint32_t serial, const char **why)
+{
+    static cfg_rec_t cand;
+    if (busy()) { *why = "wait for the valve to stop"; return false; }
+    capture(&cand);
+    const cfg_sens_t *q = find_sens(&cand, serial);
+    if (!q) { *why = "that sensor is not on the board"; return false; }
+    if (q - cand.sens == (ptrdiff_t)cand.active)
+        return true;
+    cand.active = (uint32_t)(q - cand.sens);
+    if (!apply(&cand, true)) { *why = "not applied"; return false; }
+    valve_event("CFG", "Sensor s/n %lu in use, not saved", (unsigned long)serial);
+    return true;
+}
+
 /* --------------------------------------------------------------------------
  * Commands
  * ------------------------------------------------------------------------ */

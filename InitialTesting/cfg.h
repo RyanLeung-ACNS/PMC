@@ -112,5 +112,8 @@ bool cfg_sensor(int i, cfg_sensor_t *out);
 bool cfg_saved_cal(uint32_t serial, const cal_rec_t **cal);
 bool cfg_sensor_add(uint32_t serial, int32_t psi10, const char **why);
 bool cfg_sensor_remove(uint32_t serial, const char **why);
+// Puts a sensor on the board in use now, with its own cal, unsaved until
+// the next save (as after a capture). Refused while the valve moves.
+bool cfg_sensor_use(uint32_t serial, const char **why);
 
 #endif // _CFG_H_
