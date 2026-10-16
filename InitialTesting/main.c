@@ -279,6 +279,7 @@ int main(void)
         stepper3_poll();
         valve_task();
         valvepos_task();
+        trend_task();
         if (lv_tick_elaps(sense_ms) >= 1000) {
             sense_ms += 1000;
             if (lv_tick_elaps(sense_ms) >= 1000)   // fell behind: no catch-up burst

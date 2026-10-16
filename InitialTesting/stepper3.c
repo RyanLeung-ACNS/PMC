@@ -102,6 +102,8 @@ static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move
 static int32_t move_from;                // last move: start position and times
 static uint32_t move_t0;
 static volatile uint32_t move_t1;       // 0 while it runs
+static void (*ref_cb)(const char *why);   // stepper3_on_reference_change
+static void (*move_cb)(void);              // stepper3_on_move_start
 static const char *lock_why;            // MOT and screen moves refused while set
 
 static char status_text[160];
@@ -391,6 +393,10 @@ from_rest:
             link_printf("MOT override: closing %ld steps with the limit switch open\r\n", (long)-dist);
     }
 
+    // The saved position is withdrawn before anything moves.
+    if (move_cb)
+        move_cb();
+
     // Wave uses the one-coil entries, full the two-coil entries.
     if (mode == STEPPER3_WAVE)
         phase &= ~1u;
@@ -489,10 +495,22 @@ bool stepper3_busy(void)               { return run_state != ST_IDLE; }
 int32_t stepper3_position(void)        { return position; }
 stepper3_stop_t stepper3_last_stop(void) { return last_stop; }
 
+void stepper3_on_reference_change(void (*cb)(const char *why)) { ref_cb = cb; }
+void stepper3_on_move_start(void (*cb)(void))                 { move_cb = cb; }
+
+static void ref_changed(const char *why)
+{
+    if (ref_cb)
+        ref_cb(why);
+}
+
 void stepper3_zero(void)
 {
-    if (run_state == ST_IDLE)
-        position = 0;
+    if (run_state != ST_IDLE)
+        return;
+    if (position != 0)
+        ref_changed("motor count zeroed");
+    position = 0;
 }
 
 const char *stepper3_status(void)
@@ -545,6 +563,8 @@ bool stepper3_set_mode(stepper3_mode_t nm)
 {
     if (run_state != ST_IDLE || nm > STEPPER3_HALF)
         return false;
+    if (nm != mode)
+        ref_changed("step mode changed");
     // Keep the position in the new step size.
     if (mode == STEPPER3_HALF && nm != STEPPER3_HALF)
         position /= 2;
@@ -570,6 +590,8 @@ bool stepper3_set_reverse(bool on)
 {
     if (run_state != ST_IDLE)
         return false;
+    if (on != reverse)
+        ref_changed("motor direction changed");
     reverse = on;
     return true;
 }
@@ -584,6 +606,8 @@ bool stepper3_set_order(const uint8_t o[4])
             return false;
         seen |= 1u << o[i];
     }
+    if (memcmp(order, o, sizeof order) != 0)
+        ref_changed("coil order changed");
     memcpy(order, o, sizeof order);
     if (energised)
         coils_off();

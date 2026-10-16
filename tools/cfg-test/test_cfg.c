@@ -37,9 +37,11 @@ bool extflash_init(void) { return true; }
 uint32_t extflash_jedec_id(void) { return 0xBF2643; }
 void extflash_read(uint32_t a, void *b, size_t n) { memcpy(b, flash + a, n); }
 bool extflash_erase_4k(uint32_t a) { memset(flash + (a & ~0xFFFu), 0xFF, 4096); erases++; return true; }
+static int write_fails;   // the next n writes do nothing
 bool extflash_write(uint32_t a, const void *b, size_t n)
 {
     const uint8_t *p = b;
+    if (write_fails > 0) { write_fails--; return true; }
     for (size_t i = 0; i < n; i++)
         flash[a + i] &= p[i];
     return true;
@@ -83,6 +85,10 @@ bool stepper3_reverse(void) { return m_rev; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
 bool stepper3_busy(void) { return m_busy; }
 int32_t stepper3_position(void) { return m_pos; }
+static void (*move_hook)(void);
+void stepper3_on_move_start(void (*cb)(void)) { move_hook = cb; }
+// A move starting from rest: stepper3.c calls the hook first.
+static void start_move(int32_t to) { if (move_hook) move_hook(); m_busy = true; m_pos = to; }
 const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? "WAVE" : m == STEPPER3_FULL ? "FULL" : "HALF"; }
 
 /* Valve */
@@ -361,18 +367,41 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && !v_cal);   // still waiting for the operator
     CHECK(valvepos_use(&why) && v_cal && m_pos == 33880 && !valvepos_offer(&c));
 
-    // A move: the entry is withdrawn at once.
-    m_busy = true; m_pos = 34000;
-    tick(100);
+    // A move: the entry is withdrawn before the motor turns, so a reset
+    // straight after the start (no valvepos_task yet) offers nothing.
+    start_move(34000);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false;
     valvepos_init();
     CHECK(!valvepos_offer(&c));   // as if the power went mid-move
+
+    // Still for less than 2 s: nothing saved, whatever the tick's parity.
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
+    lv_tick_inc(1);               // odd/even tick no longer matters
+    tick(1500);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
+    tick(2500);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 20000);
+    valvepos_decline();
+
+    // The withdrawal write fails once: the second try takes it.
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
+    write_fails = 1;
+    start_move(21000);
+    m_busy = false;
+    v_cal = false; v_mode = VALVE_NOT_CAL;
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
 
     // Many moves: the log wraps through the sectors; the newest still wins.
     v_cal = true; v_mode = VALVE_MANUAL;
     int e0 = erases;
     for (int i = 0; i < 700; i++) {
-        m_busy = true; m_pos = 1000 + i;
+        start_move(1000 + i);
         tick(20);
         m_busy = false;
         tick(2100);

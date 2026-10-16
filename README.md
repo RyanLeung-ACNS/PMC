@@ -21,7 +21,7 @@ Two hardware options are being built and compared; neither is final:
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
-Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.5 at the time of writing). Commit titles start with the version they build.
+Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.6 at the time of writing). Commit titles start with the version they build.
 
 ## Status
 
@@ -74,14 +74,14 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `pmc_config.h` | Build options: link (USB or Ethernet), version, Stepper 3 socket, limit input pin and polarity |
 | `clicks.c` | Boost 10 excitation set-up and 11.5 V trip, INA228 reads, Druck plausibility, pressure from the cal |
 | `cal.c` | Druck calibration table: ratio (mV/V) against pressure, linear between points; bench two-point (CAL VAC, CAL AIR) |
-| `uncert.c` | Pressure uncertainty budget (`UNC?`) |
+| `uncert.c` | Pressure uncertainty budget (`UNC?`), the Druck term from the full scale of the sensor in use |
 | `sense.c` | The once-a-second read, DATA and status lines |
 | `limit.c` | Limit switch input: a trip counts at once, the release is debounced (20 ms) |
 | `stepper3.c` | Step sequences (wave, full, half), ramps, absolute moves with retarget, the limit stop, F-13 timeout |
 | `valve.c` | Modes (NOT HOMED, HOMING, MANUAL), homing, % position, STOP, fault latches, the event log (200 kept) |
 | `valvepos.c` | Saves the step count at standstill so a restart can offer it |
 | `cfg.c` | Settings record in serial flash, two sectors in turn, CRC32, read back before it counts |
-| `trend.c` | Trend rings in RAM: 600 one-second samples and 360 ten-second means |
+| `trend.c` | Trend rings in RAM: 600 one-second samples and 360 ten-second means; seconds the loop missed go in as no-data samples. `TREND DUMP` is sent a line at a time as the link has room |
 | `extflash.c` | SST26 serial flash driver |
 | `rtclock.c`, `sysinfo.c` | Clock (`TIME?`, `TIME SET`); version and reset cause (`VER?`) |
 | `link.c`, `usb_serial.c`, `ethlink.c`, `eth_hw.c` | PC text link over USB CDC or TCP |
@@ -100,6 +100,8 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 - **Homing** (Home valve, or `VALVE CAL`): if the switch is pressed, move off it first (F-09 if it stays pressed); 1 fast close to the switch (F-07 if not found within 1.1 x full travel); 2 back off; 3 slow close onto the switch. The switch point is 0 %. STOP cancels it and keeps the earlier homing.
 - **MANUAL**: Go to a %, Fully open or close, step buttons on the Valve page. Position is in % of POS_MAX steps (99072 by default).
 - **Limit switch** is the closing stop, read in firmware before every closing step; there is no hardware interlock (decided). A trip during a normal move stops it and asks "Set as 0 % / Skip" (W-01); the count is never zeroed on its own. Limit override lets one move close past an open switch.
+- **Motor settings**: changing the step mode, direction or coil order, or zeroing the motor count (`MOT ZERO`, the motor screen, a loaded record), clears the homing; the valve must be homed again.
+- **Saved position**: written 2 s after the valve stops, and withdrawn (read back and checked) before the next move starts, so a power cut mid-move leaves nothing to offer.
 - **STOP** outside AUTO stops and holds the valve with no latch. In AUTO it will latch F-12.
 - **Faults** latch until Reset fault (or `CTRL RESET`), which clears only those whose cause has gone: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while homing, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP in AUTO. F-07, F-09, F-13 and F-12 stop the motor; F-01 and F-03 do not block moves.
 

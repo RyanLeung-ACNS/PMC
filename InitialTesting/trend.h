@@ -28,5 +28,6 @@ bool trend_fine(uint32_t age_s, trend_pt_t *o);
 // The 10 s sample covering age_s seconds ago, false if none.
 bool trend_coarse(uint32_t age_s, trend_pt_t *o);
 bool trend_command(const char *line);             // TREND?, TREND DUMP <s>
+void trend_task(void);                            // main loop: sends a TREND DUMP
 
 #endif // _TREND_H_

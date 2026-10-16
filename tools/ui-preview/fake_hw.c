@@ -111,6 +111,7 @@ const char *sysinfo_reset_reason(void) { return fake_wdt ? "watchdog" : "power-o
 bool sysinfo_reset_abnormal(void) { return fake_wdt; }
 const char *sysinfo_line(void) { return "PMC firmware 0.3.0 (preview), last reset: power-on"; }
 // Link output goes to stderr so the DATA line format can be checked.
+size_t link_tx_room(void) { return 4096; }
 void link_printf(const char *fmt, ...)
 {
     va_list ap;

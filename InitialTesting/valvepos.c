@@ -31,6 +31,7 @@ static vp_entry_t last;         // newest good entry (seq 0: none)
 static bool offer;
 static int32_t boot_count;
 static uint32_t still_since;
+static bool still;             // standing since still_since
 static uint32_t writes;
 
 static uint32_t crc32(const void *data, size_t len)
@@ -55,27 +56,64 @@ static uint32_t addr(uint32_t s, uint32_t i)
     return VP_BASE + s * VP_SECTOR + i * sizeof(vp_entry_t);
 }
 
-static void put(int32_t count, bool safe)
+// Writes one entry and reads it back. False if it did not take: last is
+// then unchanged, so the next call tries again in the next slot.
+static bool put(int32_t count, bool safe)
 {
     if (at >= VP_PER) {
         sector = (sector + 1) % VP_SECTORS;
         at = 0;
     }
     if (at == 0 && !extflash_erase_4k(addr(sector, 0)))
-        return;
-    vp_entry_t e = { last.seq + 1, count, safe ? VP_SAFE : VP_UNSAFE, 0 };
+        return false;
+    vp_entry_t e = { last.seq + 1, count, safe ? VP_SAFE : VP_UNSAFE, 0 }, back;
     if (e.seq == 0xFFFFFFFFUL)
         e.seq = 1;
     e.crc = crc32(&e, offsetof(vp_entry_t, crc));
-    extflash_write(addr(sector, at), &e, sizeof e);
-    at++;
-    last = e;   // even if the write failed: the next change tries again
+    uint32_t a = addr(sector, at);
+    at++;                       // the slot is used whatever happens
     writes++;
+    extflash_write(a, &e, sizeof e);
+    extflash_read(a, &back, sizeof back);
+    if (memcmp(&e, &back, sizeof e) != 0)
+        return false;
+    last = e;
+    return true;
+}
+
+static bool safe_on_flash(void)
+{
+    return last.seq && last.state == VP_SAFE;
+}
+
+// Withdraws a safe entry, two tries. If both fail the flash may still hold
+// it, so a restart could offer a stale count: say so (it is still only
+// offered, never used without the operator).
+static void withdraw(int32_t pos)
+{
+    if (!safe_on_flash())
+        return;
+    if (put(pos, false) || put(pos, false))
+        return;
+    valve_event("REF", "Saved position could not be withdrawn (flash write failed); "
+                "after a restart do not use the saved position");
+}
+
+// stepper3.c, just before a move starts from rest: the entry goes before
+// the motor moves, so a reset mid-move cannot leave a safe one behind.
+static void before_move(void)
+{
+    if (!ok)
+        return;
+    offer = false;
+    still = false;
+    withdraw(stepper3_position());
 }
 
 void valvepos_init(void)
 {
     vp_entry_t e;
+    stepper3_on_move_start(before_move);
     ok = extflash_init();
     if (!ok)
         return;
@@ -118,20 +156,22 @@ void valvepos_task(void)
     bool moving = stepper3_busy() || valve_mode() == VALVE_CALIBRATING;
     bool cal = valve_calibrated();
     int32_t pos = stepper3_position();
-    if (moving)
-        still_since = 0;
-    else if (!still_since)
-        still_since = lv_tick_get() | 1;
+    if (moving) {
+        still = false;
+    } else if (!still) {
+        still = true;
+        still_since = lv_tick_get();
+    }
     if (offer) {
         // Kept, untouched, until the operator answers or something moves.
         if (!moving && !cal)
             return;
         offer = false;
     }
-    bool safe = last.seq && last.state == VP_SAFE;
+    bool safe = safe_on_flash();
     if (safe && (moving || !cal || pos != last.count))
-        put(pos, false);
-    else if (!safe && cal && !moving && still_since && lv_tick_elaps(still_since) >= STILL_MS)
+        withdraw(pos);
+    else if (!safe && cal && !moving && still && lv_tick_elaps(still_since) >= STILL_MS)
         put(pos, true);
 }
 

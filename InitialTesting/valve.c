@@ -103,7 +103,8 @@ static bool calibrated;
 static bool cal_was;     // calibrated before this calibration started
 static cal_stage_t cal_stage;
 static bool cal_moving;           // a calibration move is running
-static uint32_t cal_settle_from;  // non-zero: waiting SETTLE_MS before the next stage
+static uint32_t cal_settle_from;  // when the wait started
+static bool cal_settling;         // waiting SETTLE_MS before the next stage
 static uint32_t cal_t0;
 static uint32_t seq_seen;         // stepper3_move_seq() last handled
 
@@ -111,6 +112,7 @@ static bool question;             // switch-pressed question waiting
 static int32_t question_at;       // count where the switch was pressed
 
 static uint32_t cal_done_ms, cal_took_s;   // last good calibration
+static bool cal_done;
 static char cal_done_iso[20];              // its wall time, "" if the clock is not set
 static int32_t switch_at;         // count where the switch last opened
 static bool switch_was_open;
@@ -151,7 +153,7 @@ static void cal_end(valve_mode_t m)
     mode = m;
     cal_stage = CAL_NONE;
     cal_moving = false;
-    cal_settle_from = 0;
+    cal_settling = false;
     update_lock();
 }
 
@@ -247,7 +249,8 @@ static void cal_move_ended(stepper3_stop_t why)
         if (why != STEPPER3_STOP_DONE)
             cal_abort(stepper3_stop_name(why));
         else
-            cal_settle_from = lv_tick_get() | 1;   // then check the switch
+            cal_settle_from = lv_tick_get();   // then check the switch
+            cal_settling = true;
         break;
     case CAL_FAST:
         if (why == STEPPER3_STOP_LIMIT) {
@@ -267,7 +270,8 @@ static void cal_move_ended(stepper3_stop_t why)
                 break;
             }
             calibrated = true;
-            cal_done_ms = lv_tick_get() | 1;
+            cal_done_ms = lv_tick_get();
+            cal_done = true;
             cal_took_s = lv_tick_elaps(cal_t0) / 1000;
             lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
             ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
@@ -285,7 +289,7 @@ static void cal_move_ended(stepper3_stop_t why)
 
 static void cal_settled(void)
 {
-    cal_settle_from = 0;
+    cal_settling = false;
     int32_t moved = cal_stage == CAL_CLEAR ? n_clear : n_backoff;
     if (limit_open_now()) {
         raise(F09, true, "Switch still active after %ld-step %s", (long)moved,
@@ -314,6 +318,7 @@ static void limit_hit(void)
 void valve_init(void)
 {
     seq_seen = stepper3_move_seq();
+    stepper3_on_reference_change(valve_uncalibrate);
     ev("F-14", "Power-up (event only), valve not homed");
     update_lock();
 }
@@ -331,7 +336,7 @@ void valve_task(void)
         else if (why == STEPPER3_STOP_LIMIT)
             limit_hit();
     }
-    if (mode == VALVE_CALIBRATING && cal_settle_from && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
+    if (mode == VALVE_CALIBRATING && cal_settling && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
     bool open = limit_open_now();
     if (open && !switch_was_open)
@@ -789,7 +794,7 @@ const char *valve_last_cal_iso(void) { return cal_done_iso; }
 
 bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s)
 {
-    if (!cal_done_ms)
+    if (!cal_done)
         return false;
     *age_ms = lv_tick_elaps(cal_done_ms);
     *took_s = cal_took_s;

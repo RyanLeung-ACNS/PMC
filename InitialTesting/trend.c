@@ -26,20 +26,9 @@ static int32_t mean(int64_t sum, int n)
     return (int32_t)(sum >= 0 ? (sum + n / 2) / n : (sum - n / 2) / n);
 }
 
-void trend_second(const clicks_state_t *s)
+static void push(const trend_pt_t *qp)
 {
-    if (s->pm_diag)
-        return;
-    trend_pt_t q;
-    bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    q.p = ok ? s->p_mmbar : TREND_NONE;
-    q.sp = TREND_NONE;   // AUTO comes in stage 8
-    if (valve_calibrated() && valve_mode() != VALVE_CALIBRATING) {
-        int32_t v = (valve_pct_milli() + 5) / 10;
-        q.v = v < 0 ? 0 : v > 10000 ? 10000 : v;
-    } else {
-        q.v = TREND_NONE;
-    }
+    trend_pt_t q = *qp;
     fine[fine_n % TREND_FINE_N] = q;
     fine_n++;
 
@@ -52,6 +41,38 @@ void trend_second(const clicks_state_t *s)
         coarse_n++;
         memset(&acc, 0, sizeof acc);
     }
+}
+
+void trend_second(const clicks_state_t *s)
+{
+    // One sample per second of real time: seconds the main loop skipped
+    // (a stall) go in as no-data samples, so ages stay true on the plot.
+    static uint32_t last_ms;
+    static bool started;
+    uint32_t now = lv_tick_get();
+    if (started) {
+        uint32_t gap = (lv_tick_diff(now, last_ms) + 500) / 1000;
+        if (gap > TREND_FINE_N * 6)
+            gap = TREND_FINE_N * 6;        // an hour is all that is kept
+        static const trend_pt_t none = { TREND_NONE, TREND_NONE, TREND_NONE };
+        for (uint32_t i = 1; i < gap; i++)
+            push(&none);
+    }
+    started = true;
+    last_ms = now;
+
+    trend_pt_t q;
+    // PM DIAG freezes the readings: no-data samples while it runs.
+    bool ok = !s->pm_diag && s->pm_found && s->reading_ok && !s->boost_tripped;
+    q.p = ok ? s->p_mmbar : TREND_NONE;
+    q.sp = TREND_NONE;   // AUTO comes in stage 8
+    if (valve_calibrated() && valve_mode() != VALVE_CALIBRATING) {
+        int32_t v = (valve_pct_milli() + 5) / 10;
+        q.v = v < 0 ? 0 : v > 10000 ? 10000 : v;
+    } else {
+        q.v = TREND_NONE;
+    }
+    push(&q);
 }
 
 uint32_t trend_seconds(void) { return fine_n; }
@@ -90,6 +111,50 @@ static void put_fixed(char *buf, size_t n, int32_t v, int dec)
                 (long)(a / div), (long)(a % div));
 }
 
+// TREND DUMP in progress: samples next..end-1 (counted from start-up),
+// labelled with their age when the command came.
+static struct {
+    bool active, head;
+    uint32_t next, end, since;
+} dump;
+
+#define DUMP_LINE  64      // room wanted before a line goes out
+#define DUMP_GIVEUP 2000   // ms with no room: the reader has gone
+
+void trend_task(void)
+{
+    if (!dump.active)
+        return;
+    for (int lines = 0; lines < 8; lines++) {     // a few per loop pass
+        if (link_tx_room() < DUMP_LINE) {
+            if (lv_tick_elaps(dump.since) >= DUMP_GIVEUP)
+                dump.active = false;               // nobody reading: drop the rest
+            return;
+        }
+        dump.since = lv_tick_get();
+        if (dump.head) {
+            link_printf("TREND age_s, pressure mbar, target mbar, valve %%\r\n");
+            dump.head = false;
+            continue;
+        }
+        if (dump.next >= dump.end) {
+            link_printf("OK\r\n");
+            dump.active = false;
+            return;
+        }
+        uint32_t idx = dump.next++;
+        trend_pt_t q;
+        // Its age now (the ring may have moved on since the command).
+        if (!trend_fine(fine_n - 1 - idx, &q))
+            continue;
+        char p[20], sp[20], v[20];
+        put_fixed(p, sizeof p, q.p, 3);
+        put_fixed(sp, sizeof sp, q.sp, 3);
+        put_fixed(v, sizeof v, q.v, 2);
+        link_printf("TREND -%lu, %s, %s, %s\r\n", (unsigned long)(dump.end - 1 - idx), p, sp, v);
+    }
+}
+
 bool trend_command(const char *line)
 {
     if (strcmp(line, "TREND?") == 0) {
@@ -107,18 +172,14 @@ bool trend_command(const char *line)
             link_printf("ERR expected: TREND DUMP <1-%d>\r\n", TREND_FINE_N);
             return true;
         }
-        link_printf("TREND age_s, pressure mbar, target mbar, valve %%\r\n");
-        for (long a = s - 1; a >= 0; a--) {
-            trend_pt_t q;
-            if (!trend_fine((uint32_t)a, &q))
-                continue;
-            char p[20], sp[20], v[20];
-            put_fixed(p, sizeof p, q.p, 3);
-            put_fixed(sp, sizeof sp, q.sp, 3);
-            put_fixed(v, sizeof v, q.v, 2);
-            link_printf("TREND -%ld, %s, %s, %s\r\n", a, p, sp, v);
-        }
-        link_printf("OK\r\n");
+        // Sent from trend_task() a line at a time, as the link has room.
+        dump.end = fine_n;
+        dump.next = fine_n > (uint32_t)s ? fine_n - (uint32_t)s : 0;
+        if (dump.end - dump.next > TREND_FINE_N)
+            dump.next = dump.end - TREND_FINE_N;
+        dump.head = true;
+        dump.active = true;
+        dump.since = lv_tick_get();
         return true;
     }
     return false;
