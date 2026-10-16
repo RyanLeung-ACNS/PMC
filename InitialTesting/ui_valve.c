@@ -277,7 +277,7 @@ static void calib_build(lv_obj_t *scr)
     cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
     right(cp.v);
     cp.seat = ui_info(scr, 10, 104, 148, 48, "Limit switch");
-    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated, took");   // "15 Oct 14:28, 15 s"
+    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated");   // "15/10/26 14:28"
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
@@ -309,9 +309,8 @@ static void calib_refresh(void)
     if (valve_last_cal(&age, &took)) {
         const char *iso = valve_last_cal_iso();
         char d[20];
-        lv_snprintf(buf, sizeof buf, "%s, %lu s", iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age),
-                    (unsigned long)took);
-        ui_set_text(cp.last, buf);
+        (void)took;   // how long it took is in Faults and log ("Calibrated in 15 s")
+        ui_set_text(cp.last, iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age));
     } else {
         ui_set_text(cp.last, "Not since power-up");
     }

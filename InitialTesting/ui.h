@@ -61,7 +61,7 @@ void ui_set_color(lv_obj_t *obj, lv_color_t c);
 
 // Card with a 12 px caption; returns the 16 px value label under it.
 lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, const char *caption);
-// "15 Oct 14:28" from "YYYY-MM-DD HH:MM:SS".
+// "15/10/26 14:28" (DD/MM/YY) from "YYYY-MM-DD HH:MM:SS".
 const char *ui_date(char *buf, size_t n, const char *iso);
 // When something happened age_ms ago: "14:03:22" once the clock is set, else "up 0:12:05".
 const char *ui_when(char *buf, size_t n, uint32_t age_ms);

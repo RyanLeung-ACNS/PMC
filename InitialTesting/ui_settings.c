@@ -83,16 +83,11 @@ static int unsaved(void)
     return n + (other > 0 ? other : 0);
 }
 
-// A save is named by when it was made: "16 Oct 2026 14:32", or "no date"
+// A save is named by when it was made: "16/10/26 14:32", or "no date"
 // when the clock was not set at the time.
 static const char *save_when(char *buf, size_t n, const char *at)
 {
-    char d[20];
-    if (!at[0])
-        return "no date";
-    const char *t = ui_date(d, sizeof d, at);   // "16 Oct 14:32"
-    lv_snprintf(buf, n, "%.*s %.4s%s", (int)(strlen(t) - 6), t, at, t + strlen(t) - 6);
-    return buf;
+    return at[0] ? ui_date(buf, n, at) : "no date";
 }
 
 static const char *plural(char *buf, size_t n, int count, const char *word)
@@ -206,11 +201,9 @@ static const char *field_help(char *buf, size_t n, const char *notes, const cfg_
     return buf;
 }
 
-// "16 Oct 2026" from a bench cal id "5880156 bench 26-10-16"; NULL if none.
+// "16/10/26" from a bench cal id "5880156 bench 26-10-16"; NULL if none.
 static const char *cal_date(char *buf, size_t n, const cal_rec_t *c)
 {
-    static const char *const mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     const char *d = c ? strstr(c->id, "bench ") : NULL;
     if (!d || strlen(d) < 14)
         return NULL;
@@ -219,7 +212,7 @@ static const char *cal_date(char *buf, size_t n, const cal_rec_t *c)
     int day = (d[6] - '0') * 10 + d[7] - '0';
     if (m < 1 || m > 12 || day < 1 || day > 31)
         return NULL;
-    lv_snprintf(buf, n, "%d %s 20%c%c", day, mon[m - 1], d[0], d[1]);
+    lv_snprintf(buf, n, "%.2s/%.2s/%.2s", d + 6, d + 3, d);   // DD/MM/YY
     return buf;
 }
 

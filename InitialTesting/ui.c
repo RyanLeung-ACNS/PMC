@@ -173,12 +173,9 @@ lv_obj_t *ui_info(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h, 
 
 const char *ui_date(char *buf, size_t n, const char *iso)
 {
-    static const char *const mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    int m = (iso[5] - '0') * 10 + iso[6] - '0';
-    lv_snprintf(buf, n, "%c%c %s %.5s", iso[8] == '0' ? ' ' : iso[8], iso[9],
-                m >= 1 && m <= 12 ? mon[m - 1] : "?", iso + 11);
-    return iso[8] == '0' ? buf + 1 : buf;
+    // "YYYY-MM-DD HH:MM:SS" to "16/10/26 14:32" (DD/MM/YY).
+    lv_snprintf(buf, n, "%.2s/%.2s/%.2s %.5s", iso + 8, iso + 5, iso + 2, iso + 11);
+    return buf;
 }
 
 const char *ui_when(char *buf, size_t n, uint32_t age_ms)
@@ -516,9 +513,10 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     ui_set_text(strip_text, text);
     lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
-    show(strip_ok, ok && !overlay_tv);
-    show(strip_act, act && !overlay_tv);
-    lv_opa_t opa = overlay_tv ? LV_OPA_40 : LV_OPA_COVER;
+    // Under a popup the strip stays, updating, greyed and without its buttons.
+    show(strip_ok, ok && !overlay);
+    show(strip_act, act && !overlay);
+    lv_opa_t opa = overlay ? LV_OPA_40 : LV_OPA_COVER;
     if (lv_obj_get_style_opa(strip, 0) != opa)
         lv_obj_set_style_opa(strip, opa, 0);
 }
@@ -557,7 +555,7 @@ static void frame_refresh(void)
     act_cb = NULL;
     if (cur->refresh)
         cur->refresh();
-    show(strip, !overlay || overlay_tv);
+    show(strip, !overlay || !kp_open);   // the keypad uses the strip's row
     if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
         msg_until = 0;
     char buf[96];
@@ -890,21 +888,24 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
     pick_cb = on_pick;
     if (n > 6)
         n = 6;
-    lv_obj_t *box = ui_card(o, 10, 4, 343, 24 + 32 * n);
+    // Above the strip: up to four rows, so five or six items go in two columns.
+    int cols = n > 4 ? 2 : 1, rows = (n + cols - 1) / cols;
+    int32_t iw = 343 / cols;
+    lv_obj_t *box = ui_card(o, 10, 4, 343, 24 + 32 * rows);
     lv_obj_set_style_clip_corner(box, true, 0);
     ui_label(box, 12, 4, 320, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, title);
     for (int i = 0; i < n; i++) {
         lv_obj_t *it = plain(box);
-        lv_obj_set_pos(it, 0, 24 + 32 * i);
-        lv_obj_set_size(it, 343, 32);
+        lv_obj_set_pos(it, (i / rows) * iw, 24 + 32 * (i % rows));
+        lv_obj_set_size(it, i / rows ? 343 - iw : iw, 32);
         lv_obj_add_flag(it, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_bg_opa(it, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(it, i == sel ? lv_color_hex(0x3E4C59) : UI_CARD, 0);
         lv_obj_set_style_bg_color(it, UI_TRACK, LV_STATE_PRESSED);
-        lv_obj_set_style_border_side(it, LV_BORDER_SIDE_TOP, 0);
+        lv_obj_set_style_border_side(it, i / rows ? LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(it, 1, 0);
         lv_obj_set_style_border_color(it, UI_BG, 0);
-        lv_obj_t *l = ui_label(it, 12, 7, 320, &ui_font_16, i == sel ? UI_CARD : UI_TEXT, LV_TEXT_ALIGN_LEFT, items[i]);
+        lv_obj_t *l = ui_label(it, 12, 7, iw - 23, &ui_font_16, i == sel ? UI_CARD : UI_TEXT, LV_TEXT_ALIGN_LEFT, items[i]);
         (void)l;
         lv_obj_add_event_cb(it, pick_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }

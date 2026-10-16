@@ -65,14 +65,11 @@ static void read_now(int *y, int *mo, int *d, int *h, int *mi, int *s)
 
 const char *rtclock_screen_text(void)
 {
-    static const char *mon[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     int y, mo, d, h, mi, s;
     if (!rtclock_valid())
         return "time not set";
     read_now(&y, &mo, &d, &h, &mi, &s);
-    if (mo < 1 || mo > 12) mo = 1;
-    lv_snprintf(text, sizeof text, "%02d %s  %02d:%02d", d, mon[mo - 1], h, mi);
+    lv_snprintf(text, sizeof text, "%02d/%02d/%02d %02d:%02d", d, mo, y % 100, h, mi);   // DD/MM/YY
     return text;
 }
 
