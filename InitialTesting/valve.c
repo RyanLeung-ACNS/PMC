@@ -656,6 +656,15 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     return true;
 }
 
+bool valve_move_steps(int32_t steps, const char **why)
+{
+    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
+    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
+    if (!stepper3_goto(from + steps)) { *why = "limit open, closing move refused"; return false; }
+    return true;
+}
+
 bool valve_calibrate(const char **why) { return cal_start(why); }
 
 uint32_t valve_cal_budget_s(void)

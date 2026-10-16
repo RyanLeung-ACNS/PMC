@@ -61,6 +61,7 @@ uint32_t valve_cal_budget_s(void) { return 300; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
 bool valve_goto_pct100(int32_t p, const char **why) { return valve_goto_pct10(p / 10, why); }
+bool valve_move_steps(int32_t steps, const char **why) { (void)steps; (void)why; return true; }
 void valve_stop(void) { moving = false; }
 bool valve_stop_latches(void) { return false; }
 int valve_fault_count(void) { return v_f01 + v_f12; }

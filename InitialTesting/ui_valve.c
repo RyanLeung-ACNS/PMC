@@ -14,12 +14,34 @@
  * ui.c, on every screen.
  * ------------------------------------------------------------------------ */
 
-static const char *why_not_manual(void)
+// Close, Open, -5 % and +5 % work before a calibration too (by steps);
+// Go to, Fully close and Fully open need the zero.
+static const char *why_no_steps(void)
 {
     if (valve_fault_count()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
+    return NULL;
+}
+
+static const char *why_not_manual(void)
+{
+    const char *why = why_no_steps();
+    if (why) return why;
     if (valve_mode() != VALVE_MANUAL) return "Calibrate the valve first";
     return NULL;
+}
+
+// Before a calibration: a move by steps (d in 0.1 % of the travel).
+static bool vp_steps(int32_t d)
+{
+    const char *why = why_no_steps();
+    if (!why && d < 0 && limit_open_now())
+        why = "Limit switch pressed, cannot close";
+    if (!why && !valve_move_steps((int32_t)((int64_t)d * valve_pos_max() / 1000), &why))
+        why = "Limit switch pressed, cannot close";
+    if (why)
+        ui_msg(why);
+    return why == NULL;
 }
 
 static void reset_cb(lv_event_t *e)
@@ -63,7 +85,9 @@ static const char *const valve_help =
     "-5 %, +5 %: step from where the valve is going.\n"
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
-    "Moves only in MANUAL with no fault. The limit switch stops any closing move.\n"
+    "Moves only with no fault. Before a calibration Close, Open, -5 % and +5 % still move, by steps "
+    "(5 % of the travel setting); Go to, Fully close and Fully open need the calibration.\n"
+    "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
 static bool vp_goto(int32_t pct10)
@@ -81,7 +105,10 @@ static bool vp_goto(int32_t pct10)
 static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
-    vp.jog = vp_goto(open ? 1000 : 0);
+    if (valve_mode() == VALVE_NOT_CAL)
+        vp.jog = vp_steps(open ? 1000 : -1000);   // a full travel; let go to stop
+    else
+        vp.jog = vp_goto(open ? 1000 : 0);
 }
 
 static void jog_release(lv_event_t *e)
@@ -95,7 +122,10 @@ static void jog_release(lv_event_t *e)
 static void step_cb(lv_event_t *e)
 {
     int32_t d = (int32_t)(intptr_t)lv_event_get_user_data(e);
-    vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
+    if (valve_mode() == VALVE_NOT_CAL)
+        vp_steps(d);
+    else
+        vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
 }
 
 static bool goto_set(int32_t v100, const char **why)
@@ -224,10 +254,10 @@ static void valve_refresh(void)
     ui_set_color(vp.p, ok ? UI_TEXT : UI_FAULT);
     bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     valve_fast();
-    bool on = why_not_manual() == NULL;
+    bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
     for (int i = 0; i < 7; i++)
         if (vp.btn[i])
-            ui_btn_enable(vp.btn[i], on);
+            ui_btn_enable(vp.btn[i], i < 4 ? steps : on);
     if (vp.jog && !stepper3_busy())
         vp.jog = false;
     ui_status_line();
