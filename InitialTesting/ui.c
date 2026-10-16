@@ -483,10 +483,13 @@ void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb)
 static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, bool ok, bool act)
 {
     static const uint32_t bg[] = { 0xFFFFFF, 0xE0E0E0, 0x3F3F3F, 0x000000 };
-    lv_color_t b = lv_color_hex(bg[kind]);
+    // Under a popup: one fixed grey whatever the kind or what is behind it
+    // (opacity let the dim of a pick list or confirm tint it blue).
+    bool dim = overlay != NULL;
+    lv_color_t b = dim ? lv_color_hex(0xC9CED3) : lv_color_hex(bg[kind]);
     if (!lv_color_eq(lv_obj_get_style_bg_color(strip, 0), b))
         lv_obj_set_style_bg_color(strip, b, 0);
-    int32_t bw = kind == UI_STRIP_FAULT ? 3 : kind == UI_STRIP_PROMPT ? 1 : 0;
+    int32_t bw = dim ? 0 : kind == UI_STRIP_FAULT ? 3 : kind == UI_STRIP_PROMPT ? 1 : 0;
     lv_color_t bc = kind == UI_STRIP_FAULT ? UI_FAULT : UI_WARN;
     if (lv_obj_get_style_border_width(strip, 0) != bw || !lv_color_eq(lv_obj_get_style_border_color(strip, 0), bc)) {
         lv_obj_set_style_border_width(strip, bw, 0);
@@ -494,11 +497,13 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_border_color(strip, bc, 0);
     }
     show(strip_dot, kind == UI_STRIP_INFO);
+    if (dim)
+        dot = lv_color_hex(0x8A939C);
     if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
     show(strip_icon, kind >= UI_STRIP_WARN);
-    ui_set_color(strip_icon, kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
-    ui_set_color(strip_text, kind >= UI_STRIP_WARN ? lv_color_white()
+    ui_set_color(strip_icon, dim ? lv_color_hex(0x6B747D) : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    ui_set_color(strip_text, dim ? lv_color_hex(0x6B747D) : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
     int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
@@ -516,9 +521,7 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     // Under a popup the strip stays, updating, greyed and without its buttons.
     show(strip_ok, ok && !overlay);
     show(strip_act, act && !overlay);
-    lv_opa_t opa = overlay ? LV_OPA_40 : LV_OPA_COVER;
-    if (lv_obj_get_style_opa(strip, 0) != opa)
-        lv_obj_set_style_opa(strip, opa, 0);
+
 }
 
 static void frame_refresh(void)

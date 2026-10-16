@@ -803,7 +803,7 @@ static void rm_cb(lv_event_t *e)
 static void ps_build(lv_obj_t *scr)
 {
     ecard_make(&ps.use, scr, 10, RY[0], 226, "Sensor in use", field_event, (void *)(intptr_t)CFG_SENSOR);
-    ui_btn(scr, 244, RY[0], 109, RH, UI_SECONDARY, "Add sensor", add_cb, NULL);
+    ui_btn(scr, 244, RY[0], 109, RH, UI_SECONDARY, "Add\nsensor", add_cb, NULL);   // two lines, as Remove sensor
     ecard_make(&ps.cal, scr, 10, RY[1], 226, "Calibration", cal_detail_cb, NULL);
     ps.rm = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Remove sensor", rm_cb, NULL);
     side_make(scr, "Pressure sensor", ps_help);
@@ -1146,9 +1146,10 @@ static const char *cs_help(void)
            "Capture air: vent the sensor to the room, then type the lab barometer reading in mB, for example "
            "1013.2.\n"
            "Each capture averages 10 readings. Either point can be redone on its own; the other is kept.\n"
-           "Signal is the Druck output in mV. The points are held as mV/V (output over excitation), so a "
-           "change of excitation does not move them.\n"
-           "Once both are held the new calibration is in use and unsaved: check Reading against New cal, "
+           "Signal: the Druck output over its excitation, in mV/V.\n"
+           "Saved cal: the pressure from the saved calibration. Captured: the pressure from the points "
+           "captured here, once both are held (None yet until then).\n"
+           "Once both are held the new calibration is in use and unsaved: check Saved cal against Captured, "
            "then Save settings. Discard changes puts the last save back.";
 }
 
@@ -1222,13 +1223,13 @@ static void air_cb(lv_event_t *e)
 
 static void cs_build(lv_obj_t *scr)
 {
-    cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV");
-    cs.now = ui_info(scr, 127, RY[0], 109, RH, "Reading, mB");
-    cs.nw = ui_info(scr, 244, RY[0], 109, RH, "New cal, mB");
+    cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV/V");
+    cs.now = ui_info(scr, 127, RY[0], 109, RH, "Saved cal, mB");
+    cs.nw = ui_info(scr, 244, RY[0], 109, RH, "Captured, mB");
     cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB @ mV/V");
     cs.air = ui_info(scr, 10, RY[2], 226, RH, "Air point, mB @ mV/V");
-    cs.bv = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Capture vacuum", vac_cb, NULL);
-    cs.ba = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Capture air", air_cb, NULL);
+    cs.bv = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Capture\nvacuum", vac_cb, NULL);
+    cs.ba = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Capture\nair", air_cb, NULL);   // both on two lines
     side_make(scr, "Calibrate sensor", cs_help);
     cs_title_set();
 }
@@ -1238,19 +1239,18 @@ static void cs_refresh(void)
     char t[40];
     const clicks_state_t *s = clicks_state();
     bool ok = reading_ok();
-    ui_set_text(cs.sig, ok ? fixed_fmt(t, sizeof t, fixed_round(s->shunt_nv, 3), 3) : "----");   // 93.676
-    // Reading with the saved cal of this sensor; New cal with the one in use, if different.
+    ui_set_text(cs.sig, ok ? fixed_fmt(t, sizeof t, fixed_round(s->r_ppb, 2), 4) : "----");   // 9.3580
     cfg_sensor_t q;
     const cal_rec_t *saved = NULL;
     bool in_save = cfg_sensor(cfg_sensor_active(), &q) && cfg_saved_cal(q.serial, &saved);
-    bool differs = !q.saved;
-    int64_t p_saved = !in_save ? s->p_mmbar
-                    : saved ? cal_pressure_with(saved, s->r_ppb)
+    int64_t p_saved = saved ? cal_pressure_with(saved, s->r_ppb)
                     : (int64_t)s->r_ppb * q.fs_mmbar / 10000000;   // nominal: 0 to 10 mV/V
-    ui_set_text(cs.now, ok ? ui_fmt1(t, sizeof t, differs ? p_saved : s->p_mmbar) : "----");
-    ui_set_text(cs.nw, !ok ? "----" : differs ? ui_fmt1(t, sizeof t, s->p_mmbar) : "No change");
     cal_point_t v, a;
     cal_points(&v, &a);
+    // Saved cal: none for a sensor not in the last save. Captured: only once
+    // both points are held and the cal in use is not the saved one.
+    ui_set_text(cs.now, !ok ? "----" : !in_save ? "None" : ui_fmt1(t, sizeof t, q.saved ? s->p_mmbar : p_saved));
+    ui_set_text(cs.nw, !ok ? "----" : v.have && a.have && !q.saved ? ui_fmt1(t, sizeof t, s->p_mmbar) : "None yet");
     int cap = cal_capturing(), left = cal_capture_left();
     if (cap == 1)
         lv_snprintf(t, sizeof t, "Capturing %d of 10", 10 - left);

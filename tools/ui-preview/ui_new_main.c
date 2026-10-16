@@ -334,7 +334,7 @@ int main(int argc, char **argv)
         !strcmp(st, "set-caldetail")) tap(120, 72);
     if (!strcmp(st, "set-pick")) tap(120, 72);
     if (!strncmp(st, "set-add", 7)) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
-    if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(120, 180);   // 30 psi
+    if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(250, 84);   // 30 psi (second column)
     if (!strcmp(st, "set-addcal")) tap(318, 164);   // Calibrate
 
     if (!strcmp(st, "set-caldetail")) tap(120, 128);

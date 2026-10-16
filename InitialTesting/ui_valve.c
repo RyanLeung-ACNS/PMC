@@ -263,7 +263,7 @@ static void start_cb(lv_event_t *e)
 static void calib_switch(lv_timer_t *t)
 {
     (void)t;
-    ui_set_text(cp.seat, limit_open_now() ? "Pressed" : "Not pressed");
+    ui_set_text(cp.seat, limit_open_now() ? "Pressed" : "Released");
 }
 
 static void timer_deleted(lv_event_t *e)
@@ -276,8 +276,8 @@ static void calib_build(lv_obj_t *scr)
     cp.state = ui_info(scr, 10, 48, 226, 48, "Valve calibration");
     cp.v = ui_info(scr, 244, 48, 109, 48, "Valve, %");
     right(cp.v);
-    cp.seat = ui_info(scr, 10, 104, 148, 48, "Limit switch");
-    cp.last = ui_info(scr, 166, 104, 187, 48, "Last calibrated");   // "15/10/26 14:28"
+    cp.last = ui_info(scr, 10, 104, 226, 48, "Last calibrated");   // "15/10/26 14:28"
+    cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
     lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
@@ -617,7 +617,7 @@ static void diag_motor(lv_timer_t *t)
     lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
     ui_set_text(dp.v[3], buf);
     bool pressed = limit_open_now();
-    ui_set_text(dp.v[4], pressed ? "Pressed" : "Not pressed");
+    ui_set_text(dp.v[4], pressed ? "Pressed" : "Released");
     int32_t beyond;
     if (pressed && valve_beyond_switch(&beyond))
         lv_snprintf(buf, sizeof buf, "%ld", (long)beyond);
