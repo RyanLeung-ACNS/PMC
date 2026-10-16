@@ -424,14 +424,8 @@ static void save_ask(void)
         ui_msg("Wait for the valve to stop");
         return;
     }
-    bool have = cfg_rev(CFG_FROM_SAVED, &rev, &at);
-    if (have)
-        lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart. The last save%s%s stays as "
-                    "Previous save.", plural(c, sizeof c, n, "change"), at[0] ? ", " : "",
-                    at[0] ? save_when(w, sizeof w, at) : "");
-    else
-        lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart.",
-                    plural(c, sizeof c, n, "change"));
+    (void)rev; (void)at; (void)w;
+    lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart.", plural(c, sizeof c, n, "change"));
     ui_confirm(t, "Save settings", save_now);
 }
 
@@ -564,7 +558,7 @@ static void motor_cb(lv_event_t *e)
         ui_msg("Wait for the valve to stop");
         return;
     }
-    ui_confirm("Open Motor override? It drives the motor directly by steps, for service. "
+    ui_confirm("Open Motor override? It drives the motor directly by steps. "
                "Back returns here.", "Open", motor_go);
 }
 
@@ -574,9 +568,17 @@ static void settings_build(lv_obj_t *scr)
     const ui_screen_t *const to[4] = { &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune, &ui_scr_review };
     for (int i = 0; i < 4; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
+    // The overrides look apart from the pages: a dark outline, and Limit
+    // override filled dark while it is armed.
     st.over = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Limit override", override_cb, NULL);
     lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
-    ui_btn_text(m, "Motor override", "the 0.6.0 motor screen");
+    ui_btn_text(m, "Motor override", "Direct step control");
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = i ? m : st.over;
+        lv_obj_set_style_border_side(b, LV_BORDER_SIDE_FULL, 0);
+        lv_obj_set_style_border_width(b, 2, 0);
+        lv_obj_set_style_border_color(b, UI_WARN, 0);
+    }
     side.save = side.discard = NULL;
 }
 
@@ -599,6 +601,14 @@ static void settings_refresh(void)
     ui_btn_text(st.tile[2], "Control tuning", t);
     bool ov = stepper3_override();
     ui_btn_text(st.over, "Limit override", ov ? "Next move: tap to cancel" : "Off");
+    lv_color_t ob = ov ? UI_WARN : UI_CARD;
+    if (!lv_color_eq(lv_obj_get_style_bg_color(st.over, 0), ob)) {
+        lv_obj_set_style_bg_color(st.over, ob, 0);
+        // Its two labels: name and state line, white on the dark fill.
+        for (uint32_t i = 0; i < lv_obj_get_child_count(st.over); i++)
+            lv_obj_set_style_text_color(lv_obj_get_child(st.over, (int32_t)i),
+                                        ov ? lv_color_white() : i ? UI_MUTED : UI_TEXT, 0);
+    }
     // Without side buttons: the strip only.
     char c[32], w[24];
     uint32_t rev;

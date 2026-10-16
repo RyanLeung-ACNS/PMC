@@ -486,7 +486,16 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     // Under a popup: one fixed grey whatever the kind or what is behind it
     // (opacity let the dim of a pick list or confirm tint it blue).
     bool dim = overlay != NULL;
-    lv_color_t b = dim ? UI_DIS_BG : lv_color_hex(bg[kind]);   // as a greyed button
+    lv_color_t dis_bg = UI_DIS_BG, dis_tx = UI_DIS_TX;
+    if (dim && lv_obj_get_style_bg_opa(overlay, 0) < LV_OPA_COVER) {
+        // A pick list or confirm dims the page; the strip is above that
+        // layer, so it takes the same dim to match the greyed buttons under it.
+        lv_color_t sh = lv_obj_get_style_bg_color(overlay, 0);
+        lv_opa_t o = lv_obj_get_style_bg_opa(overlay, 0);
+        dis_bg = lv_color_mix(sh, dis_bg, o);
+        dis_tx = lv_color_mix(sh, dis_tx, o);
+    }
+    lv_color_t b = dim ? dis_bg : lv_color_hex(bg[kind]);   // as a greyed button
     if (!lv_color_eq(lv_obj_get_style_bg_color(strip, 0), b))
         lv_obj_set_style_bg_color(strip, b, 0);
     int32_t bw = dim ? 0 : kind == UI_STRIP_FAULT ? 3 : kind == UI_STRIP_PROMPT ? 1 : 0;
@@ -498,12 +507,12 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     show(strip_dot, kind == UI_STRIP_INFO);
     if (dim)
-        dot = UI_DIS_TX;
+        dot = dis_tx;
     if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
     show(strip_icon, kind >= UI_STRIP_WARN);
-    ui_set_color(strip_icon, dim ? UI_DIS_TX : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
-    ui_set_color(strip_text, dim ? UI_DIS_TX : kind >= UI_STRIP_WARN ? lv_color_white()
+    ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
     int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
@@ -566,7 +575,7 @@ static void frame_refresh(void)
         strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
     } else if (valve_fault_first(&tag, &text)) {
         if (f12)
-            lv_strlcpy(buf, "Stopped. Valve held, not closed.", sizeof buf);
+            lv_strlcpy(buf, "Stopped where it was, not closed.", sizeof buf);
         else if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
         else
