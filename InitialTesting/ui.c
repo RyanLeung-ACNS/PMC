@@ -486,7 +486,7 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     // Under a popup: one fixed grey whatever the kind or what is behind it
     // (opacity let the dim of a pick list or confirm tint it blue).
     bool dim = overlay != NULL;
-    lv_color_t b = dim ? lv_color_hex(0xC9CED3) : lv_color_hex(bg[kind]);
+    lv_color_t b = dim ? UI_DIS_BG : lv_color_hex(bg[kind]);   // as a greyed button
     if (!lv_color_eq(lv_obj_get_style_bg_color(strip, 0), b))
         lv_obj_set_style_bg_color(strip, b, 0);
     int32_t bw = dim ? 0 : kind == UI_STRIP_FAULT ? 3 : kind == UI_STRIP_PROMPT ? 1 : 0;
@@ -498,12 +498,12 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     show(strip_dot, kind == UI_STRIP_INFO);
     if (dim)
-        dot = lv_color_hex(0x8A939C);
+        dot = UI_DIS_TX;
     if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
     show(strip_icon, kind >= UI_STRIP_WARN);
-    ui_set_color(strip_icon, dim ? lv_color_hex(0x6B747D) : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
-    ui_set_color(strip_text, dim ? lv_color_hex(0x6B747D) : kind >= UI_STRIP_WARN ? lv_color_white()
+    ui_set_color(strip_icon, dim ? UI_DIS_TX : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    ui_set_color(strip_text, dim ? UI_DIS_TX : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
     int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
