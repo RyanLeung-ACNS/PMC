@@ -21,7 +21,7 @@ Two hardware options are being built and compared; neither is final:
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
-Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.8 at the time of writing). Commit titles start with the version they build.
+Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.9 at the time of writing). Commit titles start with the version they build.
 
 ## Status
 
@@ -109,11 +109,11 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 480x272, after the simulator (`simulator/`, ISA-101 style: grey for normal, colour only for abnormal states). Every screen has a header (Back and Home buttons, the title centred, the mode word on the right with its dot: a grey ring, filled grey in AUTO, red with a fault; a red rule under the header with a fault), a status strip and STOP on the bottom row. Under a popup the strip stays, updating and greyed. On Home the strip shows only when it has something to say (a prompt, a fault, a message, a move), and otherwise the 10 min pressure sparkline is in its place.
 
-- **Home** (title PRESSURE CONTROLLER): Pressure tile (40 px reading in mbar, log bar labelled 0.1, 1, 10, 100 and 1k, Target box) and Valve tile (40 px reading in %, bar, Go to box), the mode button (Home valve / Start AUTO), Valve, Menu, the pressure sparkline (a tap opens Trend).
+- **Home** (title "<cryostat name> pressure controller", for example "CF-11 pressure controller", on the left): Pressure tile (40 px reading in mbar, log bar labelled 0.1, 1, 10, 100 and 1k with the end lines the same distance in from each end, Target box) and Valve tile (40 px reading in %, bar, Go to box), the mode button (Home valve / Start AUTO), Valve, Menu, the pressure sparkline (a tap opens Trend).
 - **Menu**: Records (Trend, Faults and log), Calibrate (Valve, Sensor), System (Diagnostics, Settings).
 - **Valve**: manual moves and the valve's state. **Home valve**: homing state, motor step count, limit switch, the three steps and the time taken. **Faults and log**: latched faults (tap for detail and help) and the event log. **Diagnostics**: readings and hardware state.
 - **Trend**: pressure (left axis) and valve (right axis, 0 to 100 %) over 1, 2, 5, 10, 30 min or 1 hour. Each point is the mean of a fixed slot of time counted from start-up, so the line keeps its shape as it scrolls.
-- **Settings**: Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override, Motor override. Edits are drafts until Save settings, which checks them together and saves all or nothing.
+- **Settings**: Cryostat name (a keyboard; up to 12 characters, in use at once and unsaved until Save settings), Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override, Motor override. Edits are drafts until Save settings, which checks them together and saves all or nothing.
 - **Calibrate sensor**: the bench two-point cal from the screen (vacuum, then air at a barometer reading).
 
 Display formats: pressure 1 decimal, valve % and keypad 2 decimals, dates DD/MM/YY. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •), and 40 px digits only for the Home readings (`ui_font_40.c`). The display is driven over the SSD1963's 16-bit 8080 bus, bit-banged on GPIOE (WR on PF11); touch is read over I2C every 5 ms.
@@ -131,7 +131,7 @@ Serial flash (survives reflashing; neither the application nor mikroBootloader e
 | Address | Holds |
 | --- | --- |
 | 0x7EC000 to 0x7FBFFF | Saved valve position, a log of 16-byte entries over sixteen 4 KB sectors (one erase per 256 entries) |
-| 0x7FD000 and 0x7FE000 | Settings record (version 2), written to the two sectors in turn |
+| 0x7FD000 and 0x7FE000 | Settings record (version 3), written to the two sectors in turn |
 | 0x7FF000 | Old stand-alone cal record (0.3.30 to 0.5.x), read only if no settings record exists |
 
 The trend and the event log are in RAM and empty after a restart.
@@ -164,7 +164,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
 | `PM DIAG` | Steps the excitation from 9 to 11 V, one step a second, then puts it back (only when `PMC_PM_DIAG` is 1) |
 
-Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, and the save time, in one record in serial flash; version 2 from 0.9.0, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
+Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, the cryostat name and the save time, in one record in serial flash; version 3 from 0.10.9, a version 2 record (0.9.0 to 0.10.8) loads with the name CF-11, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 
 | Command | What it does |
 | --- | --- |
@@ -173,6 +173,7 @@ Settings store (motor, valve, control tuning, up to four pressure sensors each w
 | `CFG SAVE` | Save everything. Two sectors are used in turn; a save is read back before it counts, so a failed save keeps the last good record |
 | `CFG LOAD LAST` / `CFG LOAD PREVIOUS` | Load the newest / the other saved record (shows as unsaved until saved). Refused while moving or homing |
 | `CFG LOAD DEFAULTS` | Factory motor, valve and tuning settings; the sensors and their cals are kept |
+| `CFG NAME <text>` / `CFG NAME?` | Set / show the cryostat name in the Home title (up to 12 characters; unsaved until `CFG SAVE`) |
 | `CFG TEST CORRUPT` / `CFG TEST ERASE` | Bench tests: spoil the newest record's CRC / erase both sectors |
 
 Calibration (Druck, through the INA228):

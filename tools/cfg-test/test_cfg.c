@@ -234,7 +234,7 @@ static void test_cfg(void)
     CHECK(cfg_rev(CFG_FROM_PREVIOUS, &rev, &at) && rev == 5);
     uint32_t ver;
     memcpy(&ver, flash + 0x7FE004, 4);
-    CHECK(ver == 2);   // the save went to B, the v1 record in A is kept
+    CHECK(ver == 3);   // the save went to B, the v1 record in A is kept
     memcpy(&ver, flash + 0x7FD004, 4);
     CHECK(ver == 1);
     CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
@@ -340,6 +340,56 @@ static void test_capture(void)
     CHECK(cfg_save_with(v, set, &why) && cal_saved() && cfg_unsaved() == 0);
 }
 
+
+// Cryostat name (version 3) and a version 2 record loading.
+static void test_name(void)
+{
+    int32_t v[CFG_N] = { 0 };
+    bool set[CFG_N] = { 0 };
+    const char *why;
+    uint32_t rev;
+    const char *at;
+    reboot();
+    uint32_t r0 = 0;
+    CHECK(cfg_rev(CFG_FROM_SAVED, &r0, &at));
+
+
+    // A new name is live
+    // and unsaved, too long is refused, and it survives a save and restart.
+        CHECK(!cfg_set_name("ABCDEFGHIJKLM", &why) && strcmp(cfg_name(), "CF-11") == 0);
+    CHECK(cfg_set_name("HM-2", &why) && cfg_unsaved() == 1);
+    CHECK(cfg_save_with(v, set, &why) && cfg_unsaved() == 0);
+    reboot();
+    CHECK(strcmp(cfg_name(), "HM-2") == 0);
+    // The same record rewritten as version 2 (0.9.x): loads, name "CF-11".
+    {
+        uint32_t size3, a3 = 0;
+        int sl = 0;
+        for (int i = 0; i < 2; i++) {
+            uint32_t r3;
+            memcpy(&r3, flash + 0x7FD000 + i * 0x1000 + 12, 4);
+            uint32_t v3;
+            memcpy(&v3, flash + 0x7FD000 + i * 0x1000 + 4, 4);
+            if (v3 == 3 && r3 >= a3) { a3 = r3; sl = i; }
+        }
+        uint32_t base = 0x7FD000 + sl * 0x1000;
+        memcpy(&size3, flash + base + 8, 4);
+        uint32_t size2 = size3 - (CFG_NAME_LEN + 4);
+        static uint8_t buf[4096];
+        memcpy(buf, flash + base, size3);
+        uint32_t two = 2;
+        memcpy(buf + 4, &two, 4);
+        memcpy(buf + 8, &size2, 4);
+        uint32_t c = crc32(buf, size2 - 4);
+        memcpy(buf + size2 - 4, &c, 4);
+        extflash_erase_4k(base);
+        extflash_write(base, buf, size2);
+        reboot();
+        CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a3);
+        CHECK(strcmp(cfg_name(), "CF-11") == 0 );
+    }
+}
+
 static void tick(uint32_t ms)
 {
     for (uint32_t t = 0; t < ms; t += 10) {
@@ -428,6 +478,7 @@ int main(int argc, char **argv)
     lv_init();
     test_cfg();
     test_capture();
+    test_name();
     test_valvepos();
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails != 0;

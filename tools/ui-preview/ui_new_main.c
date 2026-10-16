@@ -305,10 +305,11 @@ int main(int argc, char **argv)
         tap(415, 184); tap(120, 128); tap(24, 20); tap(24, 20); // Calibrate valve
         tap(415, 184); tap(120, 184); tap(24, 20); tap(24, 20); // Diagnostics
         tap(415, 184); tap(379, 184);                           // Settings
-        tap(120, 72); tap(24, 20);                              //   Pressure sensor
-        tap(356, 72); tap(270, 72); tap(24, 20);                //   Valve setup, Drive tab
-        tap(120, 128); tap(94, 72); tap(24, 20); tap(24, 20);   //   Control tuning, keypad
-        tap(356, 128); tap(24, 20);                             //   Review and save
+        tap(120, 72); tap(24, 20);                              //   Cryostat name
+        tap(356, 72); tap(24, 20);                              //   Pressure sensor
+        tap(120, 128); tap(270, 72); tap(24, 20);               //   Valve setup, Drive tab
+        tap(356, 128); tap(94, 72); tap(24, 20); tap(24, 20);   //   Control tuning, keypad
+        tap(120, 184); tap(24, 20);                             //   Review and save
         tap(24, 20); tap(24, 20);
         tap(415, 184); tap(379, 128); tap(24, 20); tap(24, 20); // Calibrate sensor
     }
@@ -349,26 +350,28 @@ int main(int argc, char **argv)
     bool set = !strncmp(st, "set-", 4);
     if (set) { tap(415, 184); tap(379, 184); }
     if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strncmp(st, "set-add", 7) ||
-        !strcmp(st, "set-caldetail")) tap(120, 72);
+        !strcmp(st, "set-caldetail")) tap(356, 72);
     if (!strcmp(st, "set-pick")) tap(120, 72);
+    if (!strncmp(st, "set-name", 8)) { tap(120, 72); tap(331, 189); tap(331, 189); tap(24, 65); tap(338, 65); }
+    if (!strcmp(st, "set-named")) { tap(415, 128); tap(24, 20); tap(24, 20); }   // Use name, Settings, Home
     if (!strncmp(st, "set-add", 7)) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
     if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(250, 84);   // 30 psi (second column)
     if (!strcmp(st, "set-addcal")) tap(318, 164);   // Calibrate
 
     if (!strcmp(st, "set-caldetail")) tap(120, 128);
-    if (!strncmp(st, "set-valve", 9)) tap(356, 72);
+    if (!strncmp(st, "set-valve", 9)) tap(120, 128);
     if (!strcmp(st, "set-valve2")) tap(182, 72);
     if (!strcmp(st, "set-valve3")) tap(294, 72);
     if (!strcmp(st, "set-valvepos")) tap(94, 128);
-    if (!strncmp(st, "set-tune", 8) || !strncmp(st, "set-save", 8)) tap(120, 128);
+    if (!strncmp(st, "set-tune", 8) || !strncmp(st, "set-save", 8)) tap(356, 128);
     if (!strcmp(st, "set-tunekp") || !strcmp(st, "set-tunedraft") || !strcmp(st, "set-saveask") ||
         !strcmp(st, "set-saved")) { tap(94, 72); tap(181, 240); tap(251, 240); tap(111, 184); }
     if (!strcmp(st, "set-tunedraft") || !strcmp(st, "set-saveask") || !strcmp(st, "set-saved")) tap(321, 184);
     if (!strcmp(st, "set-saveask") || !strcmp(st, "set-saved")) tap(415, 128);
     if (!strcmp(st, "set-saved")) tap(249, 136 + 40);
-    if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(356, 128);
+    if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(120, 184);
     if (!strcmp(st, "set-load")) tap(120, 184);
-    if (!strcmp(st, "set-override")) tap(120, 184);
+    if (!strcmp(st, "set-override")) tap(298, 184);
     if (strstr(st, "trend")) { tap(415, 184); tap(210, 72); }   // Menu, Trend
     if (!strcmp(st, "trend1h")) { tap(415, 72); tap(415, 72); }
     if (!strcmp(st, "trend1m")) { tap(415, 184); tap(415, 184); tap(415, 184); }

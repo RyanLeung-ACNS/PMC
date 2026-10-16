@@ -9,6 +9,7 @@
 #include "valvepos.h"
 #include "motor_screen.h"
 #include "fixed.h"
+#include "cfg.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -329,7 +330,6 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-#define UI_HOME_TITLE "PRESSURE CONTROLLER"   // the HMI's name, Home's title
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
@@ -363,6 +363,11 @@ static void frame_refresh(void);
 static void back_event(lv_event_t *e)
 {
     (void)e;
+    ui_back();
+}
+
+void ui_back(void)
+{
     if (overlay)
         ui_overlay_close();
     else if (back_n)
@@ -433,7 +438,7 @@ static void build_frame(void)
         lv_obj_center(l);
     }
     pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER,
-                       UI_HOME_TITLE);
+                       "Pressure controller");
     lv_label_set_long_mode(pmc_lbl, LV_LABEL_LONG_DOT);
     title_lbl = ui_label(hdr, 100, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
@@ -593,8 +598,19 @@ static void frame_refresh(void)
     show(title_lbl, !home);
     const char *mode_txt = f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
     static const char *fit_mode, *fit_title;
+    // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
+    static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
+    bool renamed = strcmp(cfg_name(), fit_name) != 0;
+    if (renamed) {
+        lv_strlcpy(fit_name, cfg_name(), sizeof fit_name);
+        if (fit_name[0])
+            lv_snprintf(home_title, sizeof home_title, "%s pressure controller", fit_name);
+        else
+            lv_strlcpy(home_title, "Pressure controller", sizeof home_title);
+        ui_set_text(pmc_lbl, home_title);
+    }
     ui_set_text(mode_lbl, mode_txt);
-    if (mode_txt != fit_mode || (!home && cur->title != fit_title)) {
+    if (renamed || mode_txt != fit_mode || (!home && cur->title != fit_title)) {
         fit_mode = mode_txt;
         if (!home) {
             fit_title = cur->title;
@@ -603,8 +619,8 @@ static void frame_refresh(void)
         }
         // Home's title sits on the left (Ryan, 16 Oct: centred left the
         // top left empty); it is centred in the gap only if it is too long.
-        title_fit(pmc_lbl, UI_HOME_TITLE, mode_txt, 10);
-        if (text_w(UI_HOME_TITLE) < 454 - text_w(mode_txt) - 8 - 12)
+        title_fit(pmc_lbl, home_title, mode_txt, 10);
+        if (text_w(home_title) < 454 - text_w(mode_txt) - 8 - 12)
             lv_obj_set_x(pmc_lbl, 12);
     }
     show(fault_rule, nf > 0);

@@ -18,7 +18,6 @@
 #define TILE_W  167
 #define TILE_H  160
 #define BAR_W   143
-#define PPAD    15            // pressure bar: 0.1 mbar at 15, 1000 at 128
 
 typedef struct {
     lv_obj_t *tile, *reading, *bar, *box, *box_text, *box_chev;
@@ -64,6 +63,22 @@ int32_t ui_log_px(int32_t p_mmbar, int32_t w)
     int32_t x = (l - lo) * w / (hi - lo);
     return x < 0 ? 0 : x > w ? w : x;
 }
+
+// Pressure bar end lines, the same distance in from each end: half the
+// wider of "0.1" and "1k", so that label meets its end of the bar (Ryan,
+// 16 Oct) and the decade lines stay evenly spaced.
+static int32_t ppad(void)
+{
+    static int32_t pad = -1;
+    if (pad < 0) {
+        lv_point_t a, b;
+        lv_text_get_size(&a, "0.1", &ui_font_12, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_text_get_size(&b, "1k", &ui_font_12, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        pad = ((a.x > b.x ? a.x : b.x) + 1) / 2;
+    }
+    return pad;
+}
+#define PPAD ppad()
 
 static int32_t pbar_x(int32_t p_mmbar)
 {
