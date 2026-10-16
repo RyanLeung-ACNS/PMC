@@ -21,7 +21,6 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "ui.h"
-#include "motor_screen.h"
 #include "cal.h"
 #include "cfg.h"
 #include "extflash.h"
@@ -317,9 +316,8 @@ int main(int argc, char **argv)
     if (!strcmp(st, "limithit")) v_q = true;
     if (!strcmp(st, "svc")) {
         size_t a = heap_used();
-        tap(415, 184); tap(379, 184);     // Menu, Settings
-        ui_open(&ui_scr_motor); run(600);  // Motor override
-        ui_open(&ui_scr_motor_drive); run(600);
+        tap(415, 184); tap(300, 240);     // Menu, Service (0.6.0 screens built)
+        run(1200);
         size_t b = heap_used();
         ui_home(); run(600);
         size_t c = heap_used();
@@ -356,10 +354,6 @@ int main(int argc, char **argv)
     if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(356, 128);
     if (!strcmp(st, "set-load")) tap(120, 184);
     if (!strcmp(st, "set-override")) tap(120, 184);
-    if (!strncmp(st, "set-mot", 7)) { ui_open(&ui_scr_motor); run(300); }
-    if (!strcmp(st, "set-motsize")) tap(60, 128);
-    if (!strncmp(st, "set-motdrive", 12)) tap(415, 128);
-    if (!strcmp(st, "set-motdrive2")) tap(60, 72);
     if (!strcmp(st, "calsensor") || !strcmp(st, "calvac")) { tap(415, 184); tap(379, 128); }
     if (!strcmp(st, "calvac")) tap(298, 128);
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu

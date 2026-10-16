@@ -16,6 +16,9 @@
  *   STOP    361,216 109x48 latches F-12 (CTRL STOP), on every screen
  * Home is kept; other screens are created on open and deleted on leave.
  * A keypad or confirm dialog covers 0,40 480x232 except the STOP slot.
+ *
+ * The 0.6.0 motor screen opens from Menu > Motor service; the frame is
+ * hidden there and its own buttons apply.
  */
 
 LV_FONT_DECLARE(ui_font_12)
@@ -80,6 +83,8 @@ void ui_init(void);            // after the drivers and valve/cfg init
 void ui_open(const ui_screen_t *s);
 bool ui_showing(const ui_screen_t *s);   // that screen is up
 void ui_home(void);            // back to Home (deletes the screen left)
+void ui_service(void);         // the 0.6.0 motor screen (Settings > Motor override), frame hidden
+bool ui_on_service(void);
 
 // Status strip. A message shows for 5 s with an OK, over the screen's own
 // line; refusals use it. The strip's action button is Home's.
