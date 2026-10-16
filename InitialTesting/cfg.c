@@ -603,9 +603,10 @@ int32_t cfg_tune(cfg_key_t k)
     return k >= CFG_KP && k <= CFG_BAND ? tune[k - CFG_KP] : 0;
 }
 
+static cfg_rec_t cand;   // cfg_save_with and cfg_sensor_use
+
 bool cfg_save_with(const int32_t v[CFG_N], const bool set[CFG_N], const char **why)
 {
-    static cfg_rec_t cand;
     if (busy()) { *why = "wait for the valve to stop"; return false; }
     capture(&cand);
     for (int k = 0; k < CFG_N; k++) {
@@ -730,7 +731,6 @@ bool cfg_sensor_remove(uint32_t serial, const char **why)
 
 bool cfg_sensor_use(uint32_t serial, const char **why)
 {
-    static cfg_rec_t cand;
     if (busy()) { *why = "wait for the valve to stop"; return false; }
     capture(&cand);
     const cfg_sens_t *q = find_sens(&cand, serial);
