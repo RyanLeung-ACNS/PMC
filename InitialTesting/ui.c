@@ -329,7 +329,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-#define UI_HOME_TITLE "Needle valve"   // the HMI's name, Home's title
+#define UI_HOME_TITLE "PRESSURE CONTROLLER"   // the HMI's name, Home's title
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
