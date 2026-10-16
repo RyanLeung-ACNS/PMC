@@ -300,7 +300,7 @@ static void trend_draw(lv_event_t *e)
     text(layer, "now", UI_MUTED, LV_TEXT_ALIGN_RIGHT, x1 - 60, y1 + 4, x1);
     // Legend in the pens' colours.
     text(layer, "Pressure, mB", COL_PV, LV_TEXT_ALIGN_LEFT, a.x1 + 10, a.y1 + 5, a.x1 + 120);
-    text(layer, "Valve, % (right)", COL_POS, LV_TEXT_ALIGN_RIGHT, a.x2 - 140, a.y1 + 5, a.x2 - 10);
+    text(layer, "Valve, %", COL_POS, LV_TEXT_ALIGN_RIGHT, a.x2 - 140, a.y1 + 5, a.x2 - 10);
 
     float lx, ly;
     pen(layer, win, n, K_V, x0, x1, y_pct, &s, COL_POS, 2, false, &lx, &ly);

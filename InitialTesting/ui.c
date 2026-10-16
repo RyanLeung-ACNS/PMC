@@ -328,7 +328,7 @@ bool ui_btn_disabled(lv_event_t *e)
 /* --------------------------------------------------------------------------
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
-#define TITLE_X 141   // Menu tile at 129 plus its 12 px text inset
+#define HDR_BTN_W 48  // Back and Home, icons only
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
@@ -414,11 +414,11 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
     lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
-    // Back and Home, icons only, fill the first 129 px so the title starts
-    // over the text of Menu's tiles (Ryan, 16 Oct). Home is hidden on Home
-    // and under popups, where Back closes the popup.
-    back_btn = ui_btn(hdr, 0, 0, 64, 40, UI_DARK, LV_SYMBOL_LEFT, back_event, NULL);
-    home_btn = ui_btn(hdr, 64, 0, 65, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
+    // Back and Home, icons only, 48 px each; the title is centred (Ryan,
+    // 16 Oct). Home is hidden on Home and under popups, where Back closes
+    // the popup.
+    back_btn = ui_btn(hdr, 0, 0, HDR_BTN_W, 40, UI_DARK, LV_SYMBOL_LEFT, back_event, NULL);
+    home_btn = ui_btn(hdr, HDR_BTN_W, 0, HDR_BTN_W, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
     // A touch in the 8 px gap under the header is Back's, not the page's.
     lv_obj_set_ext_click_area(hdr, 8);
     lv_obj_set_ext_click_area(back_btn, 8);
@@ -431,9 +431,10 @@ static void build_frame(void)
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(l);
     }
-    pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT,
+    pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER,
                        "Needle valve controller");
-    title_lbl = ui_label(hdr, TITLE_X, 11, 293 - TITLE_X, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
+    lv_label_set_long_mode(pmc_lbl, LV_LABEL_LONG_DOT);
+    title_lbl = ui_label(hdr, 100, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
     mode_dot = plain(hdr);
@@ -553,6 +554,29 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
 
 }
 
+static int32_t text_w(const char *t)
+{
+    lv_point_t sz;
+    lv_text_get_size(&sz, t, &ui_font_16, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return sz.x;
+}
+
+// Centre the title on the screen; when the mode word leaves no room for
+// that, centre it in the gap between Back and Home (or the edge, on Home)
+// and the mode word, and cut it with dots only if it is wider than the gap.
+static void title_fit(lv_obj_t *l, const char *text, const char *mode_txt, int32_t left)
+{
+    int32_t right = 454 - text_w(mode_txt) - 8;
+    int32_t w = text_w(text);
+    int32_t x = 240 - w / 2;
+    if (w > right - left)
+        w = right - left;
+    if (x < left || x + w > right)
+        x = left + (right - left - w) / 2;
+    lv_obj_set_pos(l, x, 11);
+    lv_obj_set_width(l, w + 1);
+}
+
 static void frame_refresh(void)
 {
     const char *tag, *text;
@@ -566,9 +590,18 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    if (!home)
-        ui_set_text(title_lbl, cur->title);
-    ui_set_text(mode_lbl, f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name());
+    const char *mode_txt = f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
+    static const char *fit_mode, *fit_title;
+    ui_set_text(mode_lbl, mode_txt);
+    if (mode_txt != fit_mode || (!home && cur->title != fit_title)) {
+        fit_mode = mode_txt;
+        if (!home) {
+            fit_title = cur->title;
+            ui_set_text(title_lbl, cur->title);
+            title_fit(title_lbl, cur->title, mode_txt, 2 * HDR_BTN_W + 4);
+        }
+        title_fit(pmc_lbl, "Needle valve controller", mode_txt, 10);
+    }
     show(fault_rule, nf > 0);
     bool op = !valve_stop_latches();
     if (op != lv_obj_has_state(stop_btn, LV_STATE_USER_2)) {

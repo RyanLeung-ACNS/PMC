@@ -295,22 +295,22 @@ int main(int argc, char **argv)
     size_t before = heap_used();
     for (int i = 0; i < 10; i++) {
         tap(415, 184);          // Menu
-        tap(60, 20);            // Back
+        tap(24, 20);            // Back
     }
     tap(300, 184);              // Go to box (opens the keypad in MANUAL)
-    tap(60, 20);                // Back closes it
+    tap(24, 20);                // Back closes it
     for (int i = 0; i < 5; i++) {
-        tap(415, 128); tap(60, 20);                             // Valve
-        tap(415, 184); tap(350, 72); tap(60, 20); tap(60, 20);  // Faults and log
-        tap(415, 184); tap(120, 128); tap(60, 20); tap(60, 20); // Calibrate valve
-        tap(415, 184); tap(120, 184); tap(60, 20); tap(60, 20); // Diagnostics
+        tap(415, 128); tap(24, 20);                             // Valve
+        tap(415, 184); tap(350, 72); tap(24, 20); tap(24, 20);  // Faults and log
+        tap(415, 184); tap(120, 128); tap(24, 20); tap(24, 20); // Calibrate valve
+        tap(415, 184); tap(120, 184); tap(24, 20); tap(24, 20); // Diagnostics
         tap(415, 184); tap(379, 184);                           // Settings
-        tap(120, 72); tap(60, 20);                              //   Pressure sensor
-        tap(356, 72); tap(270, 72); tap(60, 20);                //   Valve setup, Drive tab
-        tap(120, 128); tap(94, 72); tap(60, 20); tap(60, 20);   //   Control tuning, keypad
-        tap(356, 128); tap(60, 20);                             //   Review and save
-        tap(60, 20); tap(60, 20);
-        tap(415, 184); tap(379, 128); tap(60, 20); tap(60, 20); // Calibrate sensor
+        tap(120, 72); tap(24, 20);                              //   Pressure sensor
+        tap(356, 72); tap(270, 72); tap(24, 20);                //   Valve setup, Drive tab
+        tap(120, 128); tap(94, 72); tap(24, 20); tap(24, 20);   //   Control tuning, keypad
+        tap(356, 128); tap(24, 20);                             //   Review and save
+        tap(24, 20); tap(24, 20);
+        tap(415, 184); tap(379, 128); tap(24, 20); tap(24, 20); // Calibrate sensor
     }
     run(1200);
     size_t after = heap_used();
@@ -374,7 +374,7 @@ int main(int argc, char **argv)
     if (!strcmp(st, "trend1m")) { tap(415, 184); tap(415, 184); tap(415, 184); }
     if (!strcmp(st, "calsensor") || !strcmp(st, "calvac")) { tap(415, 184); tap(379, 128); }
     if (!strcmp(st, "calvac")) tap(298, 128);
-    if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu
+    if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(24, 20); }   // Diagnostics, Back: Menu
     if (!strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3")) { tap(415, 128); tap(415, 184); }
     if (!strcmp(st, "help2")) tap(TVX, 172);
     if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
