@@ -653,6 +653,14 @@ void ui_home(void)
     frame_refresh();
 }
 
+// Back from the motor screen: Settings, with Menu and Home behind it.
+static void service_back(void)
+{
+    ui_home();
+    ui_open(&ui_scr_menu);
+    ui_open(&ui_scr_settings);
+}
+
 void ui_service(void)
 {
     ui_overlay_close();
@@ -660,7 +668,7 @@ void ui_service(void)
     service = true;
     static bool built;
     if (!built) {
-        motor_screen_init(ui_home);   // kept once built
+        motor_screen_init(service_back);   // kept once built
         built = true;
     }
     motor_screen_show();

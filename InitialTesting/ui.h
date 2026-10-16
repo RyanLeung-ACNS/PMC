@@ -82,7 +82,7 @@ typedef struct {
 void ui_init(void);            // after the drivers and valve/cfg init
 void ui_open(const ui_screen_t *s);
 void ui_home(void);            // back to Home (deletes the screen left)
-void ui_service(void);         // the 0.6.0 motor screen, frame hidden
+void ui_service(void);         // the 0.6.0 motor screen (Settings > Motor override), frame hidden
 bool ui_on_service(void);
 
 // Status strip. A message shows for 5 s with an OK, over the screen's own

@@ -280,6 +280,24 @@ static bool ed_turns(int32_t v100, const char **why)
     return true;
 }
 
+// The keypad's side rows. A setting is normally in use as saved, so one
+// row, Saved; In use as well only when they differ (after Load settings or
+// a COM3 change), or In use alone when nothing is saved yet.
+static void kp_rows(ui_kp_t *k, cfg_key_t key, char *now, char *sv, size_t n)
+{
+    int32_t s;
+    bool have = cfg_value(CFG_FROM_SAVED, key, &s);
+    int r = 0;
+    if (!have || s != live(key)) {
+        k->side_label[r] = "In use";
+        k->side_text[r++] = value_text(now, n, key, live(key));
+    }
+    if (have) {
+        k->side_label[r] = "Saved";
+        k->side_text[r] = value_text(sv, n, key, s);
+    }
+}
+
 static void ed_turns_keypad(void)
 {
     static char info[32], now[16], sv[16];
@@ -289,12 +307,8 @@ static void ed_turns_keypad(void)
     ui_kp_t k = { .title = "100 % travel, output turns", .info = info, .dec = 2,
                   .min = (int32_t)(((int64_t)lo * 100 + STEPS_PER_TURN - 1) / STEPS_PER_TURN),
                   .max = (int32_t)((int64_t)hi * 100 / STEPS_PER_TURN), .on_set = ed_turns };
-    k.side_label[0] = "In use";
-    k.side_text[0] = value_text(now, sizeof now, CFG_POSMAX, live(CFG_POSMAX));
-    if (cfg_value(CFG_FROM_SAVED, CFG_POSMAX, &s)) {
-        k.side_label[1] = "Saved";
-        k.side_text[1] = value_text(sv, sizeof sv, CFG_POSMAX, s);
-    }
+    kp_rows(&k, CFG_POSMAX, now, sv, sizeof now);
+    (void)s;
     ui_keypad_ex(&k);
 }
 
@@ -355,12 +369,8 @@ static void edit(cfg_key_t k)
                     fixed_fmt(b, sizeof b, hi, F[k].dec));
         ui_kp_t kp = { .title = caption(cap, sizeof cap, k), .info = info, .dec = F[k].dec, .min = lo, .max = hi,
                        .on_set = ed_set };
-        kp.side_label[0] = "In use";
-        kp.side_text[0] = value_text(now, sizeof now, k, live(k));
-        if (cfg_value(CFG_FROM_SAVED, k, &s)) {
-            kp.side_label[1] = "Saved";
-            kp.side_text[1] = value_text(sv, sizeof sv, k, s);
-        }
+        kp_rows(&kp, k, now, sv, sizeof now);
+        (void)s;
         ui_keypad_ex(&kp);
     }
 }
@@ -545,6 +555,19 @@ static void override_cb(lv_event_t *e)
                "driven into the seat. Ends when that move stops.", "Override", override_on);
 }
 
+static void motor_go(void) { ui_service(); }
+
+static void motor_cb(lv_event_t *e)
+{
+    (void)e;
+    if (stepper3_busy()) {
+        ui_msg("Wait for the valve to stop");
+        return;
+    }
+    ui_confirm("Open Motor override? It drives the motor directly by steps, for service. "
+               "Back returns here.", "Open", motor_go);
+}
+
 static void settings_build(lv_obj_t *scr)
 {
     static const char *const names[4] = { "Pressure sensor", "Valve setup", "Control tuning", "Review and save" };
@@ -552,6 +575,8 @@ static void settings_build(lv_obj_t *scr)
     for (int i = 0; i < 4; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
     st.over = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Limit override", override_cb, NULL);
+    lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
+    ui_btn_text(m, "Motor override", "the 0.6.0 motor screen");
     side.save = side.discard = NULL;
 }
 
@@ -809,7 +834,7 @@ typedef struct {
 
 static const tab_t valve_tabs[3] = {
     { "Valve", { CFG_POSMAX, CFG_REVERSE }, 2, NULL },
-    { "Calibrate", { CFG_OFFSET, CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 4, NULL },
+    { "Calibrate", { CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 3, NULL },
     { "Drive", { CFG_RATE, CFG_START, CFG_ACCEL }, 3, "Used by manual and AUTO moves. Saved when the valve is stopped." },
 };
 static const tab_t tune_tab[1] = {
@@ -1051,14 +1076,24 @@ static void load_cb(lv_event_t *e)
     ui_pick("Load which settings?", items, load_n, -1, load_pick);
 }
 
+static const char *rv_help(void)
+{
+    return "Last saved and Previous save: the two saves the board keeps, by date and time.\n"
+           "Unsaved changes: tap for the list, drafts and changes in use alike.\n"
+           "Save settings puts the drafts in use and saves; the last save becomes Previous save.\n"
+           "Load settings: a save comes back in use at once, sensors and calibrations included; "
+           "factory defaults come in as drafts and keep the sensors. Discard changes puts the last save back.";
+}
+
 static void rv_build(lv_obj_t *scr)
 {
-    ecard_make(&rv.changes, scr, C2X[0], RY[0], C2W[0], "Unsaved changes", changes_cb, NULL);
-    rv.saved = ui_info(scr, C2X[1], RY[0], C2W[1], RH, "Last saved");
-    rv.prev = ui_info(scr, C2X[0], RY[1], C2W[0], RH, "Previous save");
-    rv.load = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Load settings", load_cb, NULL);
-    ui_btn_text(rv.load, "Load settings", "saved, previous or defaults");
-    side_make(scr, "Review and save", NULL);
+    // Save settings and Discard changes in the same places as on the other pages.
+    rv.saved = ui_info(scr, C2X[0], RY[0], C2W[0], RH, "Last saved");
+    rv.prev = ui_info(scr, C2X[1], RY[0], C2W[1], RH, "Previous save");
+    ecard_make(&rv.changes, scr, 10, RY[1], 343, "Unsaved changes", changes_cb, NULL);
+    rv.load = ui_btn(scr, 10, RY[2], 343, RH, UI_SECONDARY, "Load settings", load_cb, NULL);
+    ui_btn_text(rv.load, "Load settings", "last save, previous save or factory defaults");
+    side_make(scr, "Review and save", rv_help);
 }
 
 static const char *rev_text(char *buf, size_t n, cfg_from_t from)
