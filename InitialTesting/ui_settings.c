@@ -16,7 +16,7 @@
  *
  * An edit is a draft (violet edge and value) until Save settings, which
  * checks the drafts and the settings in use together, puts them in use all
- * or nothing, and writes the whole record as the next rev (cfg_save_with).
+ * or nothing, and writes the whole record (cfg_save_with).
  * A grey edge is a setting in use that differs from the last save (a
  * capture, an added sensor, a COM3 command or Load settings). Load
  * settings > Previous save is the undo.
@@ -81,6 +81,18 @@ static int unsaved(void)
             other--;
     }
     return n + (other > 0 ? other : 0);
+}
+
+// A save is named by when it was made: "16 Oct 2026 14:32", or "no date"
+// when the clock was not set at the time.
+static const char *save_when(char *buf, size_t n, const char *at)
+{
+    char d[20];
+    if (!at[0])
+        return "no date";
+    const char *t = ui_date(d, sizeof d, at);   // "16 Oct 14:32"
+    lv_snprintf(buf, n, "%.*s %.4s%s", (int)(strlen(t) - 6), t, at, t + strlen(t) - 6);
+    return buf;
 }
 
 static const char *plural(char *buf, size_t n, int count, const char *word)
@@ -388,7 +400,8 @@ static void save_now(void)
     }
     drafts_clear();
     if (cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
-        lv_snprintf(t, sizeof t, "Saved as rev %lu.", (unsigned long)rev);
+        char w[24];
+        lv_snprintf(t, sizeof t, at[0] ? "Saved, %s." : "Saved, %s (clock not set).", save_when(w, sizeof w, at));
         ui_msg(t);
     }
 }
@@ -396,7 +409,7 @@ static void save_now(void)
 static void save_ask(void)
 {
     static char t[140];
-    char c[24];
+    char c[24], w[24];
     uint32_t rev = 0;
     const char *at;
     int n = unsaved();
@@ -410,10 +423,11 @@ static void save_ask(void)
     }
     bool have = cfg_rev(CFG_FROM_SAVED, &rev, &at);
     if (have)
-        lv_snprintf(t, sizeof t, "Save %s as rev %lu? They are used now and after restart. Rev %lu stays as "
-                    "Previous save.", plural(c, sizeof c, n, "change"), (unsigned long)rev + 1, (unsigned long)rev);
+        lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart. The last save%s%s stays as "
+                    "Previous save.", plural(c, sizeof c, n, "change"), at[0] ? ", " : "",
+                    at[0] ? save_when(w, sizeof w, at) : "");
     else
-        lv_snprintf(t, sizeof t, "Save %s as rev 1? They are used now and after restart.",
+        lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart.",
                     plural(c, sizeof c, n, "change"));
     ui_confirm(t, "Save settings", save_now);
 }
@@ -450,8 +464,9 @@ static void discard_ask(void)
                     plural(c, sizeof c, n, "unsaved change"));
         ui_confirm(t, "Discard changes", discard_drafts);
     } else if (cfg_unsaved() && cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
-        lv_snprintf(t, sizeof t, "Put the last save (rev %lu) back in use? The %s in use since then %s lost.",
-                    (unsigned long)rev, plural(c, sizeof c, cfg_unsaved(), "change"),
+        char w[24];
+        lv_snprintf(t, sizeof t, "Put the last save%s%s back in use? The %s in use since then %s lost.",
+                    at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "", plural(c, sizeof c, cfg_unsaved(), "change"),
                     cfg_unsaved() == 1 ? "is" : "are");
         ui_confirm(t, "Put back", discard_live);
     } else {
@@ -487,7 +502,7 @@ static void side_make(lv_obj_t *scr, const char *title, const char *(*help)(void
 // Strip and side buttons, every refresh.
 static void side_refresh(void)
 {
-    char t[64], c[32];
+    char t[64], c[32], w[24];
     uint32_t rev;
     const char *at;
     int n = unsaved();
@@ -498,7 +513,7 @@ static void side_refresh(void)
     else if (n)
         lv_snprintf(t, sizeof t, "%s in use, not saved.", plural(c, sizeof c, n, "change"));
     else if (cfg_rev(CFG_FROM_SAVED, &rev, &at))
-        lv_snprintf(t, sizeof t, "All settings saved, rev %lu.", (unsigned long)rev);
+        lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
     ui_strip_set(UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED, t);
@@ -567,7 +582,7 @@ static void settings_refresh(void)
     bool ov = stepper3_override();
     ui_btn_text(st.over, "Limit override", ov ? "Next move: tap to cancel" : "Off");
     // Without side buttons: the strip only.
-    char c[32];
+    char c[32], w[24];
     uint32_t rev;
     const char *at;
     int n = unsaved();
@@ -576,7 +591,7 @@ static void settings_refresh(void)
     else if (n)
         lv_snprintf(t, sizeof t, "%s in use, not saved.", plural(c, sizeof c, n, "change"));
     else if (cfg_rev(CFG_FROM_SAVED, &rev, &at))
-        lv_snprintf(t, sizeof t, "All settings saved, rev %lu.", (unsigned long)rev);
+        lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
     ui_strip_set(ov ? UI_STRIP_WARN : UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED,
@@ -990,9 +1005,12 @@ static void load_pick(int i)
         load_do();
         return;
     }
+    char w[24];
     cfg_rev(load_sel, &rev, &at);
-    lv_snprintf(t, sizeof t, "Put rev %lu in use now, sensors and calibrations included? Drafts are dropped. "
-                "Save settings keeps it; Discard changes puts the last save back.", (unsigned long)rev);
+    lv_snprintf(t, sizeof t, "Put the %s save%s%s in use now, sensors and calibrations included? Drafts are "
+                "dropped. Save settings keeps it; Discard changes puts the last save back.",
+                load_sel == CFG_FROM_SAVED ? "last" : "previous", at[0] ? ", " : "",
+                at[0] ? save_when(w, sizeof w, at) : "");
     ui_confirm(t, "Load", load_do);
 }
 
@@ -1001,6 +1019,7 @@ static void load_cb(lv_event_t *e)
     (void)e;
     static char names[3][40];
     static const char *items[3];
+    char w[24];
     uint32_t rev;
     const char *at;
     load_n = 0;
@@ -1009,11 +1028,11 @@ static void load_cb(lv_event_t *e)
         return;
     }
     if (cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
-        lv_snprintf(names[load_n], sizeof names[0], "Last save, rev %lu", (unsigned long)rev);
+        lv_snprintf(names[load_n], sizeof names[0], "Last save, %s", save_when(w, sizeof w, at));
         load_from[load_n++] = CFG_FROM_SAVED;
     }
     if (cfg_rev(CFG_FROM_PREVIOUS, &rev, &at)) {
-        lv_snprintf(names[load_n], sizeof names[0], "Previous save, rev %lu", (unsigned long)rev);
+        lv_snprintf(names[load_n], sizeof names[0], "Previous save, %s", save_when(w, sizeof w, at));
         load_from[load_n++] = CFG_FROM_PREVIOUS;
     }
     lv_snprintf(names[load_n], sizeof names[0], "Factory defaults");
@@ -1037,14 +1056,9 @@ static const char *rev_text(char *buf, size_t n, cfg_from_t from)
 {
     uint32_t rev;
     const char *at;
-    char d[20];
     if (!cfg_rev(from, &rev, &at))
         return "None";
-    if (at[0])
-        lv_snprintf(buf, n, "rev %lu, %s", (unsigned long)rev, ui_date(d, sizeof d, at));
-    else
-        lv_snprintf(buf, n, "rev %lu", (unsigned long)rev);
-    return buf;
+    return at[0] ? save_when(buf, n, at) : "Saved, no date";
 }
 
 static void rv_refresh(void)

@@ -109,6 +109,17 @@ static uint32_t rec_crc(const cfg_rec_t *r)
 
 static char slot_letter(int i) { return i == 0 ? 'A' : 'B'; }
 
+// When a record was saved, for the events: "2026-10-16 14:32:05", or
+// "with no date" if the clock was not set (or the record is version 1).
+static const char *when(const cfg_rec_t *r)
+{
+    static char b[24];
+    if (!r->saved_at[0])
+        return "with no date";
+    lv_snprintf(b, sizeof b, "%.19s", r->saved_at);
+    return b;
+}
+
 static void order_digits(int32_t packed, uint8_t o[4])
 {
     o[0] = packed / 1000 % 10; o[1] = packed / 100 % 10; o[2] = packed / 10 % 10; o[3] = packed % 10;
@@ -449,7 +460,7 @@ void cfg_init(void)
     apply(&slot[newest], true);   // idle at start-up: cannot be refused
     loaded = newest;
     loaded_rev = slot[newest].rev;
-    valve_event("CFG", "Settings rev %lu loaded from %c%s", (unsigned long)slot[newest].rev,
+    valve_event("CFG", "Settings saved %s loaded from %c%s", when(&slot[newest]),
                 slot_letter(newest), slot_ver[newest] == 1 ? " (version 1 record)" : "");
 }
 
@@ -493,7 +504,7 @@ static bool save(const char **why)
     slot_ver[t] = CFG_VERSION;
     newest = t;
     cal_set_saved(true);
-    valve_event("CFG", "Settings saved, rev %lu in %c", (unsigned long)scratch.rev, slot_letter(t));
+    valve_event("CFG", "Settings saved %s in %c", when(&scratch), slot_letter(t));
     link_printf("OK saved rev %lu in %c (%lu ms)\r\n", (unsigned long)scratch.rev, slot_letter(t),
                 (unsigned long)ms);
     return true;
@@ -776,7 +787,7 @@ static void load(const char *what)
     if (from == CFG_FROM_DEFAULTS)
         valve_event("CFG", "Factory motor, valve and tuning settings loaded (sensors kept)");
     else
-        valve_event("CFG", "Rev %lu loaded from %c", (unsigned long)src->rev, slot_letter((int)(src - slot)));
+        valve_event("CFG", "Settings saved %s loaded from %c", when(src), slot_letter((int)(src - slot)));
     int n = cfg_unsaved();
     link_printf("OK loaded, %d unsaved%s\r\n", n, n ? ": CFG SAVE to keep" : "");
 }
