@@ -7,7 +7,6 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
-#include "motor_screen.h"
 #include "fixed.h"
 #include "ui.h"
 
@@ -344,7 +343,6 @@ static void kp_side(void);
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
 static const ui_screen_t *cur = &ui_scr_home;
-static bool service;
 
 static char msg_text[96];
 static uint32_t msg_until;
@@ -609,8 +607,6 @@ static void frame_refresh(void)
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service)
-        return;
     if (cur->fast)
         cur->fast();
     if (kp_open)
@@ -620,10 +616,6 @@ static void fast_timer(lv_timer_t *t)
 static void refresh_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service) {
-        // Back on Home once the motor screen is left (its Back calls ui_home()).
-        return;
-    }
     frame_refresh();
 }
 
@@ -644,7 +636,7 @@ static lv_obj_t *new_screen(void)
 
 void ui_open(const ui_screen_t *s)
 {
-    if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
+    if (cur != &ui_scr_home && cur != s && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
         back_stack[back_n++] = cur;
     open_screen(s);
 }
@@ -674,43 +666,12 @@ void ui_home(void)
     cur_scr = home_scr;
     strip_w = 343;
     lv_screen_load(home_scr);
-    if (service) {
-        service = false;
-        show(frame, true);
-    } else if (old != home_scr) {
+    if (old != home_scr)
         lv_obj_delete(old);
-    }
     frame_refresh();
 }
 
-// Back from the motor screen: Settings, with Menu and Home behind it.
-static void service_back(void)
-{
-    ui_home();
-    ui_open(&ui_scr_menu);
-    ui_open(&ui_scr_settings);
-}
-
-void ui_service(void)
-{
-    ui_overlay_close();
-    show(frame, false);
-    service = true;
-    static bool built;
-    if (!built) {
-        motor_screen_init(service_back);   // kept once built
-        built = true;
-    }
-    motor_screen_show();
-    if (cur_scr != home_scr)
-        lv_obj_delete(cur_scr);
-    cur = &ui_scr_home;
-    cur_scr = home_scr;
-}
-
-bool ui_on_service(void) { return service; }
-
-bool ui_showing(const ui_screen_t *s) { return cur == s && !service; }
+bool ui_showing(const ui_screen_t *s) { return cur == s; }
 
 /* --------------------------------------------------------------------------
  * Overlays: keypad and confirm, over 0,40 480x232 (STOP stays on top)

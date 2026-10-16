@@ -1,15 +1,14 @@
 #ifndef _MOTOR_SCREEN_H_
 #define _MOTOR_SCREEN_H_
 
-#include "lvgl.h"
+#include "ui.h"
 
 /**
- * @brief Touchscreen motor control: jog by a chosen step size, STOP, and every
- * MOT setting (mode, rates, accel, coil order, direction, hold, zero).
- * Opened from Menu > Motor service (ui_service()); Back calls back(),
- * which returns to Home.
+ * @brief Motor override (Settings > Motor override): jog by a chosen step
+ * size, Set zero, Coils off; and Motor drive behind it: every MOT setting
+ * (rates, accel, mode, coil order, direction, hold). Screens on the ui.c
+ * framework (header, strip and STOP as everywhere).
  */
-void motor_screen_init(void (*back)(void));
-void motor_screen_show(void);
+extern const ui_screen_t ui_scr_motor, ui_scr_motor_drive;
 
 #endif // _MOTOR_SCREEN_H_
