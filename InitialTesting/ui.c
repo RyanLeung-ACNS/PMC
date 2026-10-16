@@ -423,6 +423,9 @@ static void build_frame(void)
     lv_obj_set_ext_click_area(hdr, 8);
     lv_obj_set_ext_click_area(back_btn, 8);
     lv_obj_set_ext_click_area(home_btn, 8);
+    // The fault rule runs the full width, over Back and Home (not clickable,
+    // so their touches still reach them).
+    lv_obj_move_foreground(fault_rule);
     for (int i = 0; i < 2; i++) {
         lv_obj_t *l = lv_obj_get_child(i ? home_btn : back_btn, 0);
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
