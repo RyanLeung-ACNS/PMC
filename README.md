@@ -69,7 +69,7 @@ Valve (calibration, position, STOP, faults). Nothing moves at power-up; the valv
 | `CTRL?` | Latched faults, highest priority first |
 | `EVT? [1-200]` | The last events (default 20). Each event is also sent as it happens: `EVT <s> <tag> <text>` |
 
-Faults latch, stop the motor and refuse VALVE and MOT moves until `CTRL RESET`: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while calibrating, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP. F-01 and F-03 only reset once the cause has gone, so with no Druck connected the motor cannot be moved.
+Faults latch until `CTRL RESET`: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while calibrating, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP. F-07, F-09, F-13 and F-12 stop the motor and refuse VALVE and MOT moves; from 0.9.10 the sensor faults F-01 and F-03 do not, so the valve can be moved and calibrated with no Druck connected (AUTO will need the reading). F-01 and F-03 only reset once the cause has gone.
 
 Valve motor (Stepper 3, engineering; refused while calibrating or with a fault latched, except `MOT STOP` and `MOT OFF`):
 

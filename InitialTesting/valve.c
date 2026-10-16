@@ -127,10 +127,15 @@ static const char *pct_text(char *buf, size_t n, int32_t pos)
     return fixed_fmt(buf, n, pct10_of(pos), 1);
 }
 
+// The sensor faults (F-01 no Druck, F-03 excitation) do not stop or block
+// the motor: manual moves and calibrating use the step count and the limit
+// switch, not the pressure (Ryan 16 Oct). AUTO will need the reading.
+static bool sensor_fault(fault_t f) { return f == F01 || f == F03; }
+
 static bool any_latched(void)
 {
     for (int i = 0; i < F_N; i++)
-        if (latched[i])
+        if (latched[i] && !sensor_fault((fault_t)i))
             return true;
     return false;
 }
@@ -177,8 +182,10 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
     latched_ms[f] = lv_tick_get();
     latched_mode[f] = mode;
     ev(fault_tag[f], "%s", text);
-    stepper3_stop();
-    cal_abort(fault_tag[f]);
+    if (!sensor_fault(f)) {
+        stepper3_stop();
+        cal_abort(fault_tag[f]);
+    }
     if (uncalibrate) {
         calibrated = false;
         mode = VALVE_NOT_CAL;
@@ -386,6 +393,7 @@ bool valve_calibrated(void)     { return calibrated; }
 int32_t valve_pos_max(void)     { return pos_max; }
 int32_t valve_pct10(void)       { return pct10_of(stepper3_position()); }
 bool valve_fault_latched(void)  { return any_latched(); }
+bool valve_motion_blocked(void) { return any_latched(); }
 
 const char *valve_mode_name(void)
 {

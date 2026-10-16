@@ -18,7 +18,7 @@
 // Go to, Fully close and Fully open need the zero.
 static const char *why_no_steps(void)
 {
-    if (valve_fault_count()) return "Reset the fault first";
+    if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
     return NULL;
 }
@@ -283,7 +283,7 @@ static void start_cb(lv_event_t *e)
     (void)e;
     if (valve_mode() == VALVE_CALIBRATING)
         ui_msg("Calibrating: STOP to cancel");
-    else if (valve_fault_count())
+    else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
         ui_calibrate_ask();
@@ -345,7 +345,7 @@ static void calib_refresh(void)
         ui_set_text(cp.last, "Not since power-up");
     }
     ui_btn_text(cp.start, calib ? "Calibrating" : "Start calibration", NULL);
-    ui_btn_enable(cp.start, !calib && !valve_fault_count());
+    ui_btn_enable(cp.start, !calib && !valve_motion_blocked());
     ui_status_line();
 }
 
@@ -371,11 +371,11 @@ typedef struct {
 
 static const fault_help_t fault_help[] = {
     { "F-01", "The Druck reading is missing or outside 0.005-11 mV/V.",
-      "Stopped the valve and holds it. Pressure shows ----.",
+      "Pressure shows ----. The valve still moves.",
       "The Druck cable and plug, and the Power Monitor Click.",
       "The reading is back." },
     { "F-03", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
-      "Stopped the valve and holds it.",
+      "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
     { "F-07", "Calibrating, the valve closed 1.1 x full travel without the limit switch.",

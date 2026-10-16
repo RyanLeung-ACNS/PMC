@@ -59,6 +59,7 @@ bool valve_calibrated(void);
 int32_t valve_pos_max(void);
 int32_t valve_pct10(void);       // position in 0.1 % of POS_MAX
 bool valve_fault_latched(void);
+bool valve_motion_blocked(void); // a latched fault that stops the motor (not F-01, F-03)
 const char *valve_status(void);  // one status line
 
 // Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET (cfg.c).

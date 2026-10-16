@@ -187,7 +187,7 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
 /* Actions ---------------------------------------------------------------- */
 static const char *not_manual_why(void)
 {
-    if (valve_fault_count()) return "Reset the fault first";
+    if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
     return "Calibrate the valve first";
 }
@@ -202,7 +202,7 @@ static void target_event(lv_event_t *e)
 static bool goto_set(int32_t v100, const char **why)
 {
     if (!valve_goto_pct100(v100, why)) {
-        *why = valve_fault_count() ? "Reset the fault first" : "Limit switch pressed, cannot close";
+        *why = valve_motion_blocked() ? "Reset the fault first" : "Limit switch pressed, cannot close";
         return false;
     }
     return true;
@@ -211,7 +211,7 @@ static bool goto_set(int32_t v100, const char **why)
 static void goto_event(lv_event_t *e)
 {
     (void)e;
-    if (valve_mode() != VALVE_MANUAL || valve_fault_count()) {
+    if (valve_mode() != VALVE_MANUAL || valve_motion_blocked()) {
         ui_msg(not_manual_why());
         return;
     }
@@ -222,7 +222,7 @@ static void calibrate(void)
 {
     const char *why;
     if (!valve_calibrate(&why))
-        ui_msg(valve_fault_count() ? "Reset the fault first" : why);
+        ui_msg(valve_motion_blocked() ? "Reset the fault first" : why);
 }
 
 void ui_calibrate_ask(void)
@@ -241,7 +241,7 @@ static void mode_event(lv_event_t *e)
         ui_msg("Calibrating: STOP to cancel");
     else if (valve_mode() == VALVE_MANUAL)
         ui_msg("AUTO is not built yet");
-    else if (valve_fault_count())
+    else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
         ui_calibrate_ask();
@@ -317,7 +317,7 @@ static void home_refresh(void)
 
     home_fast();
     alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-13"));
-    bool manual = m == VALVE_MANUAL && !valve_fault_count();
+    bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
     box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "");
 
     // Mode button.

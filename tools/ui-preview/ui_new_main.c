@@ -65,6 +65,7 @@ bool valve_move_steps(int32_t steps, const char **why) { (void)steps; (void)why;
 void valve_stop(void) { moving = false; }
 bool valve_stop_latches(void) { return false; }
 int valve_fault_count(void) { return v_f01 + v_f12; }
+bool valve_motion_blocked(void) { return v_f12; }
 bool valve_fault_first(const char **tag, const char **text)
 {
     if (v_f01) { *tag = "F-01"; *text = "No Druck signal"; return true; }
