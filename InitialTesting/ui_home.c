@@ -248,13 +248,29 @@ static void calibrate(void)
         ui_open(&ui_scr_calib);   // the steps show there; Back returns (Ryan, 16 Oct)
 }
 
+static void set_closed(void)
+{
+    const char *why;
+    if (!valve_set_closed(&why))
+        ui_msg(valve_motion_blocked() ? "Reset the fault first" : why);
+    else
+        ui_msg("Valve set as closed, 0 %");
+}
+
+static void set_closed_ask(void)
+{
+    ui_confirm("Take the valve as fully closed where it is now, without homing? Only if you know it is "
+               "seated.", "Set as closed", set_closed);
+}
+
 void ui_calibrate_ask(void)
 {
     static char q[96];
     uint32_t s = valve_cal_budget_s();
     lv_snprintf(q, sizeof q, "Home the valve? It closes to the seat to find 0 %%, up to %lu min.",
                 (unsigned long)((s + 59) / 60));
-    ui_confirm(q, "Start homing", calibrate);
+    // Set as closed: the valve is known to be seated already (Ryan, 16 Oct).
+    ui_ask3(q, "Cancel", NULL, "Set as\nclosed", set_closed_ask, "Start\nhoming", calibrate);
 }
 
 static void mode_event(lv_event_t *e)
@@ -433,7 +449,7 @@ static void menu_build(lv_obj_t *scr)
 {
     // Grouped in rows with a caption on the left, as on Diagnostics.
     static const char *const rows[3] = { "Records", "Calibrate", "System" };
-    static const char *const names[6] = { "Trend", "Faults and log", "Valve",
+    static const char *const names[6] = { "Trend", "Faults and log", "Valve homing",
                                           "Sensor", "Diagnostics", "Settings" };
     // Caption and two tiles in 1 : 1.5 : 1.5, the caption centred on its row.
     for (int r = 0; r < 3; r++) {

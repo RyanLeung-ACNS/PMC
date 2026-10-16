@@ -21,7 +21,7 @@ Two hardware options are being built and compared; neither is final:
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
-Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.10 at the time of writing). Commit titles start with the version they build.
+Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.11 at the time of writing). Commit titles start with the version they build.
 
 ## Status
 
@@ -110,10 +110,10 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 480x272, after the simulator (`simulator/`, ISA-101 style: grey for normal, colour only for abnormal states). Every screen has a header (Back and Home buttons, the title centred, the mode word on the right with its dot: a grey ring, filled grey in AUTO, red with a fault; a red rule under the header with a fault), a status strip and STOP on the bottom row. Under a popup the strip stays, updating and greyed. On Home the strip shows only when it has something to say (a prompt, a fault, a message, a move), and otherwise the 10 min pressure sparkline is in its place.
 
 - **Home** (title "<cryostat name> pressure controller", for example "CF-11 pressure controller", on the left): Pressure tile (40 px reading in mbar, log bar labelled 0.1, 1, 10, 100 and 1k with the end lines the same distance in from each end, Target box) and Valve tile (40 px reading in %, bar, Go to box), the mode button (Home valve / Start AUTO), Valve, Menu, the pressure sparkline (a tap opens Trend).
-- **Menu**: Records (Trend, Faults and log), Calibrate (Valve, Sensor), System (Diagnostics, Settings).
+- **Menu**: Records (Trend, Faults and log), Calibrate (Valve homing, Sensor), System (Diagnostics, Settings).
 - **Valve**: manual moves and the valve's state. **Home valve**: homing state, motor step count, limit switch, the three steps and the time taken. **Faults and log**: latched faults (tap for detail and help) and the event log. **Diagnostics**: readings and hardware state.
 - **Trend**: pressure (left axis) and valve (right axis, 0 to 100 %) over 1, 2, 5, 10, 30 min or 1 hour. Each point is the mean of a fixed slot of time counted from start-up, so the line keeps its shape as it scrolls.
-- **Settings**: Cryostat name (a keyboard; up to 12 characters, in use at once and unsaved until Save settings), Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override, Motor override. Edits are drafts until Save settings, which checks them together and saves all or nothing.
+- **Settings**: Cryostat name (a keyboard; up to 12 characters, in use at once and unsaved until Save settings), Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override (while armed the strip says so on every screen, with Cancel), Motor override (the 0.6.0 motor screen; its cross closes it). Edits are drafts until Save settings, which checks them together and saves all or nothing.
 - **Calibrate sensor**: the bench two-point cal from the screen (vacuum, then air at a barometer reading).
 
 Display formats: pressure 1 decimal, valve % and keypad 2 decimals, dates DD/MM/YY. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •), and 40 px digits only for the Home readings (`ui_font_40.c`). The display is driven over the SSD1963's 16-bit 8080 bus, bit-banged on GPIOE (WR on PF11); touch is read over I2C every 5 ms.
@@ -196,6 +196,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `VALVE?` | Mode, count and % open, settings, latched faults, any waiting switch question |
 | `VALVE CAL` | Home: off the switch if pressed, fast close to the switch, back off, slow close; the switch point is 0 % |
 | `VALVE GOTO <0-100>` | Go to % open (one decimal), once homed |
+| `VALVE CLOSED` | Take the valve as fully closed (0 %, homed) where it stands, without the switch: only when you know it is seated (Home valve > Set as closed on the screen) |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The valve position saved at the last standstill, and whether it is on offer |
 | `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Use saved X % / Home". It is never used without the operator |

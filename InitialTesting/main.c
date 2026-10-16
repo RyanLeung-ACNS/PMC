@@ -90,6 +90,7 @@ static const char *const help_valve[] = {
     "Valve (nothing moves at boot; VALVE CAL first):",
     "  VALVE?                     mode, position, settings, switch question",
     "  VALVE CAL                  calibrate to the closed switch (0 %)",
+    "  VALVE CLOSED               take the valve as closed (0 %) where it stands",
     "  VALVE GOTO <0-100>         go to % open, one decimal",
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",

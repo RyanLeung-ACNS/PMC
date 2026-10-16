@@ -558,8 +558,7 @@ static void motor_cb(lv_event_t *e)
         ui_msg("Wait for the valve to stop");
         return;
     }
-    ui_confirm("Open Motor override? It drives the motor directly by steps. "
-               "Back returns here.", "Open", motor_go);
+    ui_confirm("Open Motor override? It drives the motor directly by steps.", "Open", motor_go);
 }
 
 static void settings_build(lv_obj_t *scr)

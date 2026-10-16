@@ -409,14 +409,15 @@ void motor_screen_init(void (*go_back)(void))
     lv_obj_set_style_radius(hdr, 0, 0);
     lv_obj_set_style_border_width(hdr, 0, 0);
     lv_obj_set_style_pad_all(hdr, 0, 0);
-    lv_obj_t *back = make_button(hdr, 0, 0, 80, 30, LV_SYMBOL_LEFT " Back", back_event, 0);
+    // Close (a cross, Ryan 16 Oct): back to Settings.
+    lv_obj_t *back = make_button(hdr, 0, 0, 48, 30, LV_SYMBOL_CLOSE, back_event, 0);
     lv_obj_set_style_radius(back, 0, 0);
     lv_obj_set_style_bg_color(back, COL_HEADER, 0);
     lv_obj_set_style_border_color(back, COL_HEADER, 0);
     lv_obj_set_style_bg_color(back, lv_color_make(60, 72, 86), LV_STATE_PRESSED);
     lv_obj_set_style_text_color(back, lv_color_white(), 0);
     lv_obj_t *title = make_label(hdr, "Motor", lv_color_white());
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 92, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 60, 0);
     state_label = make_label(hdr, "", COL_IDLE);
     lv_obj_align(state_label, LV_ALIGN_RIGHT_MID, -10, 0);
 

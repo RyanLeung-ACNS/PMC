@@ -402,6 +402,18 @@ bool valve_restore(int32_t count, const char **why)
     return true;
 }
 
+bool valve_set_closed(const char **why)
+{
+    if (mode == VALVE_CALIBRATING) { *why = "homing, STOP to cancel"; return false; }
+    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    if (stepper3_busy() || !stepper3_set_position(0)) { *why = "moving, wait for it to stop"; return false; }
+    calibrated = true;
+    mode = VALVE_MANUAL;
+    ev("REF", "Set as closed by the operator: count 0 (0 %%), not checked against the switch");
+    update_lock();
+    return true;
+}
+
 valve_mode_t valve_mode(void)   { return mode; }
 bool valve_calibrated(void)     { return calibrated; }
 int32_t valve_pos_max(void)     { return pos_max; }
@@ -861,6 +873,11 @@ bool valve_command(const char *line)
     } else if (strcmp(line, "VALVE CAL") == 0) {
         if (cal_start(&err))
             link_printf("OK calibrating, up to %lu s\r\n", (unsigned long)valve_cal_budget_s());
+        else
+            link_printf("ERR %s\r\n", err);
+    } else if (strcmp(line, "VALVE CLOSED") == 0) {
+        if (valve_set_closed(&err))
+            link_printf("OK closed, count 0\r\n");
         else
             link_printf("ERR %s\r\n", err);
     } else if (strncmp(line, "VALVE GOTO", 10) == 0) {

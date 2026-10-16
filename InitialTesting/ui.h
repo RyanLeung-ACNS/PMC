@@ -124,6 +124,9 @@ void ui_keypad_ex(const ui_kp_t *k);
 void ui_confirm(const char *text, const char *ok, void (*on_ok)(void));
 // Same with a named cancel button and its own action.
 void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void));
+// With a third button between them (NULL mid: as ui_ask).
+void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *ok, void (*on_ok)(void));
 // A list to pick one of (Sensor in use, Load settings); sel -1 for none.
 // Tapping outside closes it.
 void ui_pick(const char *title, const char *const *items, int n, int sel, void (*on_pick)(int i));

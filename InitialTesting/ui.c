@@ -583,6 +583,8 @@ static void title_fit(lv_obj_t *l, const char *text, const char *mode_txt, int32
     lv_obj_set_width(l, w + 1);
 }
 
+static void override_cancel_event(lv_event_t *e);
+
 static void frame_refresh(void)
 {
     const char *tag, *text;
@@ -666,10 +668,20 @@ static void frame_refresh(void)
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
         strip_draw(UI_STRIP_FAULT, UI_IDLE, buf, false, act_cb != NULL);
     } else if (stepper3_override()) {
-        strip_draw(UI_STRIP_WARN, UI_IDLE, "Limit override on", false, act_cb != NULL);
+        // Cancel on every screen while it is armed (Ryan, 16 Oct).
+        ui_strip_action("Cancel", NULL, override_cancel_event);
+        strip_draw(UI_STRIP_WARN, UI_IDLE, "Limit override on", false, true);
     } else {
         strip_draw(line_kind, line_dot, line_text, false, act_cb != NULL);
     }
+}
+
+static void override_cancel_event(lv_event_t *e)
+{
+    (void)e;
+    stepper3_override_cancel();
+    valve_event("LIM", "Limit override off (screen)");
+    ui_msg("Limit override off.");
 }
 
 static void fast_timer(lv_timer_t *t)
@@ -1030,12 +1042,12 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
 }
 
 // Confirm and question dialogs.
-static void (*confirm_ok)(void), (*confirm_cancel)(void);
+static void (*confirm_ok)(void), (*confirm_cancel)(void), (*confirm_mid)(void);
 
 static void confirm_event(lv_event_t *e)
 {
-    bool ok = lv_event_get_user_data(e) != NULL;
-    void (*f)(void) = ok ? confirm_ok : confirm_cancel;
+    intptr_t k = (intptr_t)lv_event_get_user_data(e);   // 0 cancel, 1 OK, 2 middle
+    void (*f)(void) = k == 1 ? confirm_ok : k == 2 ? confirm_mid : confirm_cancel;
     ui_overlay_close();
     if (f)
         f();
@@ -1044,11 +1056,18 @@ static void confirm_event(lv_event_t *e)
 
 void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void))
 {
+    ui_ask3(text, cancel, on_cancel, NULL, NULL, ok, on_ok);
+}
+
+void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *ok, void (*on_ok)(void))
+{
     lv_obj_t *o = overlay_new();
     lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
     lv_obj_set_style_bg_opa(o, 140, 0);
     confirm_ok = on_ok;
     confirm_cancel = on_cancel;
+    confirm_mid = on_mid;
     lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
     lv_obj_set_style_radius(box, 8, 0);
     lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
@@ -1060,8 +1079,14 @@ void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const
     lv_obj_set_height(t, th);
     lv_obj_set_size(box, 340, h);
     lv_obj_set_y(box, (168 - h) / 2);
-    ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
-    ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    if (mid) {
+        ui_btn(box, 16, by, 96, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+        ui_btn(box, 122, by, 96, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
+        ui_btn(box, 228, by, 96, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    } else {
+        ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+        ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    }
     frame_refresh();
 }
 

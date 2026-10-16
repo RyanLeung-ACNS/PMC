@@ -164,7 +164,7 @@ static void full_cb(lv_event_t *e)
 
 static void help_cb(lv_event_t *e)
 {
-    ui_text_view(lv_event_get_user_data(e) == valve_help ? "Valve" : "Home valve",
+    ui_text_view(lv_event_get_user_data(e) == valve_help ? "Valve" : "Valve homing",
                  lv_event_get_user_data(e));
 }
 
@@ -306,19 +306,28 @@ static void timer_deleted(lv_event_t *e)
 
 static void calib_build(lv_obj_t *scr)
 {
-    cp.state = ui_info(scr, 10, 48, 226, 48, "Valve homing");
+    cp.state = ui_info(scr, 10, 48, 226, 48, "Homing");
     cp.v = ui_info(scr, 244, 48, 109, 48, "Motor, steps");
     right(cp.v);
     cp.last = ui_info(scr, 10, 104, 226, 48, "Last homed");   // "15/10/26 14:28"
     cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
     cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start homing", start_cb, NULL);
-    // The three steps; the one running is filled dark (Ryan, 16 Oct).
+    // The three steps as one card split in three, the one running filled
+    // dark (Ryan, 16 Oct: the row should read as one sequence).
     static const char *const cap[3] = { "1 Fast close", "2 Back off", "3 Slow close" };
+    lv_obj_t *steps = ui_card(scr, 10, 160, 343, 48);
+    lv_obj_set_style_clip_corner(steps, true, 0);
     for (int i = 0; i < 3; i++) {
-        cp.tval[i] = ui_info(scr, 10 + i * 117, 160, 109, 48, cap[i]);
+        cp.tval[i] = ui_info(steps, i * 114 + (i > 1), 0, i == 1 ? 115 : 114, 48, cap[i]);
         cp.tile[i] = lv_obj_get_parent(cp.tval[i]);
         cp.tcap[i] = lv_obj_get_child(cp.tile[i], 0);
+        lv_obj_set_style_radius(cp.tile[i], 0, 0);
+        if (i) {
+            lv_obj_set_style_border_side(cp.tile[i], LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_width(cp.tile[i], 1, 0);
+            lv_obj_set_style_border_color(cp.tile[i], UI_TICK, 0);
+        }
     }
     // Time into the calibration, then how long the last one took.
     cp.time = ui_info(scr, 361, 160, 109, 48, "Time taken");
@@ -383,7 +392,7 @@ static void calib_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Home valve", calib_build, calib_refresh, calib_fast };
+const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log

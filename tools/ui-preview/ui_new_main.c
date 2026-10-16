@@ -59,6 +59,7 @@ int32_t valve_target_pct_milli(void) { return valve_target_pct10() * 100; }
 int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 uint32_t valve_cal_elapsed_s(void) { return v_mode == VALVE_CALIBRATING ? 42 : 0; }
+bool valve_set_closed(const char **why) { (void)why; v_cal = true; v_mode = VALVE_MANUAL; v_pct10 = 0; return true; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
 bool valve_goto_pct100(int32_t p, const char **why) { return valve_goto_pct10(p / 10, why); }
@@ -113,7 +114,8 @@ const char *valve_last_cal_iso(void) { return "2026-10-05 14:28:59"; }
 bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false; *from = 0; *ms = 41300; return true; }
 void stepper3_stop_ramped(void) {}
 bool stepper3_busy(void);
-void stepper3_override_cancel(void) {}
+extern bool fake_override;
+void stepper3_override_cancel(void) { fake_override = false; }
 
 /* Settings store: the real cfg.c and cal.c over a serial flash in RAM. */
 static uint8_t *flash;
@@ -331,6 +333,8 @@ int main(int argc, char **argv)
     }
 
     if (!strcmp(st, "stop")) tap(415, 240);
+    if (!strcmp(st, "motor")) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
+    if (!strcmp(st, "overon")) { fake_override = true; tap(415, 184); }   // Menu, override armed
     if (!strcmp(st, "menu")) tap(415, 184);
     if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); tap(111, 184); }
     if (!strcmp(st, "confirm")) tap(415, 72);
