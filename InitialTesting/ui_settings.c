@@ -1108,7 +1108,8 @@ static const char *rev_text(char *buf, size_t n, cfg_from_t from)
     const char *at;
     if (!cfg_rev(from, &rev, &at))
         return "None";
-    return at[0] ? save_when(buf, n, at) : "Saved, no date";
+    // Saves from 0.8.x have no date; the older one still reads apart.
+    return at[0] ? save_when(buf, n, at) : from == CFG_FROM_PREVIOUS ? "Earlier, no date" : "Saved, no date";
 }
 
 static void rv_refresh(void)
