@@ -15,7 +15,7 @@
  * Fonts: tabular digits. Every digit takes the width of the widest, so a
  * right-aligned reading does not shift as it changes.
  * ------------------------------------------------------------------------ */
-lv_font_t ui_num_16, ui_num_26;
+lv_font_t ui_num_16, ui_num_26, ui_num_40;
 
 static bool num_glyph_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter, uint32_t next)
 {
@@ -621,9 +621,11 @@ static void frame_refresh(void)
     act_cb = NULL;
     if (cur->refresh)
         cur->refresh();
-    show(strip, !overlay || !kp_open);   // the keypad uses the strip's row
     if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
         msg_until = 0;
+    // The keypad uses the strip's row; an empty line (Home, idle) hides it.
+    bool quiet = !msg_until && !nf && !stepper3_override() && !line_text[0];
+    show(strip, (!overlay || !kp_open) && !quiet);
     char buf[96];
     if (msg_until) {
         strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
@@ -1156,9 +1158,9 @@ static void question_check(void)
         int32_t pm = valve_pos_max();
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
         lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. "
-                    "Use it, or calibrate the valve?", v);
+                    "Use it, or home the valve?", v);
         lv_snprintf(ok, sizeof ok, "Use %s %%", v);
-        ui_ask(t, "Calibrate", sp_calibrate, ok, sp_use);
+        ui_ask(t, "Home", sp_calibrate, ok, sp_use);
     }
     asking = false;
     overlay_q = want;
@@ -1171,6 +1173,7 @@ void ui_init(void)
 {
     num_font(&ui_num_16, &ui_font_16);
     num_font(&ui_num_26, &ui_font_26);
+    num_font(&ui_num_40, &ui_font_40);
     styles_init();
     home_scr = new_screen();
     cur_scr = home_scr;

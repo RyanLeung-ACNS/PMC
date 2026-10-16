@@ -141,7 +141,8 @@ static stepper3_stop_t m_stop = STEPPER3_STOP_NONE;
 bool stepper3_move(int32_t steps) { m_pos += steps; m_stop = STEPPER3_STOP_DONE; return steps != 0; }
 void stepper3_stop(void) {}
 void stepper3_off(void) {}
-bool stepper3_busy(void) { return false; }
+bool fake_busy;   // set by the "moving" scenario
+bool stepper3_busy(void) { return fake_busy; }
 int32_t stepper3_position(void) { return m_pos; }
 void stepper3_zero(void) { m_pos = 0; }
 stepper3_stop_t stepper3_last_stop(void) { return m_stop; }

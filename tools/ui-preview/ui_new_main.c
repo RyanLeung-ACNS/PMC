@@ -49,7 +49,7 @@ static bool moving;
 valve_mode_t valve_mode(void) { return v_mode; }
 const char *valve_mode_name(void)
 {
-    return v_mode == VALVE_CALIBRATING ? "CALIBRATING" : v_mode == VALVE_MANUAL ? "MANUAL" : "NOT CALIBRATED";
+    return v_mode == VALVE_CALIBRATING ? "HOMING" : v_mode == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
 }
 bool valve_calibrated(void) { return v_cal; }
 int32_t valve_pct10(void) { return v_pct10; }
@@ -96,7 +96,7 @@ bool valve_fault_get(int i, valve_fault_t *f)
 }
 static const char *const ev_tag[] = { "F-12", "W-01", "REF", "REF", "F-14" };
 static const char *const ev_text[] = { "Operator stop at count 33880", "Point set as 0 %, count 0",
-    "Calibrated in 15 s, position 0", "Calibrating started at count 1203", "Power-up (event only), valve not calibrated" };
+    "Homed in 15 s, position 0", "Homing started at count 1203", "Power-up (event only), valve not homed" };
 int valve_event_count(void) { return 5; }
 uint32_t valve_event_total(void) { return 5; }
 bool valve_event_get(int i, uint32_t *age, const char **tag, const char **text)
@@ -251,7 +251,7 @@ int main(int argc, char **argv)
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
     }
-    if (!strcmp(st, "moving")) { moving = true; v_target10 = 500; }
+    if (!strcmp(st, "moving")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 500; }
     if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }

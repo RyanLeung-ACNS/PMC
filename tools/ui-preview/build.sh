@@ -23,7 +23,7 @@ fi
 # serial flash in RAM: Home states, Menu, keypad, dialogs, stage 5 and 6 pages.
 gcc $CFLAGS -DREAL_CAL -o "$OUT/ui_new" "$HERE/ui_new_main.c" "$HERE/fake_hw.c" \
   "$PROJ/ui.c" "$PROJ/ui_home.c" "$PROJ/ui_valve.c" "$PROJ/ui_settings.c" "$PROJ/ui_trend.c" "$PROJ/trend.c" "$PROJ/motor_screen.c" \
-  "$PROJ/cfg.c" "$PROJ/cal.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" \
+  "$PROJ/cfg.c" "$PROJ/cal.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" "$PROJ/ui_font_40.c" \
   "$PROJ/fixed.c" "$OUT/liblvgl.a" -lm
 for s in notcal manual calib moving nodruck stop neg menu keypad confirm \
          valve valvenc limithit calpage calpage2 faults detail diag help help3 back bootask \

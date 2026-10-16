@@ -113,9 +113,9 @@ static const field_t F[CFG_N] = {
     [CFG_POSMAX]  = { "100 % travel", "turns", 2, K_TURNS, "Output turns from closed to fully open" },
     [CFG_REVERSE] = { "Motor direction", NULL, 0, K_TOGGLE, "Reversed if Open drives the valve closed; saving it clears the zero" },
     [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count set at the closed limit" },
-    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Calibration step 2: off the switch before the slow close" },
-    [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Calibration step 1: closing fast to the switch" },
-    [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Calibration step 3: closing slowly onto the switch" },
+    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing step 2: off the switch before the slow close" },
+    [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Homing step 1: closing fast to the switch" },
+    [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Homing step 3: closing slowly onto the switch" },
     [CFG_RATE]    = { "Run speed", "steps/s", 0, K_NUM, "Normal move speed" },
     [CFG_START]   = { "Start speed", "steps/s", 0, K_NUM, "Speed at the start and end of a move" },
     [CFG_ACCEL]   = { "Acceleration", "steps/s/s", 0, K_NUM, "Ramp between start and run" },
@@ -840,7 +840,7 @@ typedef struct {
 
 static const tab_t valve_tabs[3] = {
     { "Valve", { CFG_POSMAX, CFG_REVERSE }, 2, NULL },
-    { "Calibrate", { CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 3, NULL },
+    { "Homing", { CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 3, NULL },
     { "Drive", { CFG_RATE, CFG_START, CFG_ACCEL }, 3, "Used by manual and AUTO moves. Saved when the valve is stopped." },
 };
 static const tab_t tune_tab[1] = {
@@ -1134,7 +1134,7 @@ static struct {
 } cs;
 
 // The header names the sensor being calibrated: "Calibrate 5880156" (with
-// "s/n" it does not fit beside NOT CALIBRATED).
+// "s/n" it does not fit beside NOT HOMED).
 static char cs_title[32] = "Calibrate sensor";
 
 static void cs_title_set(void)

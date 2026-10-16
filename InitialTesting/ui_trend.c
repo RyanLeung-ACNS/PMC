@@ -13,7 +13,7 @@
  *   Trend   chart card 10,48 343x160: legend, pressure axis left (linear,
  *           3-5 rounded steps), valve 0-100 % right, -range and now under it;
  *           Up / Range / Down on the right, 1, 2, 5, 10, 30 min and 1 hour.
- *   Spark   10 min, one point per 5 s, one pen, no axes; pressure linear
+ *   Spark   10 min, one point per 5 s (slot means, see pts_build), one pen, no axes; pressure linear
  *           (log when the window spans more than a decade), valve 0-100 %.
  * ------------------------------------------------------------------------ */
 #define COL_PV    UI_BLUE
@@ -26,10 +26,58 @@ typedef enum { K_P, K_SP, K_V } tkey_t;
 
 static int32_t val(const trend_pt_t *q, tkey_t k) { return k == K_P ? q->p : k == K_SP ? q->sp : q->v; }
 
-// Sample age_s ago: 1 s samples for windows up to 10 min, 10 s means beyond.
-static bool sample(uint32_t win, uint32_t age, trend_pt_t *q)
+// Points to plot: each the mean of the samples in a fixed slot of time
+// (Ryan, 16 Oct). Slots are counted from start-up, not from now, so a
+// point keeps its value as the plot moves left; only the newest slot,
+// still filling, changes. Up to 10 min from the 1 s samples, beyond from
+// the 10 s means (slots are then whole multiples of 10 s, matching them).
+#define PTS_MAX 160
+static struct {
+    float age;            // seconds before the newest sample
+    int32_t v[3];         // K_P, K_SP, K_V means, or TREND_NONE
+} pts[PTS_MAX];
+static int pts_n;
+
+static void pts_build(uint32_t win, int n)
 {
-    return win <= TREND_FINE_N ? trend_fine(age, q) : trend_coarse(age, q);
+    uint32_t r = win <= TREND_FINE_N ? 1 : 10;            // sample spacing, s
+    uint32_t slot = (win + (uint32_t)(n - 2)) / (uint32_t)(n - 1);
+    slot = (slot + r - 1) / r * r;
+    uint32_t total = trend_seconds();
+    pts_n = 0;
+    if (!total)
+        return;
+    uint32_t t_new = total - 1;                           // newest second
+    uint32_t j0 = t_new / slot;
+    uint32_t nslot = win / slot + 1;
+    if (nslot > PTS_MAX) nslot = PTS_MAX;
+    for (uint32_t j = nslot; j-- > 0;) {                  // oldest first
+        if (j > j0) continue;
+        uint32_t s0 = (j0 - j) * slot, s1 = s0 + slot - 1;   // seconds since start-up
+        if (s1 > t_new) s1 = t_new;
+        if (t_new - s0 > win + slot) continue;
+        int64_t sum[3] = { 0, 0, 0 };
+        int cnt[3] = { 0, 0, 0 };
+        // Samples in the slot, newest second at age 0; a 10 s mean is read
+        // once per 10 s (trend_coarse gives the 1 s samples still filling).
+        for (uint32_t t = s0; t <= s1; t += r) {
+            trend_pt_t q;
+            uint32_t age = t_new - (r == 1 ? t : (t + r - 1 < t_new ? t + r - 1 : t_new));
+            bool ok = r == 1 ? trend_fine(age, &q) : trend_coarse(age, &q);
+            if (!ok) continue;
+            for (int k = 0; k < 3; k++) {
+                int32_t v = val(&q, (tkey_t)k);
+                if (v != TREND_NONE) { sum[k] += v; cnt[k]++; }
+            }
+        }
+        float mid = ((float)s0 + (float)s1) / 2.0f;
+        float age = (float)t_new - mid;
+        if (age > (float)win) continue;
+        for (int k = 0; k < 3; k++)
+            pts[pts_n].v[k] = cnt[k] ? (int32_t)(sum[k] / cnt[k]) : TREND_NONE;
+        pts[pts_n].age = age;
+        pts_n++;
+    }
 }
 
 static void line(lv_layer_t *layer, lv_color_t c, int32_t w, float x1, float y1, float x2, float y2, bool dash)
@@ -84,23 +132,21 @@ static void dot(lv_layer_t *layer, lv_color_t c, float x, float y)
     fill_r(layer, c, (int32_t)x - 2, (int32_t)y - 2, (int32_t)x + 2, (int32_t)y + 2, LV_RADIUS_CIRCLE);
 }
 
-// One pen through n points spread over win seconds, x0 to x1; y from yof.
-// Gaps (no reading) lift the pen. Returns the last point drawn.
+// One pen through the points of pts_build(), win seconds from x0 to x1;
+// y from yof. Gaps (no reading) lift the pen. Returns the last point drawn.
 typedef float (*yof_t)(void *ctx, int32_t v);
-static bool pen(lv_layer_t *layer, uint32_t win, int n, tkey_t k, float x0, float x1, yof_t yof, void *ctx,
+static bool pen(lv_layer_t *layer, uint32_t win, tkey_t k, float x0, float x1, yof_t yof, void *ctx,
                 lv_color_t c, int32_t w, bool stepped, float *lx, float *ly)
 {
     bool have = false, any = false;
     float px = 0, py = 0;
-    for (int i = 0; i < n; i++) {
-        uint32_t age = (uint32_t)((uint64_t)win * (uint32_t)(n - 1 - i) / (uint32_t)(n - 1));
-        trend_pt_t q;
-        int32_t v = sample(win, age, &q) ? val(&q, k) : TREND_NONE;
+    for (int i = 0; i < pts_n; i++) {
+        int32_t v = pts[i].v[k];
         if (v == TREND_NONE) {
             have = false;
             continue;
         }
-        float x = x0 + (x1 - x0) * (float)i / (float)(n - 1), y = yof(ctx, v);
+        float x = x1 - (x1 - x0) * pts[i].age / (float)win, y = yof(ctx, v);
         if (have) {
             if (stepped && y != py) {   // a target holds, then steps
                 line(layer, c, w, px, py, x, py, true);
@@ -141,15 +187,12 @@ static float y_pct(void *ctx, int32_t v)
 }
 
 // Pressure and target range over the window; false if no reading at all.
-static bool p_range(uint32_t win, int n, float *lo, float *hi)
+static bool p_range(float *lo, float *hi)
 {
     bool any = false;
-    for (int i = 0; i < n; i++) {
-        trend_pt_t q;
-        if (!sample(win, (uint32_t)((uint64_t)win * (uint32_t)i / (uint32_t)(n - 1)), &q))
-            continue;
+    for (int i = 0; i < pts_n; i++) {
         for (int k = 0; k < 2; k++) {
-            int32_t v = k ? q.sp : q.p;
+            int32_t v = pts[i].v[k ? K_SP : K_P];
             if (v == TREND_NONE)
                 continue;
             float f = (float)v / 1000.0f;
@@ -178,12 +221,13 @@ static void spark_draw(lv_event_t *e)
     scale_t s = { 0, 1, (float)a.y1 + 2, (float)a.y2 - 2, false };
     float lx, ly;
     if (valve) {
-        if (pen(layer, SPARK_WIN, SPARK_N, K_V, a.x1, a.x2 - 3, y_pct, &s, COL_POS, 2, false, &lx, &ly))
+        if (pen(layer, SPARK_WIN, K_V, a.x1, a.x2 - 3, y_pct, &s, COL_POS, 2, false, &lx, &ly))
             dot(layer, COL_POS, lx, ly);
         return;
     }
     float lo, hi;
-    if (!p_range(SPARK_WIN, SPARK_N, &lo, &hi))
+    pts_build(SPARK_WIN, SPARK_N);
+    if (!p_range(&lo, &hi))
         return;
     if (lo > 0 && hi / lo > 10) {
         s.log = true;
@@ -205,8 +249,8 @@ static void spark_draw(lv_event_t *e)
     }
     s.lo = lo;
     s.hi = hi;
-    pen(layer, SPARK_WIN, SPARK_N, K_SP, a.x1, a.x2 - 3, y_scale, &s, COL_SP, 1, true, &lx, &ly);
-    if (pen(layer, SPARK_WIN, SPARK_N, K_P, a.x1, a.x2 - 3, y_scale, &s, COL_PV, 2, false, &lx, &ly))
+    pen(layer, SPARK_WIN, K_SP, a.x1, a.x2 - 3, y_scale, &s, COL_SP, 1, true, &lx, &ly);
+    if (pen(layer, SPARK_WIN, K_P, a.x1, a.x2 - 3, y_scale, &s, COL_PV, 2, false, &lx, &ly))
         dot(layer, COL_PV, lx, ly);
 }
 
@@ -259,7 +303,8 @@ static void trend_draw(lv_event_t *e)
     // Pressure axis: rounded step giving 3 to 5 intervals, never below 0
     // unless a reading is (calibration drift reads a little negative).
     float lo = 0, hi = 10;
-    bool any = p_range(win, n, &lo, &hi);
+    pts_build(win, n);
+    bool any = p_range(&lo, &hi);
     float span = hi - lo < 0.5f ? 0.5f : hi - lo, mid = (hi + lo) / 2;
     float raw_lo = lo;
     lo = mid - span * 0.6f;
@@ -303,9 +348,9 @@ static void trend_draw(lv_event_t *e)
     text(layer, "Valve, %", COL_POS, LV_TEXT_ALIGN_RIGHT, a.x2 - 140, a.y1 + 5, a.x2 - 10);
 
     float lx, ly;
-    pen(layer, win, n, K_V, x0, x1, y_pct, &s, COL_POS, 2, false, &lx, &ly);
-    pen(layer, win, n, K_SP, x0, x1, y_scale, &s, COL_SP, 1, true, &lx, &ly);
-    if (any && pen(layer, win, n, K_P, x0, x1, y_scale, &s, COL_PV, 2, false, &lx, &ly))
+    pen(layer, win, K_V, x0, x1, y_pct, &s, COL_POS, 2, false, &lx, &ly);
+    pen(layer, win, K_SP, x0, x1, y_scale, &s, COL_SP, 1, true, &lx, &ly);
+    if (any && pen(layer, win, K_P, x0, x1, y_scale, &s, COL_PV, 2, false, &lx, &ly))
         dot(layer, COL_PV, lx, ly);
     if (!trend_seconds())
         text(layer, "No samples yet", UI_IDLE, LV_TEXT_ALIGN_CENTER, x0, (y0 + y1) / 2 - 7, x1);

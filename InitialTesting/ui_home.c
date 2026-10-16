@@ -10,8 +10,10 @@
 /* --------------------------------------------------------------------------
  * Home (simulator v63 buildCtrl). Pressure and Valve tiles, the mode button,
  * Valve and Menu. AUTO is not built yet: Target reads "Not set" and is flat,
- * Start AUTO is greyed. Each tile has a 10 min sparkline (stage 7); a tap
- * on it opens Trend.
+ * Start AUTO is greyed. A 10 min pressure sparkline fills the strip's row
+ * (layout 3, Ryan 16 Oct); the strip covers it only when it has something
+ * to say (a prompt, a fault, a message, the motor moving). A tap on the
+ * sparkline opens Trend.
  * ------------------------------------------------------------------------ */
 #define TILE_W  167
 #define TILE_H  160
@@ -19,13 +21,13 @@
 #define PPAD    15            // pressure bar: 0.1 mbar at 15, 1000 at 128
 
 typedef struct {
-    lv_obj_t *tile, *reading, *bar, *box, *box_text, *box_chev, *spark;
+    lv_obj_t *tile, *reading, *bar, *box, *box_text, *box_chev;
     int32_t fill;             // bar fill to here, px; -1 no value (no marker)
     bool log;                 // pressure: decade lines; valve: 0/50/100
 } tile_t;
 
 static tile_t pt, vt;
-static lv_obj_t *mode_btn, *valve_btn;
+static lv_obj_t *mode_btn, *valve_btn, *spark;
 
 // log2 in Q8 (as main_screen.c), for the log pressure bar.
 static int32_t log2_q8(uint32_t v)
@@ -161,9 +163,9 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     t->tile = ui_card(scr, x, 48, TILE_W, TILE_H);
     ui_label(t->tile, 12, 4, 90, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, cap);
     ui_label(t->tile, 75, 4, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
-    t->reading = ui_label(t->tile, 12, 18, BAR_W, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
-    ui_label(t->tile, 12, 30, 48, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "10 min");   // the sparkline's range
-    t->spark = ui_spark(t->tile, 12, 48, BAR_W, 30, !log);
+    // The reading, 40 px (Ryan 16 Oct: bigger once the sparklines left the
+    // tiles); "1013.2" just fits, right edge on the bar's.
+    t->reading = ui_label(t->tile, 0, 34, 12 + BAR_W, &ui_num_40, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
     t->bar = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->bar);
     lv_obj_remove_flag(t->bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
@@ -192,8 +194,8 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
 static const char *not_manual_why(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
-    if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
-    return "Calibrate the valve first";
+    if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    return "Home the valve first";
 }
 
 static void target_event(lv_event_t *e)
@@ -235,16 +237,16 @@ void ui_calibrate_ask(void)
 {
     static char q[96];
     uint32_t s = valve_cal_budget_s();
-    lv_snprintf(q, sizeof q, "Calibrate the valve? It closes to the seat to find 0 %%, up to %lu min.",
+    lv_snprintf(q, sizeof q, "Home the valve? It closes to the seat to find 0 %%, up to %lu min.",
                 (unsigned long)((s + 59) / 60));
-    ui_confirm(q, "Start calibration", calibrate);
+    ui_confirm(q, "Start homing", calibrate);
 }
 
 static void mode_event(lv_event_t *e)
 {
     (void)e;
     if (valve_mode() == VALVE_CALIBRATING)
-        ui_msg("Calibrating: STOP to cancel");
+        ui_msg("Homing: STOP to cancel");
     else if (valve_mode() == VALVE_MANUAL)
         ui_msg("AUTO is not built yet");
     else if (valve_motion_blocked())
@@ -281,8 +283,13 @@ static void home_build(lv_obj_t *scr)
 {
     make_tile(scr, &pt, 10, "Pressure", "mB", "Target", true, target_event);
     make_tile(scr, &vt, 186, "Valve", "%", "Go to", false, goto_event);
-    mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Calibrate valve", mode_event, NULL);
+    mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
+    // Pressure sparkline in the strip's row, under the frame's strip.
+    lv_obj_t *c = ui_card(scr, 10, 216, 343, 48);
+    ui_label(c, 12, 7, 60, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Pressure");
+    ui_label(c, 12, 25, 60, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "10 min");
+    spark = ui_spark(c, 72, 6, 259, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
 
@@ -295,11 +302,11 @@ static void home_fast(void)
     if (m == VALVE_CALIBRATING) {
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_font_16)
             lv_obj_set_style_text_font(vt.reading, &ui_font_16, 0);
-        ui_set_text(vt.reading, "Calibrating");
+        ui_set_text(vt.reading, "Homing");
         ui_set_color(vt.reading, UI_TEXT);
     } else {
-        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_26)
-            lv_obj_set_style_text_font(vt.reading, &ui_num_26, 0);
+        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
+            lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
@@ -311,10 +318,9 @@ static void home_refresh(void)
 {
     const clicks_state_t *s = clicks_state();
     static uint32_t seen = UINT32_MAX;
-    if (trend_seconds() != seen) {   // a new sample: redraw both sparklines
+    if (trend_seconds() != seen) {   // a new sample: redraw the sparkline
         seen = trend_seconds();
-        lv_obj_invalidate(pt.spark);
-        lv_obj_invalidate(vt.spark);
+        lv_obj_invalidate(spark);
     }
     valve_mode_t m = valve_mode();
     char buf[32];
@@ -336,17 +342,21 @@ static void home_refresh(void)
     int step = valve_cal_step();
         if (m == VALVE_CALIBRATING) {
         lv_snprintf(buf, sizeof buf, "%d of 3", step < 1 ? 1 : step);
-        ui_btn_text(mode_btn, "Calibrating", buf);
+        ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
         ui_btn_text(mode_btn, "Start AUTO", NULL);
         ui_btn_enable(mode_btn, false);
     } else {
-        ui_btn_text(mode_btn, "Calibrate valve", NULL);   // a fault is refused on press
+        ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
     }
 
     ui_status_line();
+    // Idle with nothing to say: no strip, so the sparkline shows.
+    int32_t q;
+    if (m == VALVE_MANUAL && !stepper3_busy() && !valve_question(&q))
+        ui_strip_set(UI_STRIP_INFO, UI_MUTED, "");
 }
 
 // Status line and Reset fault, for Home and the operator screens; the
@@ -368,11 +378,11 @@ void ui_status_line(void)
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_strip_set(UI_STRIP_WARN, UI_IDLE, t);
     } else if (m == VALVE_NOT_CAL) {
-        ui_strip_set(UI_STRIP_PROMPT, UI_IDLE, "Valve not calibrated");
+        ui_strip_set(UI_STRIP_PROMPT, UI_IDLE, "Valve not homed");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Calibrating: moving off the switch", "Calibrating 1 of 3: fast close to the switch",
-                                             "Calibrating 2 of 3: backing off the switch",
-                                             "Calibrating 3 of 3: slow close onto the switch" };
+        static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close to the switch",
+                                             "Homing 2 of 3: backing off the switch",
+                                             "Homing 3 of 3: slow close onto the switch" };
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
     } else if (stepper3_busy()) {
         char t[40], v[16];

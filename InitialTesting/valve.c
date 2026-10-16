@@ -164,7 +164,7 @@ static void cal_abort(const char *why)
     // An operator STOP keeps the earlier calibration: the step count kept
     // counting through the cancelled moves, so the position is still known.
     bool keep = cal_was && !strcmp(why, "STOP");
-    ev("REF", "Calibrating aborted (%s)%s", why, keep ? ", earlier calibration kept" : "");
+    ev("REF", "Homing aborted (%s)%s", why, keep ? ", earlier homing kept" : "");
     calibrated = keep;
     cal_end(keep ? VALVE_MANUAL : VALVE_NOT_CAL);
 }
@@ -205,14 +205,14 @@ static void cal_fast(void)
     int32_t n = (int32_t)(((int64_t)pos_max * 11 + 5) / 10);
     cal_stage = CAL_FAST;
     if (!cal_move(stepper3_position() - n, f_home))
-        raise(F07, true, "Calibrating: closing move refused at count %ld", (long)stepper3_position());
+        raise(F07, true, "Homing: closing move refused at count %ld", (long)stepper3_position());
 }
 
 static void cal_creep(void)
 {
     cal_stage = CAL_CREEP;
     if (!cal_move(stepper3_position() - (n_backoff + CREEP_EXTRA), f_creep))
-        raise(F07, true, "Calibrating: creep move refused at count %ld", (long)stepper3_position());
+        raise(F07, true, "Homing: creep move refused at count %ld", (long)stepper3_position());
 }
 
 static bool cal_start(const char **err)
@@ -227,7 +227,7 @@ static bool cal_start(const char **err)
     mode = VALVE_CALIBRATING;
     cal_t0 = lv_tick_get();
     update_lock();
-    ev("REF", "Calibrating started at count %ld", (long)stepper3_position());
+    ev("REF", "Homing started at count %ld", (long)stepper3_position());
     if (limit_open_now()) {
         cal_stage = CAL_CLEAR;
         cal_move(stepper3_position() + n_clear, f_home);
@@ -254,7 +254,7 @@ static void cal_move_ended(stepper3_stop_t why)
             cal_stage = CAL_BACK;
             cal_move(stepper3_position() + n_backoff, f_home);
         } else if (why == STEPPER3_STOP_DONE) {
-            raise(F07, true, "Calibrating: switch not found within %ld steps",
+            raise(F07, true, "Homing: switch not found within %ld steps",
                   (long)(((int64_t)pos_max * 11 + 5) / 10));
         } else {
             cal_abort(stepper3_stop_name(why));
@@ -270,10 +270,10 @@ static void cal_move_ended(stepper3_stop_t why)
             cal_done_ms = lv_tick_get() | 1;
             cal_took_s = lv_tick_elaps(cal_t0) / 1000;
             lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
-            ev("REF", "Calibrated in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
+            ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
             cal_end(VALVE_MANUAL);
         } else if (why == STEPPER3_STOP_DONE) {
-            raise(F07, true, "Calibrating: switch not found on the creep close");
+            raise(F07, true, "Homing: switch not found on the creep close");
         } else {
             cal_abort(stepper3_stop_name(why));
         }
@@ -314,7 +314,7 @@ static void limit_hit(void)
 void valve_init(void)
 {
     seq_seen = stepper3_move_seq();
-    ev("F-14", "Power-up (event only), valve not calibrated");
+    ev("F-14", "Power-up (event only), valve not homed");
     update_lock();
 }
 
@@ -369,7 +369,7 @@ void valve_uncalibrate(const char *why)
     calibrated = false;
     question = false;
     mode = VALVE_NOT_CAL;
-    ev("REF", "Calibration cleared (%s)", why);
+    ev("REF", "Homing cleared (%s)", why);
     update_lock();
 }
 
@@ -397,7 +397,7 @@ bool valve_motion_blocked(void) { return any_latched(); }
 
 const char *valve_mode_name(void)
 {
-    return mode == VALVE_CALIBRATING ? "CALIBRATING" : mode == VALVE_MANUAL ? "MANUAL" : "NOT CALIBRATED";
+    return mode == VALVE_CALIBRATING ? "HOMING" : mode == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
 }
 
 static const char *cal_stage_name(void)
