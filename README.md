@@ -21,7 +21,7 @@ Two hardware options are being built and compared; neither is final:
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
-Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.9 at the time of writing). Commit titles start with the version they build.
+Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.10 at the time of writing). Commit titles start with the version they build.
 
 ## Status
 
@@ -81,7 +81,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `valve.c` | Modes (NOT HOMED, HOMING, MANUAL), homing, % position, STOP, fault latches, the event log (200 kept) |
 | `valvepos.c` | Saves the step count at standstill so a restart can offer it |
 | `cfg.c` | Settings record in serial flash, two sectors in turn, CRC32, read back before it counts |
-| `trend.c` | Trend rings in RAM: 600 one-second samples and 360 ten-second means; seconds the loop missed go in as no-data samples. `TREND DUMP` is sent a line at a time as the link has room |
+| `trend.c` | Trend rings in RAM (11.5 KB): 600 one-second samples and 360 ten-second means, on fixed one-second slots; slots the loop missed go in as no-data samples. `TREND DUMP` is sent a line at a time as the link has room |
 | `extflash.c` | SST26 serial flash driver |
 | `rtclock.c`, `sysinfo.c` | Clock (`TIME?`, `TIME SET`); version and reset cause (`VER?`) |
 | `link.c`, `usb_serial.c`, `ethlink.c`, `eth_hw.c` | PC text link over USB CDC or TCP |
@@ -90,7 +90,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `ui_valve.c` | Valve, Home valve, Faults and log, Diagnostics |
 | `ui_settings.c` | Settings pages and Calibrate sensor |
 | `ui_trend.c` | Trend page and the Home sparkline (drawn on a draw event, no lv_chart) |
-| `motor_screen.c` | The 0.6.0 engineering motor screen, opened from Settings > Motor override |
+| `motor_screen.c` | The 0.6.0 engineering motor screen, opened from Settings > Motor override; built on open and freed on leave |
 | `driver/` | Display and touch ports for LVGL; `display_px.c` is the pixel loop |
 | `fixed.c` | Fixed-point text (lv_snprintf has no float) |
 
@@ -101,7 +101,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 - **MANUAL**: Go to a %, Fully open or close, step buttons on the Valve page. Position is in % of POS_MAX steps (99072 by default).
 - **Limit switch** is the closing stop, read in firmware before every closing step; there is no hardware interlock (decided). A trip during a normal move stops it and asks "Set as 0 % / Skip" (W-01); the count is never zeroed on its own. Limit override lets one move close past an open switch.
 - **Motor settings**: changing the step mode, direction or coil order, or zeroing the motor count (`MOT ZERO`, the motor screen, a loaded record), clears the homing; the valve must be homed again.
-- **Saved position**: written 2 s after the valve stops, and withdrawn (read back and checked) before the next move starts, so a power cut mid-move leaves nothing to offer.
+- **Saved position**: written 2 s after the valve stops, and withdrawn (read back and checked, one retry) before the next move starts, so a power cut mid-move leaves nothing to offer. If it cannot be withdrawn the move is refused. At start-up every slot of the log is read, so an entry after a failed write is still found.
 - **STOP** outside AUTO stops and holds the valve with no latch. In AUTO it will latch F-12.
 - **Faults** latch until Reset fault (or `CTRL RESET`), which clears only those whose cause has gone: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while homing, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP in AUTO. F-07, F-09, F-13 and F-12 stop the motor; F-01 and F-03 do not block moves.
 
@@ -203,7 +203,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `CTRL STOP` | Stop now and latch F-12; cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
-| `EVT? [1-200]` | The last events (default 20). Each event is also sent as it happens: `EVT <s> <tag> <text>` |
+| `EVT? [1-200]` | The last events (default 20), sent a line at a time as the link has room. Each event is also sent as it happens: `EVT <s> <tag> <text>` |
 
 Faults latch until `CTRL RESET`: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while homing, F-09 switch still pressed after moving off it, F-13 motion timeout, F-12 STOP. F-07, F-09, F-13 and F-12 stop the motor and refuse VALVE and MOT moves; from 0.9.10 the sensor faults F-01 and F-03 do not, so the valve can be moved and homed with no Druck connected (AUTO will need the reading). F-01 and F-03 only reset once the cause has gone.
 

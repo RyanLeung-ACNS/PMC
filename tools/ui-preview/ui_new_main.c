@@ -300,6 +300,12 @@ int main(int argc, char **argv)
     tap(300, 184);              // Go to box (opens the keypad in MANUAL)
     tap(24, 20);                // Back closes it
     for (int i = 0; i < 5; i++) {
+        // The 0.6.0 motor screen first (review, 16 Oct: it stayed built and
+        // a settings keypad after it ran the heap out). Its Back opens
+        // Settings, with Menu behind.
+        tap(415, 184); tap(379, 184); ui_service(); run(300);   // from Settings
+        tap(40, 15); run(300);                                  // its Back: Settings
+        tap(24, 20); tap(24, 20);                               // Menu, Home
         tap(415, 128); tap(24, 20);                             // Valve
         tap(415, 184); tap(350, 72); tap(24, 20); tap(24, 20);  // Faults and log
         tap(415, 184); tap(120, 128); tap(24, 20); tap(24, 20); // Calibrate valve

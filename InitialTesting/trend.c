@@ -8,8 +8,8 @@
 
 /*
  * Two rings: fine[] holds the last 600 one-second samples, coarse[] the
- * last 360 ten-second means (an hour). 9.6 KB of RAM. The newest sample
- * of each is at index (count - 1) % N.
+ * last 360 ten-second means (an hour): 960 samples of 12 bytes, 11.5 KB
+ * of RAM. The newest sample of each is at index (count - 1) % N.
  */
 static trend_pt_t fine[TREND_FINE_N], coarse[TREND_COARSE_N];
 static uint32_t fine_n, coarse_n;
@@ -45,21 +45,28 @@ static void push(const trend_pt_t *qp)
 
 void trend_second(const clicks_state_t *s)
 {
-    // One sample per second of real time: seconds the main loop skipped
-    // (a stall) go in as no-data samples, so ages stay true on the plot.
-    static uint32_t last_ms;
+    // One sample per one-second slot of real time, the slots fixed from the
+    // first call: a late poll still fills its own slot, and slots the main
+    // loop skipped (a stall) go in as no-data samples, so ages stay true on
+    // the plot. slot_ms is where the next slot starts.
+    static uint32_t slot_ms;
     static bool started;
     uint32_t now = lv_tick_get();
     if (started) {
-        uint32_t gap = (lv_tick_diff(now, last_ms) + 500) / 1000;
-        if (gap > TREND_FINE_N * 6)
-            gap = TREND_FINE_N * 6;        // an hour is all that is kept
+        int32_t early = (int32_t)(now - slot_ms);
+        if (early < 0)
+            return;                        // this slot already has its sample
+        uint32_t gap = (uint32_t)early / 1000, fill = gap;
+        if (fill > TREND_FINE_N * 6)
+            fill = TREND_FINE_N * 6;       // an hour is all that is kept
         static const trend_pt_t none = { TREND_NONE, TREND_NONE, TREND_NONE };
-        for (uint32_t i = 1; i < gap; i++)
+        for (uint32_t i = 0; i < fill; i++)
             push(&none);
+        slot_ms += (gap + 1) * 1000;
+    } else {
+        started = true;
+        slot_ms = now + 1000;
     }
-    started = true;
-    last_ms = now;
 
     trend_pt_t q;
     // PM DIAG freezes the readings: no-data samples while it runs.

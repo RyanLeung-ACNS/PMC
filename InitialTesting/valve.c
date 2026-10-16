@@ -57,6 +57,13 @@ typedef struct {
 static event_t events[EVT_N];
 static uint32_t evt_count;     // total logged since boot
 
+#define EVT_LINE 120   // link room wanted before an EVT? line goes out
+static struct {
+    bool active;
+    uint32_t next, end, since;
+} edump;
+static void evt_dump_task(void);
+
 static void evt_print(const event_t *e)
 {
     link_printf("EVT %lu.%lu %s %s\r\n", (unsigned long)(e->t_ms / 1000),
@@ -207,7 +214,8 @@ static void cal_fast(void)
     int32_t n = (int32_t)(((int64_t)pos_max * 11 + 5) / 10);
     cal_stage = CAL_FAST;
     if (!cal_move(stepper3_position() - n, f_home))
-        raise(F07, true, "Homing: closing move refused at count %ld", (long)stepper3_position());
+        raise(F07, true, "Homing: closing move refused at count %ld (%s)", (long)stepper3_position(),
+              stepper3_refusal());
 }
 
 static void cal_creep(void)
@@ -325,6 +333,7 @@ void valve_init(void)
 
 void valve_task(void)
 {
+    evt_dump_task();
     uint32_t seq = stepper3_move_seq();
     if (seq != seq_seen) {
         seq_seen = seq;
@@ -548,9 +557,34 @@ static void events_command(const char *a)
     uint32_t have = evt_count < EVT_N ? evt_count : EVT_N;
     if ((uint32_t)n > have)
         n = (long)have;
-    for (uint32_t i = evt_count - (uint32_t)n; i < evt_count; i++)
-        evt_print(&events[i % EVT_N]);
-    link_printf("OK %lu events since boot\r\n", (unsigned long)evt_count);
+    // Sent from valve_task() a line at a time, as the link has room, so a
+    // slow reader does not hold up the main loop (as TREND DUMP).
+    edump.next = evt_count - (uint32_t)n;
+    edump.end = evt_count;
+    edump.since = lv_tick_get();
+    edump.active = true;
+}
+
+static void evt_dump_task(void)
+{
+    if (!edump.active)
+        return;
+    for (int lines = 0; lines < 8; lines++) {      // a few per loop pass
+        if (link_tx_room() < EVT_LINE) {
+            if (lv_tick_elaps(edump.since) >= 2000)
+                edump.active = false;               // nobody reading: drop the rest
+            return;
+        }
+        edump.since = lv_tick_get();
+        if (edump.next >= edump.end) {
+            link_printf("OK %lu events since boot\r\n", (unsigned long)evt_count);
+            edump.active = false;
+            return;
+        }
+        uint32_t i = edump.next++;
+        if (evt_count - i <= EVT_N)                 // not yet written over
+            evt_print(&events[i % EVT_N]);
+    }
 }
 
 // "12.3" -> 123 (0.1 units), 0 to 1000.
@@ -665,7 +699,7 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     int32_t to = (int32_t)(((int64_t)pct100 * pos_max + 5000) / 10000);
     if (to < 0) to = 0;
     if (to > pos_max) to = pos_max;
-    if (!stepper3_goto(to))         { *why = "limit open, closing move refused"; return false; }
+    if (!stepper3_goto(to))         { *why = stepper3_refusal(); return false; }
     return true;
 }
 
@@ -674,7 +708,7 @@ bool valve_move_steps(int32_t steps, const char **why)
     if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
-    if (!stepper3_goto(from + steps)) { *why = "limit open, closing move refused"; return false; }
+    if (!stepper3_goto(from + steps)) { *why = stepper3_refusal(); return false; }
     return true;
 }
 

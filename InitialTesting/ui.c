@@ -743,18 +743,29 @@ void ui_home(void)
     if (service) {
         service = false;
         show(frame, true);
+        motor_screen_close();   // its LVGL heap back
     } else if (old != home_scr) {
         lv_obj_delete(old);
     }
     frame_refresh();
 }
 
-// Back from the motor screen: Settings, with Menu and Home behind it.
-static void service_back(void)
+// Back from the motor screen: Settings, with Menu and Home behind it. Run
+// after the Back event, so the motor screen can be freed before Menu and
+// Settings are built (both at once ran a host test's heap out).
+static void service_back_now(void *p)
 {
+    (void)p;
+    if (!service)
+        return;
     ui_home();
     ui_open(&ui_scr_menu);
     ui_open(&ui_scr_settings);
+}
+
+static void service_back(void)
+{
+    lv_async_call(service_back_now, NULL);
 }
 
 void ui_service(void)
@@ -762,16 +773,16 @@ void ui_service(void)
     ui_overlay_close();
     show(frame, false);
     service = true;
-    static bool built;
-    if (!built) {
-        motor_screen_init(service_back);   // kept once built
-        built = true;
-    }
-    motor_screen_show();
-    if (cur_scr != home_scr)
+    // The screen left (Settings) goes first, so the two are never built
+    // at once; the motor screen is built on open and freed on leave.
+    if (cur_scr != home_scr) {
+        lv_screen_load(home_scr);
         lv_obj_delete(cur_scr);
+    }
     cur = &ui_scr_home;
     cur_scr = home_scr;
+    motor_screen_init(service_back);
+    motor_screen_show();
 }
 
 bool ui_on_service(void) { return service; }

@@ -33,6 +33,7 @@ static int32_t boot_count;
 static uint32_t still_since;
 static bool still;             // standing since still_since
 static uint32_t writes;
+static bool warned;            // withdraw failure logged
 
 static uint32_t crc32(const void *data, size_t len)
 {
@@ -86,57 +87,86 @@ static bool safe_on_flash(void)
     return last.seq && last.state == VP_SAFE;
 }
 
-// Withdraws a safe entry, two tries. If both fail the flash may still hold
-// it, so a restart could offer a stale count: say so (it is still only
-// offered, never used without the operator).
-static void withdraw(int32_t pos)
+// Withdraws a safe entry, two tries. False if both failed: the flash may
+// still hold it.
+static bool withdraw(int32_t pos)
 {
     if (!safe_on_flash())
-        return;
-    if (put(pos, false) || put(pos, false))
-        return;
-    valve_event("REF", "Saved position could not be withdrawn (flash write failed); "
-                "after a restart do not use the saved position");
+        return true;
+    if (put(pos, false) || put(pos, false)) {
+        warned = false;
+        return true;
+    }
+    // Once per failure, not every main-loop pass.
+    if (!warned)
+        valve_event("REF", "Saved position could not be withdrawn (flash write failed), moves refused");
+    warned = true;
+    return false;
 }
 
 // stepper3.c, just before a move starts from rest: the entry goes before
-// the motor moves, so a reset mid-move cannot leave a safe one behind.
-static void before_move(void)
+// the motor moves, so a reset mid-move cannot leave a safe one behind. If
+// it cannot be withdrawn the move is refused; the entry then still matches
+// the valve, which has not moved.
+static bool before_move(const char **why)
 {
     if (!ok)
-        return;
+        return true;
     offer = false;
     still = false;
-    withdraw(stepper3_position());
+    if (withdraw(stepper3_position()))
+        return true;
+    *why = "saved position could not be withdrawn (flash write failed)";
+    return false;
+}
+
+static bool erased(const vp_entry_t *e)
+{
+    const uint8_t *b = (const uint8_t *)e;
+    for (size_t i = 0; i < sizeof *e; i++)
+        if (b[i] != 0xFF)
+            return false;
+    return true;
 }
 
 void valvepos_init(void)
 {
-    vp_entry_t e;
+    static vp_entry_t buf[16];
     stepper3_on_move_start(before_move);
     ok = extflash_init();
     if (!ok)
         return;
-    // The sector whose first entry is newest holds the newest entry.
-    int best = -1;
-    uint32_t best_seq = 0;
-    for (uint32_t s = 0; s < VP_SECTORS; s++) {
-        extflash_read(addr(s, 0), &e, sizeof e);
-        if (good(&e) && (best < 0 || e.seq > best_seq)) {
-            best = (int)s;
-            best_seq = e.seq;
-        }
-    }
-    sector = best < 0 ? 0 : (uint32_t)best;
+    // Every slot is read: a failed write can leave a blank or spoilt slot
+    // with good entries after it (put() goes on to the next slot), so a
+    // blank slot does not end the log. The newest good entry wins; the
+    // next entry goes after the last slot used in its sector.
+    // As after a reset, also when called again (the host tests).
+    memset(&last, 0, sizeof last);
+    offer = false;
+    still = false;
+    warned = false;
+    writes = 0;
+    sector = 0;
     at = 0;
-    if (best >= 0) {
+    for (uint32_t s = 0; s < VP_SECTORS; s++) {
+        bool newer = false;
+        uint32_t used = 0;
         for (uint32_t i = 0; i < VP_PER; i++) {
-            extflash_read(addr(sector, i), &e, sizeof e);
-            if (e.seq == 0xFFFFFFFFUL)
-                break;
-            at = i + 1;       // a torn entry is skipped, not written over
-            if (good(&e) && e.seq >= last.seq)
-                last = e;
+            // 64 KB in 256-byte reads, about 0.2 s at start-up.
+            if (i % 16 == 0)
+                extflash_read(addr(s, i), buf, sizeof buf);
+            const vp_entry_t *e = &buf[i % 16];
+            if (erased(e))
+                continue;
+            used = i + 1;     // a torn entry is skipped, not written over
+            if (good(e) && (!last.seq || e->seq >= last.seq)) {
+                last = *e;
+                newer = true;
+            }
+        }
+        if (newer) {
+            sector = s;
+            at = used;
         }
     }
     if (last.seq && last.state == VP_SAFE) {
@@ -170,7 +200,7 @@ void valvepos_task(void)
     }
     bool safe = safe_on_flash();
     if (safe && (moving || !cal || pos != last.count))
-        withdraw(pos);
+        (void)withdraw(pos);
     else if (!safe && cal && !moving && still && lv_tick_elaps(still_since) >= STILL_MS)
         put(pos, true);
 }

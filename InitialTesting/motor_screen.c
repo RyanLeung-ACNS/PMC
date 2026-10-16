@@ -32,6 +32,7 @@
 #define COL_IDLE     lv_color_make(150, 158, 166)
 
 static lv_obj_t *screen;
+static lv_timer_t *refresh_timer;
 static void (*on_back)(void);
 static lv_obj_t *state_label, *pos_label, *last_label;
 static lv_obj_t *size_btn[5], *mode_btn[3];
@@ -201,6 +202,8 @@ static void move_event(lv_event_t *e)
         link_printf("MOT screen: move refused, %s\r\n", stepper3_locked());
     else if (stepper3_move(steps))
         link_printf("MOT screen: move %ld\r\n", (long)steps);
+    else
+        link_printf("MOT screen: move refused, %s\r\n", stepper3_refusal());
     refresh();
 }
 
@@ -464,11 +467,22 @@ void motor_screen_init(void (*go_back)(void))
     lv_obj_set_pos(limit_label, 12, 256);
 
     refresh();
-    lv_timer_create(refresh_timer_cb, 100, NULL);
+    refresh_timer = lv_timer_create(refresh_timer_cb, 100, NULL);
 }
 
 void motor_screen_show(void)
 {
     refresh();
     lv_screen_load(screen);
+}
+
+void motor_screen_close(void)
+{
+    if (!screen)
+        return;
+    lv_timer_delete(refresh_timer);
+    refresh_timer = NULL;
+    // Not from this screen's own events (ui.c defers its Back).
+    lv_obj_delete(screen);
+    screen = NULL;
 }

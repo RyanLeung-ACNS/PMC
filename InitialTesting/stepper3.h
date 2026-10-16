@@ -100,8 +100,11 @@ void stepper3_zero(void);
 // screen or a loaded record). The valve layer clears its homing.
 void stepper3_on_reference_change(void (*cb)(const char *why));
 // Called just before a move starts from rest, before the coils are
-// energised (main loop only). The saved position is withdrawn there.
-void stepper3_on_move_start(void (*cb)(void));
+// energised (main loop only). The saved position is withdrawn there; if
+// the callback returns false with *why, the move is refused.
+void stepper3_on_move_start(bool (*cb)(const char **why));
+// Why the last refused goto or move was refused.
+const char *stepper3_refusal(void);
 stepper3_stop_t stepper3_last_stop(void);
 // The last move started: where from and how long it took (so far, while
 // it runs). False if none since power-up.

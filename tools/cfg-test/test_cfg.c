@@ -25,6 +25,7 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
+#include "trend.h"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -85,10 +86,19 @@ bool stepper3_reverse(void) { return m_rev; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
 bool stepper3_busy(void) { return m_busy; }
 int32_t stepper3_position(void) { return m_pos; }
-static void (*move_hook)(void);
-void stepper3_on_move_start(void (*cb)(void)) { move_hook = cb; }
-// A move starting from rest: stepper3.c calls the hook first.
-static void start_move(int32_t to) { if (move_hook) move_hook(); m_busy = true; m_pos = to; }
+static bool (*move_hook)(const char **why);
+void stepper3_on_move_start(bool (*cb)(const char **why)) { move_hook = cb; }
+// A move starting from rest: stepper3.c calls the hook first and refuses
+// the move if it says no.
+static bool start_move(int32_t to)
+{
+    const char *why = NULL;
+    if (move_hook && !move_hook(&why))
+        return false;
+    m_busy = true;
+    m_pos = to;
+    return true;
+}
 const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? "WAVE" : m == STEPPER3_FULL ? "FULL" : "HALF"; }
 
 /* Valve */
@@ -109,6 +119,8 @@ const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS])
 }
 bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]) { memcpy(v_set, v, sizeof v_set); return true; }
 valve_mode_t valve_mode(void) { return v_mode; }
+int32_t valve_pct_milli(void) { return 34240; }
+size_t link_tx_room(void) { return 4096; }
 bool valve_calibrated(void) { return v_cal; }
 int32_t valve_pos_max(void) { return v_set[0]; }
 void valve_uncalibrate(const char *why) { (void)why; uncal_calls++; v_cal = false; v_mode = VALVE_NOT_CAL; }
@@ -438,20 +450,47 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && c == 20000);
     valvepos_decline();
 
-    // The withdrawal write fails once: the second try takes it.
+    // The withdrawal write fails once: the second try takes it, in the
+    // next slot, after a blank one. valvepos_init() clears the module's RAM
+    // as a reset does, so only the flash tells it what happened.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
     write_fails = 1;
-    start_move(21000);
+    CHECK(start_move(21000));
     m_busy = false;
     v_cal = false; v_mode = VALVE_NOT_CAL;
     valvepos_init();
     CHECK(!valvepos_offer(&c));
 
+    // The same with a save first, as the review's case: 33880 saved, first
+    // withdrawal fails, retry works, move to 34000, cold restart.
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 33880;
+    tick(2500);
+    write_fails = 1;
+    CHECK(start_move(34000));
+    m_busy = false;
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
+
+    // Both tries fail: the move is refused, so the saved count still
+    // matches the valve and is still offered after a restart.
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 30000;
+    tick(2500);
+    write_fails = 2;
+    CHECK(!start_move(31000) && m_pos == 30000 && !m_busy);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 30000);
+    valvepos_decline();
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 30000;
+    CHECK(start_move(31000));   // flash good again: the move goes
+    m_busy = false;
+
     // Many moves: the log wraps through the sectors; the newest still wins.
     v_cal = true; v_mode = VALVE_MANUAL;
     int e0 = erases;
     for (int i = 0; i < 700; i++) {
-        start_move(1000 + i);
+        CHECK(start_move(1000 + i));
         tick(20);
         m_busy = false;
         tick(2100);
@@ -470,6 +509,27 @@ static void test_valvepos(void)
     CHECK(!valvepos_offer(&c));
 }
 
+// Trend slots are fixed one-second boundaries: a late poll fills its own
+// slot (review: 1000, 2600, 3000 ms gave four samples), a stall leaves
+// no-data slots.
+static void test_trend(void)
+{
+    clicks_state_t q = { .pm_found = true, .reading_ok = true, .p_mmbar = 5000 };
+    uint32_t n0 = trend_seconds();
+    trend_second(&q);                    // t
+    lv_tick_inc(1600); trend_second(&q); // t + 1.6 s: slot 1, late
+    lv_tick_inc(400);  trend_second(&q); // t + 2.0 s: slot 2
+    CHECK(trend_seconds() - n0 == 3);
+    lv_tick_inc(500);  trend_second(&q); // t + 2.5 s: slot 2 again, dropped
+    CHECK(trend_seconds() - n0 == 3);
+    lv_tick_inc(3700); trend_second(&q); // t + 6.2 s: slots 3 to 5 empty, 6
+    CHECK(trend_seconds() - n0 == 7);
+    trend_pt_t o;
+    CHECK(trend_fine(0, &o) && o.p == 5000);
+    CHECK(trend_fine(1, &o) && o.p == TREND_NONE);
+    CHECK(trend_fine(4, &o) && o.p == 5000);
+}
+
 int main(int argc, char **argv)
 {
     quiet = !(argc > 1 && strcmp(argv[1], "-v") == 0);
@@ -480,6 +540,7 @@ int main(int argc, char **argv)
     test_capture();
     test_name();
     test_valvepos();
+    test_trend();
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails != 0;
 }
