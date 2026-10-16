@@ -21,7 +21,7 @@ Two hardware options are being built and compared; neither is final:
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
 
-Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.6 at the time of writing). Commit titles start with the version they build.
+Firmware version: `PMC_FW_VERSION` in `InitialTesting/pmc_config.h` (0.10.7 at the time of writing). Commit titles start with the version they build.
 
 ## Status
 
@@ -109,7 +109,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 480x272, after the simulator (`simulator/`, ISA-101 style: grey for normal, colour only for abnormal states). Every screen has a header (Back and Home buttons, the title centred, the mode word on the right with its dot: a grey ring, filled grey in AUTO, red with a fault; a red rule under the header with a fault), a status strip and STOP on the bottom row. Under a popup the strip stays, updating and greyed. On Home the strip shows only when it has something to say (a prompt, a fault, a message, a move), and otherwise the 10 min pressure sparkline is in its place.
 
-- **Home** (title PRESSURE CONTROLLER): Pressure tile (40 px reading in mbar, log bar 0.1 to 1000, Target box) and Valve tile (40 px reading in %, bar, Go to box), the mode button (Home valve / Start AUTO), Valve, Menu, the pressure sparkline (a tap opens Trend).
+- **Home** (title PRESSURE CONTROLLER): Pressure tile (40 px reading in mbar, log bar labelled 0.1, 1, 10 and 1k, Target box) and Valve tile (40 px reading in %, bar, Go to box), the mode button (Home valve / Start AUTO), Valve, Menu, the pressure sparkline (a tap opens Trend).
 - **Menu**: Records (Trend, Faults and log), Calibrate (Valve, Sensor), System (Diagnostics, Settings).
 - **Valve**: manual moves and the valve's state. **Home valve**: homing state, motor step count, limit switch, the three steps and the time taken. **Faults and log**: latched faults (tap for detail and help) and the event log. **Diagnostics**: readings and hardware state.
 - **Trend**: pressure (left axis) and valve (right axis, 0 to 100 %) over 1, 2, 5, 10, 30 min or 1 hour. Each point is the mean of a fixed slot of time counted from start-up, so the line keeps its shape as it scrolls.

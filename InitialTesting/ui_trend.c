@@ -333,12 +333,12 @@ static void trend_draw(lv_event_t *e)
             lv_snprintf(buf, sizeof buf, "%s%ld.%ld", d10 < 0 ? "-" : "", (long)(LV_ABS(d10) / 10), (long)(LV_ABS(d10) % 10));
         else
             lv_snprintf(buf, sizeof buf, "%ld", (long)lroundf(v));
-        text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_RIGHT, a.x1, y - 7, x0 - 4);
+        text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_RIGHT, a.x1, y - 7, x0 - 8);
     }
     for (int i = 0; i <= 4; i++) {
         int32_t y = (int32_t)lroundf(y_pct(&s, 2500 * i));
-        lv_snprintf(buf, sizeof buf, "%d %%", 25 * i);
-        text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x1 + 4, y - 7, a.x2);
+        lv_snprintf(buf, sizeof buf, "%d", 25 * i);
+        text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x1 + 8, y - 7, a.x2);
     }
     lv_snprintf(buf, sizeof buf, "-%s", WIN_NAME[win_i]);
     text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x0, y1 + 4, x0 + 80);
