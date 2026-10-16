@@ -4,12 +4,14 @@
 #include "clicks.h"
 #include "stepper3.h"
 #include "valve.h"
+#include "trend.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
  * Home (simulator v63 buildCtrl). Pressure and Valve tiles, the mode button,
  * Valve and Menu. AUTO is not built yet: Target reads "Not set" and is flat,
- * Start AUTO is greyed. The sparkline area is empty until the trend stage.
+ * Start AUTO is greyed. Each tile has a 10 min sparkline (stage 7); a tap
+ * on it opens Trend.
  * ------------------------------------------------------------------------ */
 #define TILE_W  167
 #define TILE_H  160
@@ -17,7 +19,7 @@
 #define PPAD    15            // pressure bar: 0.1 mbar at 15, 1000 at 128
 
 typedef struct {
-    lv_obj_t *tile, *reading, *bar, *box, *box_text, *box_chev;
+    lv_obj_t *tile, *reading, *bar, *box, *box_text, *box_chev, *spark;
     int32_t fill;             // bar fill to here, px; -1 no value (no marker)
     bool log;                 // pressure: decade lines; valve: 0/50/100
 } tile_t;
@@ -160,6 +162,8 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     ui_label(t->tile, 12, 4, 90, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, cap);
     ui_label(t->tile, 75, 4, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
     t->reading = ui_label(t->tile, 12, 18, BAR_W, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
+    ui_label(t->tile, 12, 30, 48, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "10 min");   // the sparkline's range
+    t->spark = ui_spark(t->tile, 12, 48, BAR_W, 30, !log);
     t->bar = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->bar);
     lv_obj_remove_flag(t->bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
@@ -306,6 +310,12 @@ static void home_fast(void)
 static void home_refresh(void)
 {
     const clicks_state_t *s = clicks_state();
+    static uint32_t seen = UINT32_MAX;
+    if (trend_seconds() != seen) {   // a new sample: redraw both sparklines
+        seen = trend_seconds();
+        lv_obj_invalidate(pt.spark);
+        lv_obj_invalidate(vt.spark);
+    }
     valve_mode_t m = valve_mode();
     char buf[32];
 
@@ -379,10 +389,10 @@ void ui_status_line(void)
 const ui_screen_t ui_scr_home = { "Home", home_build, home_refresh, home_fast };
 
 /* --------------------------------------------------------------------------
- * Menu: the six v63 tiles in three captioned rows (Trend greyed until it
+ * Menu: the six v63 tiles in three captioned rows (Trend from stage 7; it
  * is built). The 0.6.0 motor screen is Settings > Motor override.
  * ------------------------------------------------------------------------ */
-static const ui_screen_t *const menu_scr[6] = { NULL, &ui_scr_faults, &ui_scr_calib, &ui_scr_sensor_cal,
+static const ui_screen_t *const menu_scr[6] = { &ui_scr_trend, &ui_scr_faults, &ui_scr_calib, &ui_scr_sensor_cal,
                                                 &ui_scr_diag, &ui_scr_settings };
 
 static void menu_tile_event(lv_event_t *e)

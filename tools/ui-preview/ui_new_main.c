@@ -246,7 +246,7 @@ int main(int argc, char **argv)
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
                 !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
                 !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc") ||
-                !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3);
+                !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3) || strstr(st, "trend");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
         !strcmp(st, "neg") || (page && strcmp(st, "valvenc"))) {
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
@@ -256,6 +256,21 @@ int main(int argc, char **argv)
     if (!strcmp(st, "nodruck")) v_f01 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
+    // An hour of trend: pumped down from air, then held near 5 mbar with the
+    // valve moved by hand (stage 7 previews).
+    if (v_cal && strcmp(st, "notrend")) {
+        int32_t keep = v_pct10;
+        clicks_state_t s = *clicks_state();
+        for (int i = 0; i < 3600; i++) {
+            double tt = i;
+            double p = i < 900 ? 1013.0 * exp(-tt / 120.0) + 5.0 : 5.0 + (i > 2700 ? 0.8 : 0) + (i > 3300 ? -0.5 : 0);
+            p += 0.15 * sin(tt / 23.0) + 0.05 * sin(tt / 3.1);
+            s.p_mmbar = (int32_t)(p * 1000);
+            v_pct10 = i < 900 ? 342 : i > 3300 ? 300 : i > 2700 ? 380 : 342;
+            trend_second(&s);
+        }
+        v_pct10 = keep;
+    }
     lv_init();
     static uint8_t pool2[POOL2_KB * 1024] __attribute__((aligned(8)));   // 24 KB as main.c board_init; 64-bit pointers need more
     lv_mem_add_pool(pool2, sizeof pool2);
@@ -354,6 +369,9 @@ int main(int argc, char **argv)
     if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(356, 128);
     if (!strcmp(st, "set-load")) tap(120, 184);
     if (!strcmp(st, "set-override")) tap(120, 184);
+    if (strstr(st, "trend")) { tap(415, 184); tap(210, 72); }   // Menu, Trend
+    if (!strcmp(st, "trend1h")) { tap(415, 72); tap(415, 72); }
+    if (!strcmp(st, "trend1m")) { tap(415, 184); tap(415, 184); tap(415, 184); }
     if (!strcmp(st, "calsensor") || !strcmp(st, "calvac")) { tap(415, 184); tap(379, 128); }
     if (!strcmp(st, "calvac")) tap(298, 128);
     if (!strcmp(st, "back")) { tap(415, 184); tap(120, 184); tap(60, 20); }   // Diagnostics, Back: Menu

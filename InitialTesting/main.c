@@ -33,6 +33,7 @@
 #include "limit.h"
 #include "sense.h"
 #include "valvepos.h"
+#include "trend.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -105,6 +106,7 @@ static const char *const help_sys[] = {
     "  UNC?                       pressure uncertainty budget",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+    "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
 #if PMC_PM_DIAG
     "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
@@ -286,7 +288,7 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
