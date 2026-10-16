@@ -328,6 +328,7 @@ bool ui_btn_disabled(lv_event_t *e)
 /* --------------------------------------------------------------------------
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
+#define TITLE_X 141   // Menu tile at 129 plus its 12 px text inset
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
 static lv_obj_t *stop_btn;
@@ -413,20 +414,23 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
     lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
-    // Back and Home share the first column; Home is hidden on Home and
-    // under popups, where Back closes the popup.
-    back_btn = ui_btn(hdr, 0, 0, 88, 40, UI_DARK, LV_SYMBOL_LEFT " Back", back_event, NULL);
-    home_btn = ui_btn(hdr, 89, 0, 54, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
+    // Back and Home, icons only, fill the first 129 px so the title starts
+    // over the text of Menu's tiles (Ryan, 16 Oct). Home is hidden on Home
+    // and under popups, where Back closes the popup.
+    back_btn = ui_btn(hdr, 0, 0, 64, 40, UI_DARK, LV_SYMBOL_LEFT, back_event, NULL);
+    home_btn = ui_btn(hdr, 64, 0, 65, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
     // A touch in the 8 px gap under the header is Back's, not the page's.
     lv_obj_set_ext_click_area(hdr, 8);
     lv_obj_set_ext_click_area(back_btn, 8);
     lv_obj_set_ext_click_area(home_btn, 8);
-    lv_obj_align(lv_obj_get_child(back_btn, 0), LV_ALIGN_LEFT_MID, 4, 0);
-    lv_obj_set_style_text_align(lv_obj_get_child(home_btn, 0), LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_center(lv_obj_get_child(home_btn, 0));
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *l = lv_obj_get_child(i ? home_btn : back_btn, 0);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(l);
+    }
     pmc_lbl = ui_label(hdr, 10, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT,
                        "Needle valve controller");
-    title_lbl = ui_label(hdr, 151, 11, 142, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
+    title_lbl = ui_label(hdr, TITLE_X, 11, 293 - TITLE_X, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
     mode_dot = plain(hdr);
