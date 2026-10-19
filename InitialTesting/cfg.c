@@ -263,23 +263,25 @@ static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
 // Reads one sector into slot[i]; NULL if usable, else why not.
 static const char *read_slot(int i)
 {
-    static cfg_rec_v1_t v1;
-    static cfg_rec_v2_t v2;
+    static union {                 // one old version per read
+        cfg_rec_v1_t v1;
+        cfg_rec_v2_t v2;
+    } old;
     cfg_rec_t *r = &slot[i];
     extflash_read(slot_addr[i], r, sizeof *r);
     slot_ver[i] = r->version;
     if (r->magic == 0xFFFFFFFFUL)
         return EMPTY;
-    if (r->magic == CFG_MAGIC && r->version == 1 && r->size == sizeof v1) {
-        memcpy(&v1, r, sizeof v1);
-        if (v1.crc != crc32(&v1, offsetof(cfg_rec_v1_t, crc)))
+    if (r->magic == CFG_MAGIC && r->version == 1 && r->size == sizeof old.v1) {
+        memcpy(&old.v1, r, sizeof old.v1);
+        if (old.v1.crc != crc32(&old.v1, offsetof(cfg_rec_v1_t, crc)))
             return "CRC mismatch";
-        from_v1(&v1, r);
-    } else if (r->magic == CFG_MAGIC && r->version == 2 && r->size == sizeof v2) {
-        memcpy(&v2, r, sizeof v2);
-        if (v2.crc != crc32(&v2, offsetof(cfg_rec_v2_t, crc)))
+        from_v1(&old.v1, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 2 && r->size == sizeof old.v2) {
+        memcpy(&old.v2, r, sizeof old.v2);
+        if (old.v2.crc != crc32(&old.v2, offsetof(cfg_rec_v2_t, crc)))
             return "CRC mismatch";
-        from_v2(&v2, r);
+        from_v2(&old.v2, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
         return "not a settings record of this version";
     } else if (r->crc != rec_crc(r)) {
@@ -657,7 +659,7 @@ int32_t cfg_tune(cfg_key_t k)
     return k >= CFG_KP && k <= CFG_BAND ? tune[k - CFG_KP] : 0;
 }
 
-static cfg_rec_t cand;   // cfg_save_with and cfg_sensor_use
+static cfg_rec_t cand;   // cfg_save_with, cfg_sensor_use and cfg_load_live (never at once)
 
 bool cfg_save_with(const int32_t v[CFG_N], const bool set[CFG_N], const char **why)
 {
@@ -710,12 +712,12 @@ bool cfg_load_live(cfg_from_t from, const char **why)
     if (!r || from == CFG_FROM_LIVE) { *why = "no such save"; return false; }
     if (busy()) { *why = "wait for the valve to stop"; return false; }
     if (from == CFG_FROM_DEFAULTS) {
-        static cfg_rec_t d;
-        capture(&d);   // keep the sensors and their cals
-        memcpy(d.mot, factory.mot, sizeof d.mot);
-        memcpy(d.valve, factory.valve, sizeof d.valve);
-        memcpy(d.tune, factory.tune, sizeof d.tune);
-        r = &d;
+        cfg_rec_t *d = &cand;   // shared, saves a record's worth of RAM
+        capture(d);   // keep the sensors and their cals
+        memcpy(d->mot, factory.mot, sizeof d->mot);
+        memcpy(d->valve, factory.valve, sizeof d->valve);
+        memcpy(d->tune, factory.tune, sizeof d->tune);
+        r = d;
     }
     if (!apply(r, true)) { *why = "record not applied"; return false; }
     return true;

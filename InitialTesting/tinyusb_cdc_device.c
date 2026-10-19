@@ -39,8 +39,12 @@
  */
 
 #include "common/tusb_option.h"
+#include "pmc_config.h"
 
-#if (CFG_TUD_ENABLED && CFG_TUD_CDC)
+// Not in the Ethernet build: USB cannot run there (the PLL serves RMII), and
+// any TinyUSB reference pulls in the whole device stack with every class
+// driver and its buffers, about 9 KB of RAM.
+#if (CFG_TUD_ENABLED && CFG_TUD_CDC) && !PMC_LINK_ETHERNET
 
 #include "device/usbd.h"
 // The SDK does not ship device/usbd_pvt.h; these are its prototypes for the
