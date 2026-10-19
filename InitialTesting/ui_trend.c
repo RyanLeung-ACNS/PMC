@@ -21,6 +21,7 @@
 #define COL_POS   UI_FILL
 #define COL_GRID  lv_color_hex(0xE3E9EF)
 #define COL_SPARK lv_color_hex(0xF3F6F8)
+#define COL_AREA  lv_color_hex(0xDCE3EA)   // valve area on Trend, under the grid
 
 typedef enum { K_P, K_SP, K_V } tkey_t;
 
@@ -212,6 +213,31 @@ static float y_pct(void *ctx, int32_t v)
     return s->bot - (float)v / 10000.0f * (s->bot - s->top);
 }
 
+// Valve as a shaded area under its line on Trend, so it reads apart from
+// the pressure line by form, not only by its grey (Ryan, 19 Oct: which line
+// is which was unclear). One column per pair of points, at their mean.
+static void area(lv_layer_t *layer, uint32_t win, float x0, float x1, scale_t *s, lv_color_t c)
+{
+    bool have = false;
+    float px = 0;
+    int32_t pv = 0;
+    for (int i = 0; i < pts_n; i++) {
+        int32_t v = pts[i].v[K_V];
+        if (v == TREND_NONE) {
+            have = false;
+            continue;
+        }
+        float x = x1 - (x1 - x0) * pts[i].age / (float)win;
+        if (have) {
+            int32_t xa = (int32_t)lroundf(px), xb = (int32_t)lroundf(x) - 1;
+            int32_t y = (int32_t)lroundf(y_pct(s, (pv + v) / 2));
+            if (xb >= xa && y < (int32_t)s->bot)
+                fill(layer, c, xa, y, xb, (int32_t)s->bot);
+        }
+        px = x; pv = v; have = true;
+    }
+}
+
 // Pressure and target range over the window; false if no reading at all.
 static bool p_range(float *lo, float *hi)
 {
@@ -351,6 +377,7 @@ static void trend_draw(lv_event_t *e)
     scale_t s = { lo, hi, (float)y0, (float)y1, false };
 
     char buf[16];
+    area(layer, win, (float)x0, (float)x1, &s, COL_AREA);   // under the grid
     int nt = (int)lroundf((hi - lo) / step);
     for (int i = 0; i <= nt; i++) {
         float v = lo + step * (float)i;
@@ -371,12 +398,16 @@ static void trend_draw(lv_event_t *e)
     lv_snprintf(buf, sizeof buf, "-%s", WIN_NAME[wi]);
     text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x0, y1 + 4, x0 + 80);
     text(layer, "now", UI_MUTED, LV_TEXT_ALIGN_RIGHT, x1 - 60, y1 + 4, x1);
-    // Legend in the pens' colours.
-    text(layer, "Pressure, mB", COL_PV, LV_TEXT_ALIGN_LEFT, a.x1 + 10, a.y1 + 5, a.x1 + 120);
-    text(layer, "Valve, %", COL_POS, LV_TEXT_ALIGN_RIGHT, a.x2 - 140, a.y1 + 5, a.x2 - 10);
+    // Legend: a sample of each mark beside its name, each over its own axis
+    // (pressure left, valve right); the names in text colour.
+    fill(layer, COL_PV, a.x1 + 10, a.y1 + 11, a.x1 + 23, a.y1 + 12);
+    text(layer, "Pressure, mB", UI_MUTED, LV_TEXT_ALIGN_LEFT, a.x1 + 28, a.y1 + 5, a.x1 + 140);
+    fill(layer, COL_AREA, a.x2 - 23, a.y1 + 8, a.x2 - 10, a.y1 + 16);
+    fill(layer, COL_POS, a.x2 - 23, a.y1 + 8, a.x2 - 10, a.y1 + 8);
+    text(layer, "Valve, %", UI_MUTED, LV_TEXT_ALIGN_RIGHT, a.x2 - 140, a.y1 + 5, a.x2 - 28);
 
     float lx, ly;
-    pen(layer, win, K_V, x0, x1, y_pct, &s, COL_POS, 2, false, &lx, &ly);
+    pen(layer, win, K_V, x0, x1, y_pct, &s, COL_POS, 1, false, &lx, &ly);   // the area's edge
     pen(layer, win, K_SP, x0, x1, y_scale, &s, COL_SP, 1, true, &lx, &ly);
     if (any && pen(layer, win, K_P, x0, x1, y_scale, &s, COL_PV, 2, false, &lx, &ly))
         dot(layer, COL_PV, lx, ly);
