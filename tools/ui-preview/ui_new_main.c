@@ -115,7 +115,7 @@ bool stepper3_last_move(int32_t *from, uint32_t *ms) { if (!v_cal) return false;
 void stepper3_stop_ramped(void) {}
 bool stepper3_busy(void);
 extern bool fake_override;
-void stepper3_override_cancel(void) { fake_override = false; }
+bool stepper3_override_cancel(void) { fake_override = false; return false; }
 
 /* Settings store: the real cfg.c and cal.c over a serial flash in RAM. */
 static uint8_t *flash;

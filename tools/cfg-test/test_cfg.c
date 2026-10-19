@@ -280,6 +280,16 @@ static void test_cfg(void)
     m_busy = true;
     CHECK(!cfg_save_with(v, set, &why));
     m_busy = false;
+    // A failed flash write: nothing saved and nothing put in use (written
+    // before it is applied, review of 0.10.11).
+    memset(set, 0, sizeof set);
+    v[CFG_RATE] = 450; set[CFG_RATE] = true;
+    v[CFG_KP] = 300; set[CFG_KP] = true;
+    write_fails = 1;
+    CHECK(!cfg_save_with(v, set, &why) && strstr(why, "flash"));
+    write_fails = 0;
+    CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
+    CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == 6);
 
     // A second sensor: added (in use, unsaved), then selected and saved.
     CHECK(cfg_sensor_add(1234567, 300, &why));

@@ -185,8 +185,16 @@ const char *ui_when(char *buf, size_t n, uint32_t age_ms)
     if (iso[0]) {
         int32_t tod = ((iso[11] - '0') * 10 + iso[12] - '0') * 3600 + ((iso[14] - '0') * 10 + iso[15] - '0') * 60
                       + (iso[17] - '0') * 10 + iso[18] - '0';
-        tod = (int32_t)((tod - (int32_t)(age_ms / 1000) % 86400 + 86400) % 86400);
-        lv_snprintf(buf, n, "%02ld:%02ld:%02ld", (long)(tod / 3600), (long)(tod / 60 % 60), (long)(tod % 60));
+        // Before today's midnight: the days back first, "-1d 23:15:02"
+        // (review of 0.10.11: yesterday's event read as today's).
+        int32_t age = (int32_t)(age_ms / 1000);
+        int32_t days = age > tod ? (age - tod + 86399) / 86400 : 0;
+        tod = (int32_t)((tod - age % 86400 + 86400) % 86400);
+        if (days)
+            lv_snprintf(buf, n, "-%ldd %02ld:%02ld:%02ld", (long)days, (long)(tod / 3600), (long)(tod / 60 % 60),
+                        (long)(tod % 60));
+        else
+            lv_snprintf(buf, n, "%02ld:%02ld:%02ld", (long)(tod / 3600), (long)(tod / 60 % 60), (long)(tod % 60));
     } else {
         uint32_t t = (lv_tick_get() - age_ms) / 1000;
         lv_snprintf(buf, n, "up %lu:%02lu:%02lu", (unsigned long)(t / 3600), (unsigned long)(t / 60 % 60),
@@ -486,7 +494,8 @@ static void show(lv_obj_t *o, bool on)
 void ui_msg(const char *text)
 {
     lv_strlcpy(msg_text, text, sizeof msg_text);
-    msg_until = lv_tick_get() + 5000;
+    // With a fault latched the message is brief: the fault text is the one to read.
+    msg_until = lv_tick_get() + (valve_fault_count() ? 2000 : 5000);
     if (!msg_until)
         msg_until = 1;
 }
@@ -653,6 +662,15 @@ static void frame_refresh(void)
         cur->refresh();
     if (msg_until && (int32_t)(lv_tick_get() - msg_until) >= 0)
         msg_until = 0;
+    // A new fault takes the strip at once: it ends a message, and closes the
+    // keypad (which hides the strip); the entry is lost, the fault is seen.
+    static int nf_seen;
+    if (nf > nf_seen) {
+        msg_until = 0;
+        if (kp_open)
+            ui_overlay_close();
+    }
+    nf_seen = nf;
     // The keypad uses the strip's row; an empty line (Home, idle) hides it.
     bool quiet = !msg_until && !nf && !stepper3_override() && !line_text[0];
     show(strip, (!overlay || !kp_open) && !quiet);
@@ -679,9 +697,9 @@ static void frame_refresh(void)
 static void override_cancel_event(lv_event_t *e)
 {
     (void)e;
-    stepper3_override_cancel();
-    valve_event("LIM", "Limit override off (screen)");
-    ui_msg("Limit override off.");
+    bool stopped = stepper3_override_cancel();
+    valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
+    ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
 }
 
 static void fast_timer(lv_timer_t *t)
@@ -1017,16 +1035,19 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
     pick_cb = on_pick;
     if (n > 6)
         n = 6;
-    // Above the strip: up to four rows, so five or six items go in two columns.
+    // Rows 40 px, as other touch targets (review of 0.10.11; were 32). Above
+    // the strip that leaves three rows: four items (sensor names are long)
+    // stay in one column at 37 px, five or six go in two columns.
     int cols = n > 4 ? 2 : 1, rows = (n + cols - 1) / cols;
+    const int32_t PICK_ROW = rows > 3 ? 37 : 40;
     int32_t iw = 343 / cols;
-    lv_obj_t *box = ui_card(o, 10, 4, 343, 24 + 32 * rows);
+    lv_obj_t *box = ui_card(o, 10, 4, 343, 24 + PICK_ROW * rows);
     lv_obj_set_style_clip_corner(box, true, 0);
     ui_label(box, 12, 4, 320, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, title);
     for (int i = 0; i < n; i++) {
         lv_obj_t *it = plain(box);
-        lv_obj_set_pos(it, (i / rows) * iw, 24 + 32 * (i % rows));
-        lv_obj_set_size(it, i / rows ? 343 - iw : iw, 32);
+        lv_obj_set_pos(it, (i / rows) * iw, 24 + PICK_ROW * (i % rows));
+        lv_obj_set_size(it, i / rows ? 343 - iw : iw, PICK_ROW);
         lv_obj_add_flag(it, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_bg_opa(it, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(it, i == sel ? lv_color_hex(0x3E4C59) : UI_CARD, 0);
@@ -1034,7 +1055,7 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
         lv_obj_set_style_border_side(it, i / rows ? LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(it, 1, 0);
         lv_obj_set_style_border_color(it, UI_BG, 0);
-        lv_obj_t *l = ui_label(it, 12, 7, iw - 23, &ui_font_16, i == sel ? UI_CARD : UI_TEXT, LV_TEXT_ALIGN_LEFT, items[i]);
+        lv_obj_t *l = ui_label(it, 12, (PICK_ROW - 18) / 2, iw - 23, &ui_font_16, i == sel ? UI_CARD : UI_TEXT, LV_TEXT_ALIGN_LEFT, items[i]);
         (void)l;
         lv_obj_add_event_cb(it, pick_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     }

@@ -478,7 +478,6 @@ bool stepper3_set_position(int32_t p)
 
 void stepper3_lock(const char *why) { lock_why = why; }
 const char *stepper3_locked(void)   { return lock_why; }
-void stepper3_override_cancel(void) { override_armed = false; }
 
 void stepper3_stop(void)
 {
@@ -493,6 +492,18 @@ void stepper3_stop(void)
     run_state = ST_IDLE;
     if (!hold)
         coils_off();
+}
+
+// Disarms the override. A closing move already using it is stopped at once
+// (it would otherwise go on past the open switch); returns true then.
+bool stepper3_override_cancel(void)
+{
+    override_armed = false;
+    if (!override_active)
+        return false;
+    stepper3_stop();
+    link_printf("MOT override cancelled: stopped at %ld\r\n", (long)position);
+    return true;
 }
 
 void stepper3_off(void)
@@ -789,7 +800,7 @@ bool stepper3_command(const char *line)
             link_printf("OK\r\n");
         }
     } else if (strcmp(a, " OVERRIDE OFF") == 0) {
-        override_armed = false;
+        stepper3_override_cancel();
         link_printf("OK override cleared\r\n");
     } else if (run_state != ST_IDLE && is_setting(a)) {
         // Settings below change the step timing or sequence mid-move.

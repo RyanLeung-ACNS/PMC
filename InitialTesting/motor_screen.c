@@ -211,6 +211,7 @@ static void stop_event(lv_event_t *e)
 {
     (void)e;
     stepper3_stop();
+    stepper3_override_cancel();   // STOP disarms the limit override too
     link_printf("MOT screen: stop at %ld\r\n", (long)stepper3_position());
     refresh();
 }

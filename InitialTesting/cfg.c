@@ -512,7 +512,9 @@ void cfg_init(void)
 }
 
 // Saves the live settings as the next rev. why is for the screens.
-static bool save(const char **why)
+// Writes the record in scratch as the next rev (cfg_save_with fills it with
+// the candidate before putting it in use; save() with the live settings).
+static bool write_scratch(const char **why)
 {
     const char *bad;
     if (!flash_ok) {
@@ -520,7 +522,6 @@ static bool save(const char **why)
         *why = "serial flash not found, nothing saved";
         return false;
     }
-    capture(&scratch);
     if ((bad = values_why(&scratch)) != NULL) {
         link_printf("ERR %s out of range, nothing saved\r\n", bad);
         *why = "a value is out of range, nothing saved";
@@ -555,6 +556,12 @@ static bool save(const char **why)
     link_printf("OK saved rev %lu in %c (%lu ms)\r\n", (unsigned long)scratch.rev, slot_letter(t),
                 (unsigned long)ms);
     return true;
+}
+
+static bool save(const char **why)
+{
+    capture(&scratch);
+    return write_scratch(why);
 }
 
 bool cfg_save(void)
@@ -682,9 +689,19 @@ bool cfg_save_with(const int32_t v[CFG_N], const bool set[CFG_N], const char **w
     }
     if (cand.mot[M_START] > cand.mot[M_RATE]) { *why = "Start speed must not exceed Run speed"; return false; }
     if (values_why(&cand)) { *why = "a value is out of range, nothing saved"; return false; }
-    // The active cal was captured into cand; a switch of sensor applies the new one.
-    if (!apply(&cand, true)) { *why = "not applied, nothing saved"; return false; }
-    return save(why);
+    // Written first, then put in use: a failed write changes nothing, so
+    // "Not saved" also means "not in use" (review of 0.10.11). The active cal
+    // was captured into cand; a switch of sensor applies the new one.
+    scratch = cand;
+    if (!write_scratch(why))
+        return false;
+    if (!apply(&cand, true)) {
+        // Not reached in practice: busy() was checked above and nothing ran since.
+        valve_event("CFG", "Saved but not put in use (busy)");
+        *why = "saved, but not in use until a restart";
+        return false;
+    }
+    return true;
 }
 
 bool cfg_load_live(cfg_from_t from, const char **why)

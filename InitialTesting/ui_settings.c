@@ -540,9 +540,9 @@ static void override_cb(lv_event_t *e)
 {
     (void)e;
     if (stepper3_override()) {
-        stepper3_override_cancel();
-        valve_event("LIM", "Limit override off (screen)");
-        ui_msg("Limit override off.");
+        bool stopped = stepper3_override_cancel();
+        valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
+        ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
         return;
     }
     ui_confirm("Let the next move close past the closed switch? Only for a stuck switch: the valve can be "
@@ -1123,11 +1123,15 @@ static cfg_from_t load_sel;
 static void load_do(void)
 {
     cfg_from_t from = load_sel;
-    int n = 0;
+    int n = 0, before = 0;
     // Each setting with a field comes in as a draft; the sensors and their
     // cals of a save come in use straight away (they have no draft).
     if (from != CFG_FROM_DEFAULTS) {
         const char *why;
+        // What the load replaces: settings in use but unsaved, and drafts.
+        before = cfg_unsaved();
+        for (int k = 0; k < CFG_N; k++)
+            before += draft_set[k];
         drafts_clear();
         if (!cfg_load_live(from, &why)) {
             char t[64];
@@ -1146,7 +1150,10 @@ static void load_do(void)
         }
     }
     char t[80], c[24];
-    if (!n)
+    if (!n && before)
+        // Loading the last save puts it back over changes: say so, not "the same".
+        ui_msg(from == CFG_FROM_SAVED ? "Last save restored and in use." : "Restored and in use, the same as the last save.");
+    else if (!n)
         ui_msg("Already the same");
     else {
         if (from == CFG_FROM_DEFAULTS)

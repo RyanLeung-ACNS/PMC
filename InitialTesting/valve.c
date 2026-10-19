@@ -478,6 +478,11 @@ bool valve_stop_latches(void)
 void valve_stop(void)
 {
     bool was_cal = mode == VALVE_CALIBRATING;
+    // STOP also disarms a limit override, armed or in use.
+    if (stepper3_override()) {
+        stepper3_override_cancel();
+        ev("LIM", "Limit override off (STOP)");
+    }
     if (!valve_stop_latches()) {
         // Outside AUTO, STOP is an operating stop: stop and hold, nothing latched.
         stepper3_stop();

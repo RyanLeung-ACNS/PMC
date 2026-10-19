@@ -81,7 +81,7 @@ static struct {
 } vp;
 
 static const char *const valve_help =
-    "Close, Open: hold to move, let go to stop.\n"
+    "Close, Open: hold to move, let go to stop. Before homing a hold goes at most 10 % of the travel.\n"
     "-5 %, +5 %: step from where the valve is going.\n"
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
@@ -106,8 +106,11 @@ static bool vp_goto(int32_t pct10)
 static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
+    // Before homing the position is not known and only the closed switch
+    // limits travel: a hold goes at most 10 % of the travel setting, then
+    // stops; press again to go on (review of 0.10.11).
     if (valve_mode() == VALVE_NOT_CAL)
-        vp.jog = vp_steps(open ? 1000 : -1000);   // a full travel; let go to stop
+        vp.jog = vp_steps(open ? 100 : -100);
     else
         vp.jog = vp_goto(open ? 1000 : 0);
 }
@@ -247,6 +250,10 @@ static void valve_fast(void)
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
     int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
     bar_width(vp.fill, p * 128 / 10000);
+    // A dialog over a hold (the switch question, a fault) takes the touch
+    // away from the button without a release: stop the hold.
+    if (vp.jog && ui_overlay_open())
+        stepper3_stop_ramped();
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);

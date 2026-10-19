@@ -88,7 +88,8 @@ bool stepper3_set_position(int32_t p);
 // valve layer uses it while calibrating or with a fault latched.
 void stepper3_lock(const char *why);
 const char *stepper3_locked(void);
-void stepper3_override_cancel(void);
+// Disarms the override; a closing move using it is stopped at once (true).
+bool stepper3_override_cancel(void);
 // Stops at once and switches every coil off.
 void stepper3_off(void);
 
