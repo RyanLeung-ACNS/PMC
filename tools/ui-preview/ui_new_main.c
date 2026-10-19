@@ -258,8 +258,10 @@ int main(int argc, char **argv)
     if (!strcmp(st, "nodruck")) v_f01 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
+    lv_init();
     // An hour of trend: pumped down from air, then held near 5 mbar with the
-    // valve moved by hand (stage 7 previews).
+    // valve moved by hand (stage 7 previews). After lv_init, so the tick
+    // that trend.c's one-second slots follow keeps running.
     if (v_cal && strcmp(st, "notrend")) {
         int32_t keep = v_pct10;
         clicks_state_t s = *clicks_state();
@@ -270,10 +272,10 @@ int main(int argc, char **argv)
             s.p_mmbar = (int32_t)(p * 1000);
             v_pct10 = i < 900 ? 342 : i > 3300 ? 300 : i > 2700 ? 380 : 342;
             trend_second(&s);
+            lv_tick_inc(1000);   // one sample per second of real time (trend.c slots, 0.10.10)
         }
         v_pct10 = keep;
     }
-    lv_init();
     static uint8_t pool2[POOL2_KB * 1024] __attribute__((aligned(8)));   // 24 KB as main.c board_init; 64-bit pointers need more
     lv_mem_add_pool(pool2, sizeof pool2);
     lv_display_t *d = lv_display_create(W, H);

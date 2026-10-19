@@ -40,10 +40,19 @@ static int pts_n;
 
 static void pts_build(uint32_t win, int n)
 {
+    // The board draws in 10-row strips, and the draw event runs once per
+    // strip: the points are built once per new sample or window.
+    static uint32_t b_win, b_total = UINT32_MAX;
+    static int b_n;
+    uint32_t total = trend_seconds();
+    if (win == b_win && n == b_n && total == b_total)
+        return;
+    b_win = win;
+    b_n = n;
+    b_total = total;
     uint32_t r = win <= TREND_FINE_N ? 1 : 10;            // sample spacing, s
     uint32_t slot = (win + (uint32_t)(n - 2)) / (uint32_t)(n - 1);
     slot = (slot + r - 1) / r * r;
-    uint32_t total = trend_seconds();
     pts_n = 0;
     if (!total)
         return;
@@ -80,8 +89,21 @@ static void pts_build(uint32_t win, int n)
     }
 }
 
+/* The board renders in 10-row strips and these draw events run once per
+ * strip, so whatever misses the strip is skipped before LVGL allocates a
+ * draw task for it (a Trend redraw was some 4000 line tasks, 16 times the
+ * ~250 drawn; the page stalled on a range change). */
+static bool off_strip(const lv_layer_t *layer, int32_t x1, int32_t y1, int32_t x2, int32_t y2)
+{
+    const lv_area_t *c = &layer->_clip_area;
+    return x2 < c->x1 || x1 > c->x2 || y2 < c->y1 || y1 > c->y2;
+}
+
 static void line(lv_layer_t *layer, lv_color_t c, int32_t w, float x1, float y1, float x2, float y2, bool dash)
 {
+    if (off_strip(layer, (int32_t)fminf(x1, x2) - w, (int32_t)fminf(y1, y2) - w,
+                  (int32_t)fmaxf(x1, x2) + w, (int32_t)fmaxf(y1, y2) + w))
+        return;
     lv_draw_line_dsc_t d;
     lv_draw_line_dsc_init(&d);
     d.color = c;
@@ -101,6 +123,8 @@ static void line(lv_layer_t *layer, lv_color_t c, int32_t w, float x1, float y1,
 static void text(lv_layer_t *layer, const char *s, lv_color_t c, lv_text_align_t al,
                  int32_t x1, int32_t y1, int32_t x2)
 {
+    if (off_strip(layer, x1, y1, x2, y1 + 14))
+        return;
     lv_draw_label_dsc_t d;
     lv_draw_label_dsc_init(&d);
     d.font = &ui_font_12;
@@ -113,6 +137,8 @@ static void text(lv_layer_t *layer, const char *s, lv_color_t c, lv_text_align_t
 
 static void fill_r(lv_layer_t *layer, lv_color_t c, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t rad)
 {
+    if (off_strip(layer, x1, y1, x2, y2))
+        return;
     lv_draw_rect_dsc_t r;
     lv_draw_rect_dsc_init(&r);
     r.bg_color = c;
@@ -286,7 +312,7 @@ static struct {
     int win_seen;
 } tr;
 
-#define PL 40   // plot inside the card: left, right, top, bottom margins
+#define PL 46   // plot inside the card: left, right, top, bottom margins (46: "1018.0" fits)
 #define PR 40
 #define PT 32
 #define PB 20
@@ -296,7 +322,9 @@ static void trend_draw(lv_event_t *e)
     lv_layer_t *layer = lv_event_get_layer(e);
     lv_area_t a;
     lv_obj_get_coords(tr.plot, &a);
-    uint32_t win = WINS[win_i];
+    // The range the Range card shows (set with the invalidate, trend_refresh).
+    int wi = tr.win_seen >= 0 ? tr.win_seen : win_i;
+    uint32_t win = WINS[wi];
     int32_t x0 = a.x1 + PL, x1 = a.x2 - PR, y0 = a.y1 + PT, y1 = a.y2 - PB;
     int n = (int)(x1 - x0) / 2 + 1;   // a point every 2 px
 
@@ -340,7 +368,7 @@ static void trend_draw(lv_event_t *e)
         lv_snprintf(buf, sizeof buf, "%d", 25 * i);
         text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x1 + 8, y - 7, a.x2);
     }
-    lv_snprintf(buf, sizeof buf, "-%s", WIN_NAME[win_i]);
+    lv_snprintf(buf, sizeof buf, "-%s", WIN_NAME[wi]);
     text(layer, buf, UI_MUTED, LV_TEXT_ALIGN_LEFT, x0, y1 + 4, x0 + 80);
     text(layer, "now", UI_MUTED, LV_TEXT_ALIGN_RIGHT, x1 - 60, y1 + 4, x1);
     // Legend in the pens' colours.
@@ -356,6 +384,8 @@ static void trend_draw(lv_event_t *e)
         text(layer, "No samples yet", UI_IDLE, LV_TEXT_ALIGN_CENTER, x0, (y0 + y1) / 2 - 7, x1);
 }
 
+static void trend_view(void);
+
 static void range_cb(lv_event_t *e)
 {
     int d = lv_event_get_user_data(e) ? 1 : -1;
@@ -366,6 +396,7 @@ static void range_cb(lv_event_t *e)
     win_i += d;
     if (win_i < 0) win_i = 0;
     if (win_i > 5) win_i = 5;
+    trend_view();   // at once, not at the next 500 ms refresh
 }
 
 static void trend_build(lv_obj_t *scr)
@@ -379,17 +410,23 @@ static void trend_build(lv_obj_t *scr)
     tr.win_seen = -1;
 }
 
-static void trend_refresh(void)
+// Range card, Up / Down and the plot; the plot is redrawn once per new
+// sample or range change, not at every refresh.
+static void trend_view(void)
 {
     ui_set_text(tr.range, WIN_NAME[win_i]);
     ui_btn_enable(tr.up, win_i < 5);
     ui_btn_enable(tr.down, win_i > 0);
-    // Redraw once per new sample or range change, not at every refresh.
     if (trend_seconds() != tr.seen || win_i != tr.win_seen) {
         tr.seen = trend_seconds();
         tr.win_seen = win_i;
         lv_obj_invalidate(tr.plot);
     }
+}
+
+static void trend_refresh(void)
+{
+    trend_view();
     ui_status_line();
 }
 
