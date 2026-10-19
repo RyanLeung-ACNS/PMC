@@ -5,6 +5,7 @@
 #include "stepper3.h"
 #include "link.h"
 #include "limit.h"
+#include "valve.h"
 
 /*
  * Motor screen, 480 x 272. Every MOT setting and move from the touchscreen;
@@ -355,6 +356,15 @@ static void refresh(void)
     set_disabled(dir_btn, busy);
     set_disabled(hold_btn, busy);
 
+    // A latched fault first: this screen has no fault strip (review of 0.10.11).
+    const char *tag, *ftext;
+    if (valve_fault_first(&tag, &ftext)) {
+        char f[96];
+        lv_snprintf(f, sizeof f, "%s %s", tag, ftext);
+        set_text(limit_label, f);
+        set_color(limit_label, COL_FAULT);
+        return;
+    }
     // Limit switch: the closing stop (PMC_LIMIT_STOP), or display only.
     limit_state_t lim = limit_state();
     if (!stepper3_limit_fitted())
@@ -417,7 +427,7 @@ void motor_screen_init(void (*go_back)(void))
     lv_obj_set_style_border_color(back, COL_HEADER, 0);
     lv_obj_set_style_bg_color(back, lv_color_make(60, 72, 86), LV_STATE_PRESSED);
     lv_obj_set_style_text_color(back, lv_color_white(), 0);
-    lv_obj_t *title = make_label(hdr, "Motor", lv_color_white());
+    lv_obj_t *title = make_label(hdr, "Motor, engineering", lv_color_white());
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 60, 0);
     state_label = make_label(hdr, "", COL_IDLE);
     lv_obj_align(state_label, LV_ALIGN_RIGHT_MID, -10, 0);

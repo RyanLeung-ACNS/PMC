@@ -254,13 +254,13 @@ static void set_closed(void)
     if (!valve_set_closed(&why))
         ui_msg(valve_motion_blocked() ? "Reset the fault first" : why);
     else
-        ui_msg("Valve set as closed, 0 %");
+        ui_msg("Valve set as closed, 0 %, switch not checked");
 }
 
 static void set_closed_ask(void)
 {
-    ui_confirm("Take the valve as fully closed where it is now, without homing? Only if you know it is "
-               "seated.", "Set as closed", set_closed);
+    ui_confirm("Take the valve as fully closed where it is now, without homing? The switch is not checked: "
+               "only if you know it is seated.", "Set as closed", set_closed);
 }
 
 void ui_calibrate_ask(void)

@@ -81,7 +81,7 @@ static struct {
 } vp;
 
 static const char *const valve_help =
-    "Close, Open: hold to move, let go to stop. Before homing a hold goes at most 10 % of the travel.\n"
+    "Close, Open: hold to move, let go to stop.\n"
     "-5 %, +5 %: step from where the valve is going.\n"
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
@@ -106,11 +106,8 @@ static bool vp_goto(int32_t pct10)
 static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
-    // Before homing the position is not known and only the closed switch
-    // limits travel: a hold goes at most 10 % of the travel setting, then
-    // stops; press again to go on (review of 0.10.11).
     if (valve_mode() == VALVE_NOT_CAL)
-        vp.jog = vp_steps(open ? 100 : -100);
+        vp.jog = vp_steps(open ? 1000 : -1000);   // a full travel; let go to stop
     else
         vp.jog = vp_goto(open ? 1000 : 0);
 }

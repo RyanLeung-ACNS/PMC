@@ -1245,9 +1245,18 @@ static const char *rev_text(char *buf, size_t n, cfg_from_t from)
 
 static void rv_refresh(void)
 {
-    char t[40], c[24];
-    int n = unsaved();
-    ecard_state(&rv.changes, n ? plural(c, sizeof c, n, "change") : "None", drafts() > 0, n > 0 && !drafts());
+    char t[48], c[24];
+    int n = unsaved(), d = drafts(), u = n - d;
+    // The state in words, not only the violet / grey edge (review of 0.10.11).
+    if (d && u > 0)
+        lv_snprintf(t, sizeof t, "%s, %d in use not saved", plural(c, sizeof c, d, "draft"), u);
+    else if (d)
+        lv_snprintf(t, sizeof t, "%s, not in use yet", plural(c, sizeof c, d, "draft"));
+    else if (u > 0)
+        lv_snprintf(t, sizeof t, "%d in use, not saved", u);
+    else
+        lv_strlcpy(t, "None", sizeof t);
+    ecard_state(&rv.changes, t, d > 0, n > 0 && !d);
     ui_set_text(rv.saved, rev_text(t, sizeof t, CFG_FROM_SAVED));
     ui_set_text(rv.prev, rev_text(t, sizeof t, CFG_FROM_PREVIOUS));
     side_refresh();

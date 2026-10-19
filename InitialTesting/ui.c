@@ -1232,7 +1232,7 @@ static void question_check(void)
     // A keypad or confirm the operator opened stays; the question waits.
     if (!want || overlay_q || asking || (want == 2 && overlay))
         return;
-    static char t[96], ok[32];
+    static char t[128], ok[32];
     char v[16];
     asking = true;
     if (want == 1) {
@@ -1242,8 +1242,8 @@ static void question_check(void)
     } else {
         int32_t pm = valve_pos_max();
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
-        lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. "
-                    "Use it, or home the valve?", v);
+        lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. Not checked: "
+                    "if it was moved while off, home it. Use it, or home the valve?", v);
         lv_snprintf(ok, sizeof ok, "Use %s %%", v);
         ui_ask(t, "Home", sp_calibrate, ok, sp_use);
     }
