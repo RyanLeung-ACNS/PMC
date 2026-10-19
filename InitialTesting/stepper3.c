@@ -77,7 +77,7 @@ static uint32_t rate_start = 200;    // steps/s, ramp starts and ends here
 static uint32_t accel      = 3200;   // steps/s^2
 static stepper3_mode_t mode = STEPPER3_FULL;
 static bool hold;                    // coils on when idle
-static bool reverse;                 // flips the sequence direction
+static bool reverse = true;          // flips the sequence direction; reversed by default (Ryan, 19 Oct)
 static uint8_t order[4] = { 0, 2, 1, 3 };   // coil n -> output order[n]; 0213 found on the bench (8 Oct, 26M motor)
 
 /* --------------------------------------------------------------------------

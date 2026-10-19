@@ -98,7 +98,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 - **Nothing moves at power-up.** The valve is NOT HOMED until it is homed, or until the operator accepts the position saved before the restart ("Use saved X % / Home"). The saved position is never used on its own.
 - **Homing** (Home valve, or `VALVE CAL`): if the switch is pressed, move off it first (F-09 if it stays pressed); 1 fast close to the switch (F-07 if not found within 1.1 x full travel); 2 back off; 3 slow close onto the switch. The switch point is 0 %. STOP cancels it and keeps the earlier homing.
-- **MANUAL**: Go to a %, Fully open or close, step buttons on the Valve page. Position is in % of POS_MAX steps (99072 by default).
+- **MANUAL**: Go to a %, Fully open or close, step buttons on the Valve page. Position is in % of POS_MAX steps (66048, 4 turns, by default).
 - **Limit switch** is the closing stop, read in firmware before every closing step; there is no hardware interlock (decided). A trip during a normal move stops it and asks "Set as 0 % / Skip" (W-01); the count is never zeroed on its own. Limit override lets one move close past an open switch.
 - **Motor settings**: changing the step mode, direction or coil order, or zeroing the motor count (`MOT ZERO`, the motor screen, a loaded record), clears the homing; the valve must be homed again.
 - **Saved position**: written 2 s after the valve stops, and withdrawn (read back and checked, one retry) before the next move starts, so a power cut mid-move leaves nothing to offer. If it cannot be withdrawn the move is refused. At start-up every slot of the log is read, so an entry after a failed write is still found.
@@ -200,7 +200,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The valve position saved at the last standstill, and whether it is on offer |
 | `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Use saved X % / Home". It is never used without the operator |
-| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (99072), homing speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
+| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
 | `CTRL STOP` | Stop now and latch F-12; cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
@@ -225,7 +225,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 | `MOT ACCEL <10-20000>` | Acceleration, steps/s² |
 | `MOT MODE WAVE\|FULL\|HALF` | Step sequence |
 | `MOT HOLD 0\|1` | Keep the coils on when stopped |
-| `MOT DIR 0\|1` | Reverse the direction |
+| `MOT DIR 0\|1` | Reverse the direction (1, reversed, by default) |
 | `MOT ORDER <abcd>` | Coil order, digits 0 to 3 once each, e.g. `MOT ORDER 0123` |
 
 `CFG SAVE` keeps the motor settings (`RATE` to `ORDER`).

@@ -12,8 +12,8 @@
 
 /* --------------------------------------------------------------------------
  * Settings (CFG SAVE keeps them, cfg.c). Defaults and ranges from the simulator
- * (DEF_P / RANGE): POS_MAX is 6 turns of the 26M motor through the PK22
- * 344:1 gearbox, 99,072 full steps.
+ * (DEF_P / RANGE), except POS_MAX: 4 turns of the 26M motor through the PK22
+ * 344:1 gearbox, 66,048 full steps (Ryan, 19 Oct; was 6 turns).
  * ------------------------------------------------------------------------ */
 typedef struct {
     const char *name;
@@ -21,7 +21,7 @@ typedef struct {
     int32_t lo, hi;
 } setting_t;
 
-static int32_t pos_max  = 99072;   // steps, 0 % to 100 %
+static int32_t pos_max  = 66048;   // steps, 0 % to 100 %
 static int32_t f_home   = 400;     // steps/s, clearance, fast close, back-off
 static int32_t f_creep  = 25;      // steps/s, slow final close
 static int32_t n_backoff = 400;    // steps off the switch before the creep
