@@ -92,6 +92,7 @@ static const char *const valve_help =
 
 static bool vp_goto(int32_t pct10)
 {
+    vp.jog = false;   // a new move has its own target (jog_press sets it again)
     const char *why = why_not_manual();
     if (!why && pct10 < valve_pct10() && limit_open_now())
         why = "Limit switch pressed, cannot close";
@@ -111,25 +112,30 @@ static void jog_press(lv_event_t *e)
         vp.jog = vp_goto(open ? 1000 : 0);
 }
 
+// The hold stays marked until the ramp-down ends (valve_refresh clears it):
+// the move's target is still 0 or 100 %, and Go to would show it meanwhile.
 static void jog_release(lv_event_t *e)
 {
     (void)e;
     if (vp.jog)
         stepper3_stop_ramped();
-    vp.jog = false;
 }
 
 static void step_cb(lv_event_t *e)
 {
     int32_t d = (int32_t)(intptr_t)lv_event_get_user_data(e);
+    bool jog = vp.jog;
+    vp.jog = false;   // a new move has its own target
     if (valve_mode() == VALVE_NOT_CAL)
         vp_steps(d);
     else
-        vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
+        // From where a move will end; a hold's end (0 or 100 %) is not one.
+        vp_goto((stepper3_busy() && !jog ? valve_target_pct10() : valve_pct10()) + d);
 }
 
 static bool goto_set(int32_t v100, const char **why)
 {
+    vp.jog = false;   // a new move has its own target
     if (!valve_goto_pct100(v100, why)) {
         *why = why_not_manual();
         if (!*why)
