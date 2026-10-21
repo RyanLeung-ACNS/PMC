@@ -259,8 +259,8 @@ static bool p_range(float *lo, float *hi)
 /* --------------------------------------------------------------------------
  * Home sparklines
  * ------------------------------------------------------------------------ */
-#define SPARK_WIN 600
-#define SPARK_N   121   // one per 5 s
+#define SPARK_WIN 300   // 5 min, at half the old width (Ryan, 21 Oct)
+#define SPARK_N   61    // one per 5 s
 
 static void spark_draw(lv_event_t *e)
 {

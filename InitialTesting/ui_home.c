@@ -28,7 +28,7 @@ typedef struct {
 } tile_t;
 
 static tile_t pt, vt;
-static lv_obj_t *mode_btn, *valve_btn, *spark;
+static lv_obj_t *mode_btn, *valve_btn, *spark, *spark_info;
 
 // log2 in Q8 (as main_screen.c), for the log pressure bar.
 static int32_t log2_q8(uint32_t v)
@@ -301,6 +301,24 @@ static void keypad_sp(void)
     ui_keypad_ex(&k);
 }
 
+// AUTO's regulation words; unit adds " mB" (the strip has room, Home's card not).
+static const char *auto_text(char *t, size_t n, bool unit)
+{
+    char a[16], b[16];
+    int32_t sp;
+    valve_target(&sp);
+    ui_fmt1(a, sizeof a, sp);
+    band_text(b, sizeof b);
+    const char *u = unit ? " mB" : "";
+    switch (valve_regulation()) {
+    case CTRL_REG_STABLE:     lv_snprintf(t, n, "Stable @ %s%s \xC2\xB1%s", a, u, b); break;
+    case CTRL_REG_BAND:       lv_snprintf(t, n, "In band, %s \xC2\xB1%s%s", a, b, u); break;
+    case CTRL_REG_REGULATING: lv_snprintf(t, n, "Regulating to %s%s", a, u); break;
+    default:                  lv_snprintf(t, n, "AUTO @ %s%s, no reading", a, u); break;
+    }
+    return t;
+}
+
 void ui_manual_ask(void)
 {
     static char q[64];
@@ -437,10 +455,12 @@ static void home_build(lv_obj_t *scr)
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
     // Pressure sparkline in the strip's row, under the frame's strip.
+    // Left half: what the controller is doing; right half: the last 5 min
+    // (Ryan, 21 Oct: shown in AUTO too).
     lv_obj_t *c = ui_card(scr, 10, 216, 343, 48);
-    ui_label(c, 12, 7, 60, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Pressure");
-    ui_label(c, 12, 25, 60, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "10 min");
-    spark = ui_spark(c, 72, 6, 259, 36, false);
+    spark_info = ui_label(c, 12, 5, 176, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    ui_label(c, 12, 27, 176, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Pressure, mB, 5 min");
+    spark = ui_spark(c, 192, 6, 139, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
 
@@ -513,10 +533,20 @@ static void home_refresh(void)
     }
 
     ui_status_line();
-    // Idle with nothing to say: no strip, so the sparkline shows.
+    // Idle with nothing to say, or in AUTO (it moves all the time): no
+    // strip, so the sparkline card shows, its left half saying the same.
     int32_t q;
-    if (m == VALVE_MANUAL && !stepper3_busy() && !valve_question(&q))
+    bool quiet = !valve_question(&q) && ((m == VALVE_MANUAL && !stepper3_busy()) || m == VALVE_AUTO);
+    if (quiet)
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, "");
+    char t[48], v[16];
+    if (m == VALVE_AUTO)
+        auto_text(t, sizeof t, false);
+    else if (m == VALVE_MANUAL)
+        lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
+    else
+        t[0] = '\0';
+    ui_set_text(spark_info, t);
 }
 
 // Status line and Reset fault, for Home and the operator screens; the
@@ -550,18 +580,8 @@ void ui_status_line(void)
         ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling, valve held");
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
-        char t[48], a[16], b[16];
-        int32_t sp;
-        valve_target(&sp);
-        ui_fmt1(a, sizeof a, sp);
-        band_text(b, sizeof b);
-        switch (valve_regulation()) {
-        case CTRL_REG_STABLE: lv_snprintf(t, sizeof t, "Stable @ %s mB \xC2\xB1%s", a, b); break;
-        case CTRL_REG_BAND:   lv_snprintf(t, sizeof t, "In band, %s \xC2\xB1%s mB", a, b); break;
-        case CTRL_REG_REGULATING: lv_snprintf(t, sizeof t, "Regulating to %s mB", a); break;
-        default:              lv_snprintf(t, sizeof t, "AUTO @ %s mB, no reading", a); break;
-        }
-        ui_strip_set(UI_STRIP_INFO, UI_OK, t);
+        char t[48];
+        ui_strip_set(UI_STRIP_INFO, UI_OK, auto_text(t, sizeof t, true));
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
