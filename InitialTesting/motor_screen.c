@@ -20,17 +20,17 @@
  * Buttons act on press, as the main screen tabs do. Each action is echoed on
  * the link as "MOT screen: ..." so a terminal log shows what was done.
  */
-#define COL_HEADER   lv_color_hex(0x0B0F13)
-#define COL_BG       lv_color_hex(0x12171C)
-#define COL_CARD     lv_color_hex(0x1E252C)
-#define COL_TEXT     lv_color_hex(0xE3E8ED)
-#define COL_MUTED    lv_color_hex(0x9AA6B1)
-#define COL_BTN      lv_color_hex(0x2C353E)
-#define COL_BTN_DOWN lv_color_hex(0x3A444E)
+#define COL_HEADER   lv_color_make(31, 41, 51)
+#define COL_BG       lv_color_make(232, 238, 244)
+#define COL_CARD     lv_color_white()
+#define COL_TEXT     lv_color_make(31, 41, 51)
+#define COL_MUTED    lv_color_make(84, 99, 116)
+#define COL_BTN      lv_color_make(235, 240, 245)
+#define COL_BTN_DOWN lv_color_make(218, 225, 232)
 #define COL_OK       lv_color_make(46, 160, 67)
 #define COL_FAULT    lv_color_make(214, 48, 49)
 #define COL_WARN     lv_color_make(214, 130, 0)
-#define COL_IDLE     lv_color_hex(0x6E7A86)
+#define COL_IDLE     lv_color_make(150, 158, 166)
 
 static lv_obj_t *screen;
 static lv_timer_t *refresh_timer;
@@ -131,7 +131,7 @@ static lv_obj_t *make_button(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, 
     lv_obj_set_style_text_color(b, COL_TEXT, 0);
     lv_obj_set_style_border_width(b, 2, 0);
     lv_obj_set_style_border_color(b, COL_BTN, 0);
-    lv_obj_set_style_border_color(b, COL_TEXT, LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(b, COL_HEADER, LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(b, COL_BTN_DOWN, LV_STATE_PRESSED);
     lv_obj_set_style_text_color(b, COL_IDLE, LV_STATE_DISABLED);
     lv_obj_t *l = lv_label_create(b);

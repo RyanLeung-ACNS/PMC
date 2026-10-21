@@ -293,7 +293,7 @@ static void valve_refresh(void)
     // keypad; flat otherwise. In AUTO a tap asks Switch to MANUAL.
     if (on != vp.go_live) {
         vp.go_live = on;
-        lv_obj_set_style_bg_color(vp.go_card, on ? lv_color_hex(0x1F3A52) : UI_CARD, 0);   // as Home's live box
+        lv_obj_set_style_bg_color(vp.go_card, lv_color_hex(on ? 0xE9F0F6 : 0xFFFFFF), 0);
         lv_obj_set_style_border_width(vp.go_card, on ? 3 : 0, 0);
         if (on) lv_obj_remove_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
         else    lv_obj_add_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
