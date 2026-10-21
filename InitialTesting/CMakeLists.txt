@@ -73,7 +73,6 @@ add_executable(InitialTesting
     ui_font_16.c
     ui_font_26.c
     ui_font_40.c
-    ui_font_48.c
     sysinfo.h
     sysinfo.c
     rtclock.c

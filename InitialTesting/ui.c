@@ -16,7 +16,7 @@
  * Fonts: tabular digits. Every digit takes the width of the widest, so a
  * right-aligned reading does not shift as it changes.
  * ------------------------------------------------------------------------ */
-lv_font_t ui_num_16, ui_num_26, ui_num_40, ui_num_48;
+lv_font_t ui_num_16, ui_num_26, ui_num_40;
 
 static bool num_glyph_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter, uint32_t next)
 {
@@ -542,10 +542,20 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_border_color(strip, bc, 0);
     }
     show(strip_dot, kind == UI_STRIP_INFO);
+    bool ring = false;
+    if (lv_color_eq(dot, UI_DOT_MODE)) {
+        ring = !valve_auto();
+        dot = lv_color_hex(0xC3CDD7);
+    }
     if (dim)
         dot = dis_tx;
-    if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
+    if (kind == UI_STRIP_INFO && (!lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot) ||
+                                  (lv_obj_get_style_border_width(strip_dot, 0) != 0) != ring)) {
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
+        lv_obj_set_style_border_color(strip_dot, dot, 0);
+        lv_obj_set_style_border_width(strip_dot, ring ? 2 : 0, 0);
+        lv_obj_set_style_bg_opa(strip_dot, ring ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    }
     show(strip_icon, kind >= UI_STRIP_WARN);
     ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
@@ -561,12 +571,6 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_x(strip_text, x);
         lv_obj_set_width(strip_text, w);
     }
-    // 16 px on one line when it fits, as Home's card; 12 px on two if not.
-    lv_point_t sz;
-    lv_text_get_size(&sz, text, &ui_font_16, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    const lv_font_t *f = sz.x <= w ? &ui_font_16 : &ui_font_12;
-    if (lv_obj_get_style_text_font(strip_text, 0) != f)
-        lv_obj_set_style_text_font(strip_text, f, 0);
     ui_set_text(strip_text, text);
     lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
     // Under a popup the strip stays, updating, greyed and without its buttons.
@@ -1265,7 +1269,6 @@ void ui_init(void)
     num_font(&ui_num_16, &ui_font_16);
     num_font(&ui_num_26, &ui_font_26);
     num_font(&ui_num_40, &ui_font_40);
-    num_font(&ui_num_48, &ui_font_48);
     styles_init();
     home_scr = new_screen();
     cur_scr = home_scr;

@@ -488,7 +488,7 @@ bool valve_start_auto(const char **why)
     mode = VALVE_AUTO;
     update_lock();
     char a[16], p[16];
-    ev("MODE", "%s @ target %s mB, valve %s %%", resumed ? "Auto resumed" : "Auto",
+    ev("MODE", "%s at target %s mB, valve %s %%", resumed ? "Auto resumed" : "Auto",
        mbar_text(a, sizeof a, ctl.sp, 1), pct_text(p, sizeof p, now));
     return true;
 }
@@ -655,7 +655,7 @@ const char *valve_status(void)
         // No position here: it changes every second in AUTO, and the AUTO
         // line (valve_auto_line) carries it; this one prints on a change of state.
         char a[16];
-        lv_snprintf(status_text, sizeof status_text, "Valve: %s @ %s mB%s%s", valve_mode_name(),
+        lv_snprintf(status_text, sizeof status_text, "Valve: %s at %s mB%s%s", valve_mode_name(),
                     mbar_text(a, sizeof a, ctl.sp, 1), f[0] ? ", faults " : "", f);
     } else if (calibrated)
         lv_snprintf(status_text, sizeof status_text, "Valve: %s, calibrated, %s %% (count %ld of %ld)%s%s%s",
@@ -1092,7 +1092,7 @@ bool valve_command(const char *line)
         stop_command();
     } else if (strcmp(line, "CTRL AUTO") == 0) {
         if (valve_start_auto(&err))
-            link_printf("OK AUTO @ %s mB\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
+            link_printf("OK AUTO at %s mB\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
         else
             link_printf("ERR %s\r\n", err);
     } else if (strncmp(line, "CTRL MAN", 8) == 0 && (line[8] == ' ' || line[8] == '\0')) {

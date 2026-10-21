@@ -32,10 +32,17 @@ static int32_t val(const trend_pt_t *q, tkey_t k) { return k == K_P ? q->p : k =
 // point keeps its value as the plot moves left; only the newest slot,
 // still filling, changes. Up to 10 min from the 1 s samples, beyond from
 // the 10 s means (slots are then whole multiples of 10 s, matching them).
+// The pressure pen draws each slot through its first sample, the two either
+// side of its largest change and its last, so a step draws upright, not as
+// a slope across the slot (Ryan, 21 Oct); lo and hi set the scale.
 #define PTS_MAX 160
 static struct {
     float age;            // seconds before the newest sample
     int32_t v[3];         // K_P, K_SP, K_V means, or TREND_NONE
+    // Pressure, if v[K_P] is set: values and their ages (s), first, before
+    // and after the largest change, last.
+    int32_t p[4], p_lo, p_hi;
+    int16_t p_age[4];
 } pts[PTS_MAX];
 static int pts_n;
 
@@ -68,6 +75,8 @@ static void pts_build(uint32_t win, int n)
         if (t_new - s0 > win + slot) continue;
         int64_t sum[3] = { 0, 0, 0 };
         int cnt[3] = { 0, 0, 0 };
+        int32_t pp[4] = { 0, 0, 0, 0 }, p_lo = 0, p_hi = 0, jump = -1;
+        int16_t pa[4] = { 0, 0, 0, 0 };
         // Samples in the slot, newest second at age 0; a 10 s mean is read
         // once per 10 s (trend_coarse gives the 1 s samples still filling).
         for (uint32_t t = s0; t <= s1; t += r) {
@@ -77,7 +86,26 @@ static void pts_build(uint32_t win, int n)
             if (!ok) continue;
             for (int k = 0; k < 3; k++) {
                 int32_t v = val(&q, (tkey_t)k);
-                if (v != TREND_NONE) { sum[k] += v; cnt[k]++; }
+                if (v == TREND_NONE) continue;
+                if (k == K_P) {
+                    if (!cnt[k]) {
+                        pp[0] = pp[1] = pp[2] = p_lo = p_hi = v;
+                        pa[0] = pa[1] = pa[2] = (int16_t)age;
+                    } else {
+                        int32_t d = v > pp[3] ? v - pp[3] : pp[3] - v;
+                        if (d > jump) {
+                            jump = d;
+                            pp[1] = pp[3]; pp[2] = v;
+                            pa[1] = pa[2] = (int16_t)age;
+                        }
+                    }
+                    pp[3] = v;
+                    pa[3] = (int16_t)age;
+                    if (v < p_lo) p_lo = v;
+                    if (v > p_hi) p_hi = v;
+                }
+                sum[k] += v;
+                cnt[k]++;
             }
         }
         float mid = ((float)s0 + (float)s1) / 2.0f;
@@ -85,6 +113,12 @@ static void pts_build(uint32_t win, int n)
         if (age > (float)win) continue;
         for (int k = 0; k < 3; k++)
             pts[pts_n].v[k] = cnt[k] ? (int32_t)(sum[k] / cnt[k]) : TREND_NONE;
+        for (int q = 0; q < 4; q++) {
+            pts[pts_n].p[q] = pp[q];
+            pts[pts_n].p_age[q] = pa[q];
+        }
+        pts[pts_n].p_lo = p_lo;
+        pts[pts_n].p_hi = p_hi;
         pts[pts_n].age = age;
         pts_n++;
     }
@@ -174,6 +208,17 @@ static bool pen(lv_layer_t *layer, uint32_t win, tkey_t k, float x0, float x1, y
             continue;
         }
         float x = x1 - (x1 - x0) * pts[i].age / (float)win, y = yof(ctx, v);
+        if (k == K_P) {
+            // On from the slot before through this slot's four samples.
+            for (int q = 0; q < 4; q++) {
+                float qx = x1 - (x1 - x0) * (float)pts[i].p_age[q] / (float)win, qy = yof(ctx, pts[i].p[q]);
+                if (qx < x0) qx = x0;
+                if (have && (qx != px || qy != py))
+                    line(layer, c, w, px, py, qx, qy, false);
+                px = qx; py = qy; have = any = true;
+            }
+            continue;
+        }
         if (have) {
             if (stepped && y != py) {   // a target holds, then steps
                 line(layer, c, w, px, py, x, py, true);
@@ -247,9 +292,9 @@ static bool p_range(float *lo, float *hi)
             int32_t v = pts[i].v[k ? K_SP : K_P];
             if (v == TREND_NONE)
                 continue;
-            float f = (float)v / 1000.0f;
-            if (!any || f < *lo) *lo = f;
-            if (!any || f > *hi) *hi = f;
+            float fl = (float)(k ? v : pts[i].p_lo) / 1000.0f, fh = (float)(k ? v : pts[i].p_hi) / 1000.0f;
+            if (!any || fl < *lo) *lo = fl;
+            if (!any || fh > *hi) *hi = fh;
             any = true;
         }
     }

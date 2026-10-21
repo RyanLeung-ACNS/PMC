@@ -25,16 +25,18 @@ LV_FONT_DECLARE(ui_font_12)
 LV_FONT_DECLARE(ui_font_16)
 LV_FONT_DECLARE(ui_font_26)
 LV_FONT_DECLARE(ui_font_40)
-LV_FONT_DECLARE(ui_font_48)
 
 // Fonts with every digit as wide as the widest, for right-aligned numbers.
-extern lv_font_t ui_num_16, ui_num_26, ui_num_40, ui_num_48;
+extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 
 // Colour roles (STYLE-GUIDE.md section 3).
 #define UI_BG      lv_color_hex(0xDCE3EA)
 #define UI_CARD    lv_color_hex(0xFFFFFF)
 #define UI_TEXT    lv_color_hex(0x1F2933)
 #define UI_MUTED   lv_color_hex(0x546374)
+// ui_strip_set's dot drawn as the header's mode dot: filled grey in AUTO,
+// a grey ring otherwise (the status line, as Home's card).
+#define UI_DOT_MODE lv_color_hex(0x010203)
 #define UI_IDLE    lv_color_hex(0x969EA6)
 #define UI_FAULT   lv_color_hex(0xD63031)
 #define UI_BLUE    lv_color_hex(0x2D5877)

@@ -28,7 +28,7 @@ typedef struct {
 } tile_t;
 
 static tile_t pt, vt;
-static lv_obj_t *mode_btn, *valve_btn, *spark, *spark_info;
+static lv_obj_t *mode_btn, *valve_btn, *spark, *spark_info, *spark_dot;
 
 // log2 in Q8 (as main_screen.c), for the log pressure bar.
 static int32_t log2_q8(uint32_t v)
@@ -172,33 +172,18 @@ static void alarm_set(tile_t *t, bool on)
     }
 }
 
-// A Home reading: 48 px if it fits the bar's width, else 40 px; the digits'
-// bottom stays at y 66 either way. font forces one (16 px for "Homing").
-static void reading_set(lv_obj_t *l, const char *text, const lv_font_t *font)
-{
-    if (!font) {
-        lv_point_t sz;
-        lv_text_get_size(&sz, text, &ui_num_48, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        font = sz.x <= BAR_W ? &ui_num_48 : &ui_num_40;
-    }
-    if (lv_obj_get_style_text_font(l, 0) != font) {
-        lv_obj_set_style_text_font(l, font, 0);
-        lv_obj_set_y(l, font == &ui_font_16 ? 34 : 66 - lv_font_get_line_height(font));
-    }
-    ui_set_text(l, text);
-}
-
 static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, const char *unit,
                       const char *sp, bool log, lv_event_cb_t box_cb)
 {
     t->log = log;
     t->fill = -1;
     t->tile = ui_card(scr, x, 48, TILE_W, TILE_H);
-    ui_label(t->tile, 12, 4, 90, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, cap);
-    ui_label(t->tile, 75, 4, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
-    // The reading, right edge on the bar's: 48 px, or 40 px when it would be
-    // wider than the bar ("1013.2", "100.00"); reading_set.
-    t->reading = ui_label(t->tile, 0, 32, 12 + BAR_W, &ui_num_48, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
+    // Caption and unit 16 px (Ryan, 21 Oct: 12 px was too small).
+    ui_label(t->tile, 12, 6, 90, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, cap);
+    ui_label(t->tile, 75, 6, 80, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
+    // The reading, 40 px (Ryan 16 Oct: bigger once the sparklines left the
+    // tiles); "1013.2" just fits, right edge on the bar's.
+    t->reading = ui_label(t->tile, 0, 34, 12 + BAR_W, &ui_num_40, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
     t->bar = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->bar);
     lv_obj_remove_flag(t->bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
@@ -241,18 +226,6 @@ static const char *range_info(void)
     char r[16];
     lv_snprintf(info, sizeof info, "Allowed 0 to %s", ui_fmt1(r, sizeof r, valve_range_mmbar()));
     return info;
-}
-
-// The band as the simulator writes it (0.1, 0.05, 1): no trailing zeros.
-static const char *band_text(char *buf, size_t n)
-{
-    ui_fmt2(buf, n, valve_band_mmbar());
-    char *e = buf + strlen(buf) - 1;
-    while (e > buf && *e == '0')
-        *e-- = '\0';
-    if (*e == '.')
-        *e = '\0';
-    return buf;
 }
 
 static void start_auto(void)
@@ -317,20 +290,19 @@ static void keypad_sp(void)
     ui_keypad_ex(&k);
 }
 
-// AUTO's regulation words; unit adds " mB" (the strip has room, Home's card not).
+// AUTO's regulation words; unit adds " mB".
 static const char *auto_text(char *t, size_t n, bool unit)
 {
-    char a[16], b[16];
+    char a[16];
     int32_t sp;
     valve_target(&sp);
     ui_fmt1(a, sizeof a, sp);
-    band_text(b, sizeof b);
     const char *u = unit ? " mB" : "";
     switch (valve_regulation()) {
-    case CTRL_REG_STABLE:     lv_snprintf(t, n, "Stable @ %s%s \xC2\xB1%s", a, u, b); break;
-    case CTRL_REG_BAND:       lv_snprintf(t, n, "In band, %s \xC2\xB1%s%s", a, b, u); break;
+    case CTRL_REG_STABLE:     lv_snprintf(t, n, "Stable at %s%s", a, u); break;
+    case CTRL_REG_BAND:       lv_snprintf(t, n, "In band, %s%s", a, u); break;
     case CTRL_REG_REGULATING: lv_snprintf(t, n, "Regulating to %s%s", a, u); break;
-    default:                  lv_snprintf(t, n, "AUTO @ %s%s, no reading", a, u); break;
+    default:                  lv_snprintf(t, n, "AUTO at %s%s, no reading", a, u); break;
     }
     return t;
 }
@@ -339,7 +311,7 @@ void ui_manual_ask(void)
 {
     static char q[64];
     char v[16];
-    lv_snprintf(q, sizeof q, "Switch to MANUAL? Valve holds @ %s %%.", ui_fmt2(v, sizeof v, valve_pct_milli()));
+    lv_snprintf(q, sizeof q, "Switch to MANUAL? Valve holds at %s %%.", ui_fmt2(v, sizeof v, valve_pct_milli()));
     ui_confirm(q, "Switch to\nMANUAL", to_manual);
 }
 
@@ -425,14 +397,14 @@ static void mode_event(lv_event_t *e)
     else if (m == VALVE_AUTO)
         ui_manual_ask();
     else if (m == VALVE_PAUSED) {
-        lv_snprintf(q, sizeof q, "Resume AUTO @ %s mB?", ui_fmt1(a, sizeof a, sp));
+        lv_snprintf(q, sizeof q, "Resume AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
         ui_ask3(q, "Cancel", NULL, "MANUAL", to_manual, "Resume\nAUTO", start_auto);
     } else if (m == VALVE_MANUAL && valve_fault_count())
         ui_msg("Reset the fault first");
     else if (m == VALVE_MANUAL && !have)
         keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
     else if (m == VALVE_MANUAL) {
-        lv_snprintf(q, sizeof q, "Start AUTO @ %s mB?", ui_fmt1(a, sizeof a, sp));
+        lv_snprintf(q, sizeof q, "Start AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
         ui_ask3(q, "Cancel", NULL, "New\ntarget", keypad_start, "Start\nAUTO", start_auto);
     } else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
@@ -471,10 +443,18 @@ static void home_build(lv_obj_t *scr)
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
     // Pressure sparkline in the strip's row, under the frame's strip.
-    // Left half: what the controller is doing, one 16 px line; right half:
-    // the last 5 min (Ryan, 21 Oct: shown in AUTO too).
+    // Left half: the mode dot (as the header's) and what the controller is
+    // doing, 12 px as the strip; right half: the last 5 min (Ryan, 21 Oct).
     lv_obj_t *c = ui_card(scr, 10, 216, 343, 48);
-    spark_info = ui_label(c, 12, 14, 176, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    spark_dot = lv_obj_create(c);
+    lv_obj_remove_style_all(spark_dot);
+    lv_obj_remove_flag(spark_dot, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(spark_dot, 12, 20);
+    lv_obj_set_size(spark_dot, 8, 8);
+    lv_obj_set_style_radius(spark_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
+    lv_obj_set_style_border_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
+    spark_info = ui_label(c, 28, 16, 158, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     spark = ui_spark(c, 192, 6, 139, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
@@ -486,10 +466,14 @@ static void home_fast(void)
     char buf[16];
     bool cal = valve_calibrated() && m != VALVE_CALIBRATING;
     if (m == VALVE_CALIBRATING) {
-        reading_set(vt.reading, "Homing", &ui_font_16);
+        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_font_16)
+            lv_obj_set_style_text_font(vt.reading, &ui_font_16, 0);
+        ui_set_text(vt.reading, "Homing");
         ui_set_color(vt.reading, UI_TEXT);
     } else {
-        reading_set(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----", NULL);
+        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
+            lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
+        ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
@@ -509,7 +493,7 @@ static void home_refresh(void)
 
     // Pressure.
     bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    reading_set(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----", NULL);
+    ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
     alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02") || valve_fault_is("F-03"));
@@ -551,8 +535,20 @@ static void home_refresh(void)
     if (quiet)
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, "");
     char t[48], v[16];
+    // Filled grey in AUTO, a grey ring in MANUAL.
+    static int dot_fill = -1;
+    int fill = m == VALVE_AUTO;
+    if (fill != dot_fill) {
+        dot_fill = fill;
+        lv_obj_set_style_bg_opa(spark_dot, fill ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(spark_dot, fill ? 0 : 2, 0);
+    }
+    if (m == VALVE_AUTO || m == VALVE_MANUAL)
+        lv_obj_remove_flag(spark_dot, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(spark_dot, LV_OBJ_FLAG_HIDDEN);
     if (m == VALVE_AUTO)
-        auto_text(t, sizeof t, false);
+        auto_text(t, sizeof t, true);
     else if (m == VALVE_MANUAL)
         lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
     else
@@ -592,16 +588,16 @@ void ui_status_line(void)
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];
-        ui_strip_set(UI_STRIP_INFO, UI_OK, auto_text(t, sizeof t, true));
+        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, auto_text(t, sizeof t, true));
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
-        ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
+        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, t);
     } else {
         // Idle: where the valve is, nothing alarming (Ryan, 16 Oct).
         char t[32], v[16];
         lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
-        ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
+        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, t);
     }
 }
 

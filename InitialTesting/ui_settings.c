@@ -794,7 +794,7 @@ static const char *pt_text(char *buf, size_t n, bool have, int32_t p, int32_t r)
     char a[16], b[16];
     if (!have)
         return "Not held";
-    lv_snprintf(buf, n, "%s @ %s", fixed_fmt(a, sizeof a, fixed_round(p, 2), 1), fixed_fmt(b, sizeof b, fixed_round(r, 2), 4));
+    lv_snprintf(buf, n, "%s at %s", fixed_fmt(a, sizeof a, fixed_round(p, 2), 1), fixed_fmt(b, sizeof b, fixed_round(r, 2), 4));
     return buf;
 }
 
@@ -819,7 +819,7 @@ static void cal_detail_cb(lv_event_t *e)
                     cal_date(d, sizeof d, c) ? d : "None recorded", k);
         if (bench) {
             size_t u = strlen(t);
-            lv_snprintf(t + u, sizeof t - u, "\nVacuum point, mB @ mV/V: %s\nAir point, mB @ mV/V: %s",
+            lv_snprintf(t + u, sizeof t - u, "\nVacuum point, mB at mV/V: %s\nAir point, mB at mV/V: %s",
                         pt_text(v, sizeof v, true, c->p_mmbar[0], c->r_ppb[0]),
                         pt_text(a, sizeof a, true, c->p_mmbar[1], c->r_ppb[1]));
         }
@@ -1379,8 +1379,8 @@ static void cs_build(lv_obj_t *scr)
     cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV/V");
     cs.now = ui_info(scr, 127, RY[0], 109, RH, "Saved cal, mB");
     cs.nw = ui_info(scr, 244, RY[0], 109, RH, "Captured, mB");
-    cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB @ mV/V");
-    cs.air = ui_info(scr, 10, RY[2], 226, RH, "Air point, mB @ mV/V");
+    cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB at mV/V");
+    cs.air = ui_info(scr, 10, RY[2], 226, RH, "Air point, mB at mV/V");
     cs.bv = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Capture\nvacuum", vac_cb, NULL);
     cs.ba = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Capture\nair", air_cb, NULL);   // both on two lines
     side_make(scr, "Calibrate sensor", cs_help);
