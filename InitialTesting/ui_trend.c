@@ -313,14 +313,9 @@ static void spark_draw(lv_event_t *e)
     bool valve = lv_event_get_user_data(e) != NULL;
     lv_area_t a;
     lv_obj_get_coords(o, &a);
-    // Styled as Trend's plot (Ryan, 21 Oct: the tinted box looked out of
-    // place): a rule on the left parting it from the text, faint grid lines
-    // at the top and bottom of the range, the line, the newest point.
-    fill(layer, COL_GRID, a.x1, a.y1, a.x1, a.y2);
-    a.x1 += 8;
-    fill(layer, COL_GRID, a.x1, a.y1 + 2, a.x2, a.y1 + 2);
-    fill(layer, COL_GRID, a.x1, a.y2 - 2, a.x2, a.y2 - 2);
-    scale_t s = { 0, 1, (float)a.y1 + 4, (float)a.y2 - 4, false };
+    // No background: the strip's own (Ryan, 21 Oct: the tinted box looked
+    // out of place).
+    scale_t s = { 0, 1, (float)a.y1 + 2, (float)a.y2 - 2, false };
     float lx, ly;
     if (valve) {
         if (pen(layer, SPARK_WIN, K_V, a.x1, a.x2 - 3, y_pct, &s, COL_POS, 2, false, &lx, &ly))

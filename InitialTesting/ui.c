@@ -476,7 +476,7 @@ static void build_frame(void)
     lv_obj_set_style_text_line_space(strip_text, 4, 0);
     // The pressure sparkline on the right whenever the strip shows the
     // status line (Home and the operator screens; Ryan, 21 Oct).
-    strip_spark = ui_spark(strip, 192, 6, 143, 36, false);
+    strip_spark = ui_spark(strip, 192, 6, 139, 36, false);
     lv_obj_add_flag(strip_spark, LV_OBJ_FLAG_HIDDEN);
     strip_ok = ui_btn(strip, 279, 4, 60, 40, UI_SECONDARY, "OK", ok_event, NULL);
     strip_act = ui_btn(strip, 239, 4, 100, 40, UI_PRIMARY, "", act_event, NULL);
