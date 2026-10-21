@@ -9,8 +9,10 @@
 
 /* --------------------------------------------------------------------------
  * Home (simulator v63 buildCtrl). Pressure and Valve tiles, the mode button,
- * Valve and Menu. AUTO is not built yet: Target reads "Not set" and is flat,
- * Start AUTO is greyed. A 10 min pressure sparkline fills the strip's row
+ * Valve and Menu. AUTO (stage 8): the first Start AUTO asks for a target and
+ * Set starts AUTO; later ones confirm the target kept or offer New target.
+ * In AUTO the Target box opens the keypad (changes over 5 mB ask first) and
+ * the Go to box reads "auto", flat. A 10 min pressure sparkline fills the strip's row
  * (layout 3, Ryan 16 Oct); the strip covers it only when it has something
  * to say (a prompt, a fault, a message, the motor moving). A tap on the
  * sparkline opens Trend.
@@ -210,14 +212,117 @@ static const char *not_manual_why(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    if (valve_auto()) return "Switch to MANUAL first";
     return "Home the valve first";
+}
+
+// AUTO ------------------------------------------------------------------
+static int32_t pv_milli(void) { return clicks_state()->p_mmbar; }
+
+static const char *range_info(void)
+{
+    static char info[32];
+    char r[16];
+    lv_snprintf(info, sizeof info, "Allowed 0 to %s", ui_fmt1(r, sizeof r, valve_range_mmbar()));
+    return info;
+}
+
+// The band as the simulator writes it (0.1, 0.05, 1): no trailing zeros.
+static const char *band_text(char *buf, size_t n)
+{
+    ui_fmt2(buf, n, valve_band_mmbar());
+    char *e = buf + strlen(buf) - 1;
+    while (e > buf && *e == '0')
+        *e-- = '\0';
+    if (*e == '.')
+        *e = '\0';
+    return buf;
+}
+
+static void start_auto(void)
+{
+    const char *why;
+    if (!valve_start_auto(&why))
+        ui_msg(why);
+}
+
+static void to_manual(void)
+{
+    const char *why;
+    if (!valve_to_manual(&why))
+        ui_msg(why);
+}
+
+// Typed target, then AUTO at it with no second question (simulator keypadStart).
+static bool start_set(int32_t v10, const char **why)
+{
+    return valve_set_target(v10 * 100, why) && valve_start_auto(why);
+}
+
+static void keypad_start(void)
+{
+    ui_kp_t k = { .title = "Target for AUTO, mB", .info = range_info(), .dec = 1, .min = 0,
+                  .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
+                  .live_dec = 1, .on_set = start_set };
+    ui_keypad_ex(&k);
+}
+
+static int32_t sp_pending;   // 0.1 mbar, waiting for Change target
+
+static void sp_change(void)
+{
+    const char *why;
+    if (!valve_set_target(sp_pending * 100, &why))
+        ui_msg(why);
+}
+
+static bool sp_set(int32_t v10, const char **why)
+{
+    int32_t now;
+    valve_target(&now);
+    now /= 100;
+    sp_pending = v10;
+    if (v10 - now > (int32_t)(CTRL_SP_CONFIRM * 10) || now - v10 > (int32_t)(CTRL_SP_CONFIRM * 10)) {
+        static char q[64];
+        char a[16], b[16];
+        lv_snprintf(q, sizeof q, "Change target %s to %s mB?", ui_fmt1(a, sizeof a, (int64_t)now * 100),
+                    ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
+        ui_confirm(q, "Change\ntarget", sp_change);
+        return true;
+    }
+    return valve_set_target(v10 * 100, why);
+}
+
+static void keypad_sp(void)
+{
+    ui_kp_t k = { .title = "Target, mB", .info = range_info(), .dec = 1, .min = 0,
+                  .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
+                  .live_dec = 1, .on_set = sp_set };
+    ui_keypad_ex(&k);
+}
+
+void ui_manual_ask(void)
+{
+    static char q[64];
+    char v[16];
+    lv_snprintf(q, sizeof q, "Switch to MANUAL? Valve holds @ %s %%.", ui_fmt2(v, sizeof v, valve_pct_milli()));
+    ui_confirm(q, "Switch to\nMANUAL", to_manual);
+}
+
+static void paused_manual_event(lv_event_t *e)
+{
+    (void)e;
+    ui_manual_ask();
 }
 
 static void target_event(lv_event_t *e)
 {
     (void)e;
-    ui_msg(valve_mode() == VALVE_MANUAL ? "Target is used in AUTO, not built yet"
-                                        : not_manual_why());
+    if (valve_auto())
+        keypad_sp();
+    else
+        ui_msg(valve_mode() == VALVE_MANUAL ? "Target is used in AUTO: Start AUTO asks for it"
+                                            : not_manual_why());
 }
 
 static bool goto_set(int32_t v100, const char **why)
@@ -276,11 +381,26 @@ void ui_calibrate_ask(void)
 static void mode_event(lv_event_t *e)
 {
     (void)e;
-    if (valve_mode() == VALVE_CALIBRATING)
+    static char q[64];
+    char a[16];
+    int32_t sp;
+    bool have = valve_target(&sp);
+    valve_mode_t m = valve_mode();
+    if (m == VALVE_CALIBRATING)
         ui_msg("Homing: STOP to cancel");
-    else if (valve_mode() == VALVE_MANUAL)
-        ui_msg("AUTO is not built yet");
-    else if (valve_motion_blocked())
+    else if (m == VALVE_AUTO)
+        ui_manual_ask();
+    else if (m == VALVE_PAUSED) {
+        lv_snprintf(q, sizeof q, "Resume AUTO @ %s mB?", ui_fmt1(a, sizeof a, sp));
+        ui_ask3(q, "Cancel", NULL, "MANUAL", to_manual, "Resume\nAUTO", start_auto);
+    } else if (m == VALVE_MANUAL && valve_fault_count())
+        ui_msg("Reset the fault first");
+    else if (m == VALVE_MANUAL && !have)
+        keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
+    else if (m == VALVE_MANUAL) {
+        lv_snprintf(q, sizeof q, "Start AUTO @ %s mB?", ui_fmt1(a, sizeof a, sp));
+        ui_ask3(q, "Cancel", NULL, "New\ntarget", keypad_start, "Start\nAUTO", start_auto);
+    } else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
         ui_calibrate_ask();
@@ -361,13 +481,16 @@ static void home_refresh(void)
     ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
-    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-03"));
-    box_set(&pt, false, "Not set");
+    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02") || valve_fault_is("F-03"));
+    int32_t sp;
+    bool auto_on = valve_auto();
+    box_set(&pt, auto_on, valve_target(&sp) ? ui_fmt1(buf, sizeof buf, sp) : "Not set");
 
     home_fast();
-    alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-13"));
+    alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-10") ||
+                   valve_fault_is("F-13") || valve_fault_is("F-16") || valve_fault_is("F-17"));
     bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
-    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "");
+    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "auto" : "");
 
     // Mode button.
     int step = valve_cal_step();
@@ -376,8 +499,14 @@ static void home_refresh(void)
         ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
-        ui_btn_text(mode_btn, "Start AUTO", NULL);
-        ui_btn_enable(mode_btn, false);
+        ui_btn_text(mode_btn, "Start AUTO", NULL);   // a fault is refused on press
+        ui_btn_enable(mode_btn, true);
+    } else if (m == VALVE_AUTO) {
+        ui_btn_text(mode_btn, "Switch to\nMANUAL", NULL);
+        ui_btn_enable(mode_btn, true);
+    } else if (m == VALVE_PAUSED) {
+        ui_btn_text(mode_btn, "Resume AUTO", NULL);
+        ui_btn_enable(mode_btn, true);
     } else {
         ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
@@ -415,6 +544,24 @@ void ui_status_line(void)
                                              "Homing 2 of 3: backing off the switch",
                                              "Homing 3 of 3: slow close onto the switch" };
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
+    } else if (m == VALVE_PAUSED) {
+        if (!nf)
+            ui_strip_action("Switch to\nMANUAL", NULL, paused_manual_event);
+        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling, valve held");
+    } else if (m == VALVE_AUTO) {
+        // The regulation words, moving or not: AUTO moves the valve all the time.
+        char t[48], a[16], b[16];
+        int32_t sp;
+        valve_target(&sp);
+        ui_fmt1(a, sizeof a, sp);
+        band_text(b, sizeof b);
+        switch (valve_regulation()) {
+        case CTRL_REG_STABLE: lv_snprintf(t, sizeof t, "Stable @ %s mB \xC2\xB1%s", a, b); break;
+        case CTRL_REG_BAND:   lv_snprintf(t, sizeof t, "In band, %s \xC2\xB1%s mB", a, b); break;
+        case CTRL_REG_REGULATING: lv_snprintf(t, sizeof t, "Regulating to %s mB", a); break;
+        default:              lv_snprintf(t, sizeof t, "AUTO @ %s mB, no reading", a); break;
+        }
+        ui_strip_set(UI_STRIP_INFO, UI_OK, t);
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));

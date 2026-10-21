@@ -41,6 +41,7 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_TRACK   lv_color_hex(0xE8EEF4)
 #define UI_FILL    lv_color_hex(0x7B8794)
 #define UI_TICK    lv_color_hex(0xA3AFBB)
+#define UI_OK      lv_color_hex(0x2EA043)   // AUTO status dot (simulator COL.ok)
 
 typedef enum { UI_SECONDARY, UI_PRIMARY, UI_NAV, UI_RED, UI_DARK } ui_btn_kind_t;
 
@@ -143,6 +144,7 @@ void ui_overlay_close(void);
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
 void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
 void ui_calibrate_ask(void);   // the Calibrate valve confirm
+void ui_manual_ask(void);      // the Switch to MANUAL confirm (AUTO)
 int32_t ui_log_px(int32_t p_mmbar, int32_t w);   // 0.1-1000 mbar on a log scale, 0 to w px
 int32_t ui_pct_shown(int32_t milli);   // valve % as shown (2 dp), in 0.01 %, 0 to 10000
 // Trend and the Home sparklines (ui_trend.c). A sparkline redraws when

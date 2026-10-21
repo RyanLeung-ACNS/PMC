@@ -420,7 +420,9 @@ static void save_ask(void)
         ui_msg("Nothing to save");
         return;
     }
-    if (stepper3_busy() || valve_mode() == VALVE_CALIBRATING) {
+    // In AUTO the valve moves all the time; tuning saves there (cfg.c
+    // refuses anything else with "Switch to MANUAL first").
+    if (!valve_auto() && (stepper3_busy() || valve_mode() == VALVE_CALIBRATING)) {
         ui_msg("Wait for the valve to stop");
         return;
     }
@@ -1194,6 +1196,10 @@ static void load_cb(lv_event_t *e)
     uint32_t rev;
     const char *at;
     load_n = 0;
+    if (valve_auto()) {
+        ui_msg("Switch to MANUAL first");
+        return;
+    }
     if (stepper3_busy() || valve_mode() == VALVE_CALIBRATING) {
         ui_msg("Wait for the valve to stop");
         return;

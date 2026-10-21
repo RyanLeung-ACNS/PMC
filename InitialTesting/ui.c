@@ -645,7 +645,7 @@ static void frame_refresh(void)
     // colour, tells AUTO apart. (Before 0.10.5 the ring never drew: its
     // border was only set on a change of fill, and the first was none.)
     static int dot_kind = -1;
-    bool in_auto = false;      // AUTO comes in stage 8
+    bool in_auto = valve_auto();
     int kind = nf ? 2 : in_auto ? 1 : 0;
     if (kind != dot_kind) {
         dot_kind = kind;

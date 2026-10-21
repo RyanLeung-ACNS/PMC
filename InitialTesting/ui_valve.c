@@ -20,6 +20,7 @@ static const char *why_no_steps(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    if (valve_auto()) return "Switch to MANUAL first";
     return NULL;
 }
 
@@ -148,6 +149,10 @@ static bool goto_set(int32_t v100, const char **why)
 static void goto_cb(lv_event_t *e)
 {
     (void)e;
+    if (valve_auto() && !valve_motion_blocked()) {
+        ui_manual_ask();   // in AUTO this button is Switch to MANUAL (simulator row 3)
+        return;
+    }
     const char *why = why_not_manual();
     if (why) {
         ui_msg(why);
@@ -265,9 +270,11 @@ static void valve_refresh(void)
     bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     valve_fast();
     bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
+    bool sw = valve_auto();
+    ui_btn_text(vp.btn[4], sw ? "Switch to\nMANUAL" : "Go to", NULL);
     for (int i = 0; i < 7; i++)
         if (vp.btn[i])
-            ui_btn_enable(vp.btn[i], i < 4 ? steps : on);
+            ui_btn_enable(vp.btn[i], i < 4 ? steps : i == 4 && sw ? true : on);
     if (vp.jog && !stepper3_busy())
         vp.jog = false;
     ui_status_line();
@@ -298,6 +305,8 @@ static void start_cb(lv_event_t *e)
         ui_msg("Homing: STOP to cancel");
     else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
+    else if (valve_auto())
+        ui_msg("Switch to MANUAL first");
     else
         ui_calibrate_ask();
 }
@@ -398,7 +407,7 @@ static void calib_refresh(void)
         ui_set_text(cp.last, "Not since power-up");
     }
     ui_btn_text(cp.start, calib ? "Homing" : "Start homing", NULL);
-    ui_btn_enable(cp.start, !calib && !valve_motion_blocked());
+    ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
     ui_status_line();
 }
 
@@ -439,10 +448,26 @@ static const fault_help_t fault_help[] = {
       "Stopped. The valve is not homed.",
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then home again." },
+    { "F-10", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
+      "Stopped the valve and holds it. MANUAL.",
+      "Drive slipping, motor unplugged, needle seized.",
+      "Any time. Check before starting AUTO." },
+    { "F-16", "The valve kept opening in AUTO while the pressure kept falling.",
+      "Stopped the valve and holds it. MANUAL.",
+      "Helium supply (bath empty, capillary blocked). On first use, Pressure response.",
+      "Any time. Check before starting AUTO." },
+    { "F-17", "The valve kept closing in AUTO while the pressure kept rising.",
+      "Stopped the valve and holds it. MANUAL.",
+      "Pump stopped, pumping valve shut, heat load. On first use, Pressure response.",
+      "Any time. Check before starting AUTO." },
     { "F-13", "A move took longer than its distance at the set rate, plus 2 s.",
       "Stopped the valve and holds it. Homing kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
+    { "F-02", "The pressure stayed above the sensor range for 5 s in AUTO.",
+      "Stopped the valve and holds it. MANUAL. The valve still moves.",
+      "Pumping line and pump; the sensor range.",
+      "The pressure is back in the range. Then start AUTO again." },
     { "F-12", "STOP was pressed in AUTO, or CTRL STOP sent.",
       "Stopped the valve and holds it, not closed.",
       "Why it was stopped.",
@@ -459,7 +484,13 @@ static const fault_help_t *help_for(const char *tag)
 
 static const char *mode_word(valve_mode_t m)
 {
-    return m == VALVE_CALIBRATING ? "HOMING" : m == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
+    switch (m) {
+    case VALVE_CALIBRATING: return "HOMING";
+    case VALVE_MANUAL:      return "MANUAL";
+    case VALVE_AUTO:        return "AUTO";
+    case VALVE_PAUSED:      return "AUTO PAUSED";
+    default:                return "NOT HOMED";
+    }
 }
 
 static void detail_fill(void)
