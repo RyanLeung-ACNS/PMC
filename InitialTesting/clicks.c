@@ -184,6 +184,17 @@ static void boost10_poll(void)
 #define INA228_REG_DIETEMP  0x06
 #define INA228_REG_MFR_ID   0x3E
 #define INA228_REG_DEV_ID   0x3F
+
+// ADC_CONFIG fields (INA228 datasheet SLYS021A): MODE 15-12, VBUSCT 11-9, VSHCT 8-6,
+// VTCT 5-3, AVG 2-0. CT codes 4 = 540 us, 5 = 1052 us, 6 = 2074 us; AVG 4 = 128.
+#define PM_CFG(mode, vbusct, vshct, vtct, avg) \
+    (uint16_t)(((mode) << 12) | ((vbusct) << 9) | ((vshct) << 6) | ((vtct) << 3) | (avg))
+// Continuous shunt, bus and temperature (MODE 0xF), 128 averages.
+#if PMC_PM_MAINS_AVG
+#define INA228_ADC_CONFIG_RUN PM_CFG(0xF, 4, 6, 6, 4)  // 0xF9B4, 600 ms
+#else
+#define INA228_ADC_CONFIG_RUN PM_CFG(0xF, 5, 5, 5, 4)  // 0xFB6C, 404 ms
+#endif
 #define INA228_MFR_TI       0x5449
 
 static i2c_master_t pm_i2c;
@@ -386,9 +397,9 @@ static void powermonitor_poll(void)
         for (uint8_t a = 0x40; a <= 0x4F && pm_addr == 0; a++)
             if (a != PM_ADDR_FITTED && pm_probe(a))
                 pm_addr = a;
-        // Continuous shunt, bus and temperature, 1052 us each, 128 averages
-        // (~0.4 s per result). Default is 0xFB68, no averaging.
-        if (pm_addr != 0 && !pm_write16(INA228_REG_ADC_CONFIG, 0xFB6C))
+        // Continuous readings, 128 averages (PMC_PM_MAINS_AVG). Default is
+        // 0xFB68, no averaging.
+        if (pm_addr != 0 && !pm_write16(INA228_REG_ADC_CONFIG, INA228_ADC_CONFIG_RUN))
             pm_addr = 0;
         if (pm_addr == 0) {
             if (pm_ack_addr)
@@ -485,10 +496,6 @@ lost:
 #define INA228_REG_SHUNT_CAL    0x02
 #define INA228_REG_SHUNT_TEMPCO 0x03
 #define INA228_REG_DIAG_ALRT    0x0B
-#define INA228_ADC_CONFIG_RUN   0xFB6C
-
-#define PM_CFG(mode, vbusct, vshct, vtct, avg) \
-    (uint16_t)(((mode) << 12) | ((vbusct) << 9) | ((vshct) << 6) | ((vtct) << 3) | (avg))
 
 typedef struct {
     const char *what;
