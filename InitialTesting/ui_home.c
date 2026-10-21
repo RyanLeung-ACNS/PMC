@@ -12,10 +12,9 @@
  * Valve and Menu. AUTO (stage 8): the first Start AUTO asks for a target and
  * Set starts AUTO; later ones confirm the target kept or offer New target.
  * In AUTO the Target box opens the keypad (changes over 5 mB ask first) and
- * the Go to box reads "auto", flat. A 10 min pressure sparkline fills the strip's row
- * (layout 3, Ryan 16 Oct); the strip covers it only when it has something
- * to say (a prompt, a fault, a message, the motor moving). A tap on the
- * sparkline opens Trend.
+ * the Go to box reads "auto", flat. The strip shows the status line, with
+ * the 5 min pressure sparkline on its right as on the operator screens
+ * (ui.c, Ryan 21 Oct). A tap on the sparkline opens Trend.
  * ------------------------------------------------------------------------ */
 #define TILE_W  167
 #define TILE_H  160
@@ -28,7 +27,7 @@ typedef struct {
 } tile_t;
 
 static tile_t pt, vt;
-static lv_obj_t *mode_btn, *valve_btn, *spark, *spark_info, *spark_dot;
+static lv_obj_t *mode_btn, *valve_btn;
 
 // log2 in Q8 (as main_screen.c), for the log pressure bar.
 static int32_t log2_q8(uint32_t v)
@@ -442,20 +441,6 @@ static void home_build(lv_obj_t *scr)
     make_tile(scr, &vt, 186, "Valve", "%", "Go to", false, goto_event);
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
-    // Pressure sparkline in the strip's row, under the frame's strip.
-    // Left half: the mode dot (as the header's) and what the controller is
-    // doing, 12 px as the strip; right half: the last 5 min (Ryan, 21 Oct).
-    lv_obj_t *c = ui_card(scr, 10, 216, 343, 48);
-    spark_dot = lv_obj_create(c);
-    lv_obj_remove_style_all(spark_dot);
-    lv_obj_remove_flag(spark_dot, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_pos(spark_dot, 12, 20);
-    lv_obj_set_size(spark_dot, 8, 8);
-    lv_obj_set_style_radius(spark_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
-    lv_obj_set_style_border_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
-    spark_info = ui_label(c, 28, 16, 158, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
-    spark = ui_spark(c, 192, 6, 139, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
 
@@ -483,11 +468,6 @@ static void home_fast(void)
 static void home_refresh(void)
 {
     const clicks_state_t *s = clicks_state();
-    static uint32_t seen = UINT32_MAX;
-    if (trend_seconds() != seen) {   // a new sample: redraw the sparkline
-        seen = trend_seconds();
-        lv_obj_invalidate(spark);
-    }
     valve_mode_t m = valve_mode();
     char buf[32];
 
@@ -528,34 +508,6 @@ static void home_refresh(void)
     }
 
     ui_status_line();
-    // MANUAL (moving too, Ryan 21 Oct) or AUTO with nothing else to say: no
-    // strip, so the sparkline card shows, its left half saying the same.
-    int32_t q;
-    bool quiet = !valve_question(&q) && (m == VALVE_MANUAL || m == VALVE_AUTO);
-    if (quiet)
-        ui_strip_set(UI_STRIP_INFO, UI_MUTED, "");
-    char t[48], v[16];
-    // Filled grey in AUTO, a grey ring in MANUAL.
-    static int dot_fill = -1;
-    int fill = m == VALVE_AUTO;
-    if (fill != dot_fill) {
-        dot_fill = fill;
-        lv_obj_set_style_bg_opa(spark_dot, fill ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(spark_dot, fill ? 0 : 2, 0);
-    }
-    if (m == VALVE_AUTO || m == VALVE_MANUAL)
-        lv_obj_remove_flag(spark_dot, LV_OBJ_FLAG_HIDDEN);
-    else
-        lv_obj_add_flag(spark_dot, LV_OBJ_FLAG_HIDDEN);
-    if (m == VALVE_AUTO)
-        auto_text(t, sizeof t, true);
-    else if (m == VALVE_MANUAL && stepper3_busy())
-        lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
-    else if (m == VALVE_MANUAL)
-        lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
-    else
-        t[0] = '\0';
-    ui_set_text(spark_info, t);
 }
 
 // Status line and Reset fault, for Home and the operator screens; the
