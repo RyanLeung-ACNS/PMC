@@ -264,7 +264,7 @@ static void valve_fast(void)
     char buf[16];
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
-    ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
+    ui_set_color(vp.v, cal && !valve_auto() ? UI_TEXT : cal ? UI_MUTED : UI_IDLE);   // mid grey in AUTO
     int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch

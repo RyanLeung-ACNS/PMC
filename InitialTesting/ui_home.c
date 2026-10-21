@@ -459,7 +459,7 @@ static void home_fast(void)
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
             lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
-        ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
+        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : cal ? UI_MUTED : UI_IDLE);   // mid grey in AUTO (Ryan, 22 Oct)
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
     bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
