@@ -17,11 +17,11 @@
  *           (log when the window spans more than a decade), valve 0-100 %.
  * ------------------------------------------------------------------------ */
 #define COL_PV    UI_BLUE
-#define COL_SP    lv_color_hex(0x3F3F3F)
+#define COL_SP    lv_color_hex(0x585858)
 #define COL_POS   UI_FILL
-#define COL_GRID  lv_color_hex(0xE3E9EF)
-#define COL_SPARK lv_color_hex(0xF3F6F8)
-#define COL_AREA  lv_color_hex(0xDCE3EA)   // valve area on Trend, under the grid
+#define COL_GRID  lv_color_hex(0xBCBCBC)
+#define COL_SPARK lv_color_hex(0xDCDCDC)
+#define COL_AREA  lv_color_hex(0xA4E4FC)   // valve area on Trend, under the grid
 
 typedef enum { K_P, K_SP, K_V } tkey_t;
 
@@ -177,7 +177,8 @@ static void fill_r(lv_layer_t *layer, lv_color_t c, int32_t x1, int32_t y1, int3
     lv_draw_rect_dsc_t r;
     lv_draw_rect_dsc_init(&r);
     r.bg_color = c;
-    r.radius = rad;
+    r.radius = 0;   // 8-bit: square corners
+    (void)rad;
     lv_area_t a = { x1, y1, x2, y2 };
     lv_draw_rect(layer, &r, &a);
 }

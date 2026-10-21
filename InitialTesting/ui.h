@@ -30,21 +30,21 @@ LV_FONT_DECLARE(ui_font_40)
 extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 
 // Colour roles (STYLE-GUIDE.md section 3).
-#define UI_BG      lv_color_hex(0xDCE3EA)
-#define UI_CARD    lv_color_hex(0xFFFFFF)
-#define UI_TEXT    lv_color_hex(0x1F2933)
-#define UI_MUTED   lv_color_hex(0x546374)
+#define UI_BG      lv_color_hex(0xA4E4FC)
+#define UI_CARD    lv_color_hex(0xFCFCFC)
+#define UI_TEXT    lv_color_hex(0x000000)
+#define UI_MUTED   lv_color_hex(0x585858)
 // ui_strip_set's dot drawn as the header's mode dot: filled grey in AUTO,
 // a grey ring otherwise (the status line, as Home's card).
 #define UI_DOT_MODE lv_color_hex(0x010203)
-#define UI_IDLE    lv_color_hex(0x969EA6)
-#define UI_FAULT   lv_color_hex(0xD63031)
-#define UI_BLUE    lv_color_hex(0x2D5877)
-#define UI_WARN    lv_color_hex(0x3F3F3F)
-#define UI_TRACK   lv_color_hex(0xE8EEF4)
-#define UI_FILL    lv_color_hex(0x7B8794)
-#define UI_TICK    lv_color_hex(0xA3AFBB)
-#define UI_OK      lv_color_hex(0x2EA043)   // AUTO status dot (simulator COL.ok)
+#define UI_IDLE    lv_color_hex(0x7C7C7C)
+#define UI_FAULT   lv_color_hex(0xD82800)
+#define UI_BLUE    lv_color_hex(0x0058F8)
+#define UI_WARN    lv_color_hex(0x585858)
+#define UI_TRACK   lv_color_hex(0xDCDCDC)
+#define UI_FILL    lv_color_hex(0x7C7C7C)
+#define UI_TICK    lv_color_hex(0xBCBCBC)
+#define UI_OK      lv_color_hex(0x00A800)   // AUTO status dot (simulator COL.ok)
 
 typedef enum { UI_SECONDARY, UI_PRIMARY, UI_NAV, UI_RED, UI_DARK } ui_btn_kind_t;
 

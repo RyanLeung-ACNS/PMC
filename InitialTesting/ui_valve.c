@@ -626,7 +626,7 @@ static void faults_build(lv_obj_t *scr)
                             LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_ON);
     lv_obj_set_style_width(box, 6, LV_PART_SCROLLBAR);
-    lv_obj_set_style_radius(box, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(box, 0, LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(box, LV_OPA_COVER, LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_color(box, UI_IDLE, LV_PART_SCROLLBAR);
     fp.box = box;

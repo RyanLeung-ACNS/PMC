@@ -150,11 +150,11 @@ static void bar_set(tile_t *t, int32_t fill)
 static void box_set(tile_t *t, bool active, const char *text)
 {
     lv_obj_t *b = t->box;
-    lv_color_t bg = lv_color_hex(active ? 0xE9F0F6 : 0xEEF2F6);
+    lv_color_t bg = lv_color_hex(active ? 0xA4E4FC : 0xDCDCDC);
     if (!lv_color_eq(lv_obj_get_style_bg_color(b, 0), bg)) {
         lv_obj_set_style_bg_color(b, bg, 0);
         lv_obj_set_style_border_width(b, active ? 3 : 0, 0);
-        lv_obj_set_style_radius(b, 4, 0);
+        lv_obj_set_style_radius(b, 0, 0);
         lv_obj_set_width(t->box_text, active ? 62 : 72);
         if (active) lv_obj_remove_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
         else        lv_obj_add_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
@@ -197,8 +197,8 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     lv_obj_set_pos(t->box, 67, 116);   // wide enough for "100.00" and the chevron
     lv_obj_set_size(t->box, 88, 40);
     lv_obj_set_style_bg_opa(t->box, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(t->box, lv_color_hex(0xEEF2F6), 0);
-    lv_obj_set_style_radius(t->box, 4, 0);
+    lv_obj_set_style_bg_color(t->box, lv_color_hex(0xDCDCDC), 0);
+    lv_obj_set_style_radius(t->box, 0, 0);
     lv_obj_set_style_border_side(t->box, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(t->box, UI_BLUE, 0);
     lv_obj_add_event_cb(t->box, box_cb, LV_EVENT_CLICKED, NULL);
@@ -451,9 +451,9 @@ static void home_build(lv_obj_t *scr)
     lv_obj_remove_flag(spark_dot, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(spark_dot, 12, 20);
     lv_obj_set_size(spark_dot, 8, 8);
-    lv_obj_set_style_radius(spark_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
-    lv_obj_set_style_border_color(spark_dot, lv_color_hex(0xC3CDD7), 0);
+    lv_obj_set_style_radius(spark_dot, 0, 0);
+    lv_obj_set_style_bg_color(spark_dot, lv_color_hex(0xBCBCBC), 0);
+    lv_obj_set_style_border_color(spark_dot, lv_color_hex(0xBCBCBC), 0);
     spark_info = ui_label(c, 28, 16, 158, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     spark = ui_spark(c, 192, 6, 139, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
@@ -582,7 +582,7 @@ void ui_status_line(void)
         static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close to the switch",
                                              "Homing 2 of 3: backing off the switch",
                                              "Homing 3 of 3: slow close onto the switch" };
-        ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
+        ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x585858), what[step < 0 ? 0 : step]);
     } else if (m == VALVE_PAUSED) {
         if (!nf)
             ui_strip_action("Switch to\nMANUAL", NULL, paused_manual_event);

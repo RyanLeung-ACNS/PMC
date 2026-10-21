@@ -22,8 +22,8 @@
  * settings > Previous save is the undo.
  * ------------------------------------------------------------------------ */
 
-#define COL_DRAFT  lv_color_hex(0x6A4C93)
-#define COL_GREY   lv_color_hex(0x5B6B7B)
+#define COL_DRAFT  lv_color_hex(0x6844FC)
+#define COL_GREY   lv_color_hex(0x585858)
 #define STEPS_PER_TURN 16512   // 48 steps x 344:1 gearbox
 
 static const int32_t RY[4] = { 48, 104, 160, 216 };
@@ -727,12 +727,12 @@ static void nm_build(lv_obj_t *scr)
     lv_obj_set_style_pad_gap(nm.kb, 6, 0);
     lv_obj_set_style_bg_opa(nm.kb, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(nm.kb, UI_CARD, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(nm.kb, lv_color_hex(0xE3E9EF), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_radius(nm.kb, 6, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(nm.kb, lv_color_hex(0xBCBCBC), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_radius(nm.kb, 0, LV_PART_ITEMS);
     lv_obj_set_style_border_side(nm.kb, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
     lv_obj_set_style_border_width(nm.kb, 2, LV_PART_ITEMS);
     lv_obj_set_style_border_width(nm.kb, 0, LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(nm.kb, lv_color_hex(0xAEB9C4), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(nm.kb, lv_color_hex(0x000000), LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(nm.kb, 0, LV_PART_ITEMS);
     lv_obj_set_style_text_font(nm.kb, &ui_font_16, LV_PART_ITEMS);
     lv_obj_set_style_text_color(nm.kb, UI_TEXT, LV_PART_ITEMS);
@@ -1034,14 +1034,14 @@ static void pg_build(lv_obj_t *scr, const char *title, const tab_t *tabs, int n)
     if (n > 1) {
         // Segmented choice: a grey track, the page shown as a raised white segment.
         pg.seg = ui_card(scr, 10, RY[0], 343, RH);
-        lv_obj_set_style_bg_color(pg.seg, lv_color_hex(0xC3CDD7), 0);
+        lv_obj_set_style_bg_color(pg.seg, lv_color_hex(0xBCBCBC), 0);
         lv_obj_set_style_border_width(pg.seg, 0, 0);
-        lv_obj_set_style_radius(pg.seg, 6, 0);
+        lv_obj_set_style_radius(pg.seg, 0, 0);
         int32_t iw = (343 - 8) / n;
         for (int i = 0; i < n; i++) {
             lv_obj_t *b = ui_card(pg.seg, 4 + i * iw, 4, iw, RH - 8);
             lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_style_radius(b, 4, 0);
+            lv_obj_set_style_radius(b, 0, 0);
             lv_obj_set_style_border_width(b, 0, 0);
             lv_obj_t *l = ui_label(b, 0, 0, iw, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER, tabs[i].label);
             lv_obj_align(l, LV_ALIGN_CENTER, 0, 0);
