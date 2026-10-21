@@ -20,7 +20,6 @@
 #define COL_SP    lv_color_hex(0x505050)
 #define COL_POS   UI_FILL
 #define COL_GRID  lv_color_hex(0xC0C0C0)
-#define COL_SPARK lv_color_hex(0xE0E0E0)
 #define COL_AREA  lv_color_hex(0xD0F0D0)   // valve area on Trend, under the grid
 
 typedef enum { K_P, K_SP, K_V } tkey_t;
@@ -315,7 +314,8 @@ static void spark_draw(lv_event_t *e)
     bool valve = lv_event_get_user_data(e) != NULL;
     lv_area_t a;
     lv_obj_get_coords(o, &a);
-    fill(layer, COL_SPARK, a.x1, a.y1, a.x2, a.y2);
+    // No background: the strip's own (Ryan, 21 Oct: the tinted box looked
+    // out of place).
     scale_t s = { 0, 1, (float)a.y1 + 2, (float)a.y2 - 2, false };
     float lx, ly;
     if (valve) {

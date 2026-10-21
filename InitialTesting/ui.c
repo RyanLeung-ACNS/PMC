@@ -10,6 +10,7 @@
 #include "motor_screen.h"
 #include "fixed.h"
 #include "cfg.h"
+#include "trend.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -363,7 +364,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
-static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
+static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
@@ -500,6 +501,10 @@ static void build_frame(void)
     strip_text = ui_label(strip, 28, 0, 303, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(strip_text, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(strip_text, 4, 0);
+    // The pressure sparkline on the right whenever the strip shows the
+    // status line (Home and the operator screens; Ryan, 21 Oct).
+    strip_spark = ui_spark(strip, 192, 6, 139, 36, false);
+    lv_obj_add_flag(strip_spark, LV_OBJ_FLAG_HIDDEN);
     strip_ok = ui_btn(strip, 279, 4, 60, 40, UI_SECONDARY, "OK", ok_event, NULL);
     strip_act = ui_btn(strip, 239, 4, 100, 40, UI_PRIMARY, "", act_event, NULL);
 
@@ -563,8 +568,8 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_bg_color(strip, b, 0);
     ui_card_alarm(strip, !dim && kind == UI_STRIP_FAULT);   // HUD bracket, red frame on a fault
     show(strip_dot, kind == UI_STRIP_INFO);
-    bool ring = false;
-    if (lv_color_eq(dot, UI_DOT_MODE)) {
+    bool ring = false, is_mode = lv_color_eq(dot, UI_DOT_MODE);
+    if (is_mode) {
         ring = !valve_auto();
         dot = lv_color_hex(0xC0C0C0);
     }
@@ -581,12 +586,20 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
+    bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
     int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
-    int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
+    int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
         lv_obj_set_x(strip_ok, strip_w - 64);
         lv_obj_set_x(strip_act, strip_w - 104);
+        lv_obj_set_x(strip_spark, strip_w - 151);
+    }
+    show(strip_spark, spark);
+    static uint32_t seen = UINT32_MAX;
+    if (spark && trend_seconds() != seen) {   // a new sample: redraw it
+        seen = trend_seconds();
+        lv_obj_invalidate(strip_spark);
     }
     if (lv_obj_get_x(strip_text) != x || lv_obj_get_width(strip_text) != w) {
         lv_obj_set_x(strip_text, x);
@@ -771,6 +784,8 @@ static lv_obj_t *new_screen(void)
 
 void ui_open(const ui_screen_t *s)
 {
+    if (cur == s)   // e.g. the strip's sparkline tapped on Trend
+        return;
     if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
         back_stack[back_n++] = cur;
     open_screen(s);
