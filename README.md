@@ -122,7 +122,7 @@ LVGL heap: 64 KB in CCM plus a 24 KB second pool in main RAM. `PERF?` reports lo
 
 ## Pressure measurement
 
-The Druck output is ratiometric, so the firmware uses the ratio of signal to excitation (mV/V), read by the INA228 with 128 averages over 600 ms (30 cycles of 50 Hz mains, `PMC_PM_MAINS_AVG`), once a second. `cal.c` turns the ratio into pressure. The normal cal is the bench two-point: a pumped-down vacuum point (`CAL VAC`, or Calibrate sensor) and an air point at a barometer reading (`CAL AIR`). Both are read live through the INA228 as wired, so the INA228's loading of the Druck output (the reading is about 5 % low uncalibrated) and its gain and offset sit inside the cal. With no cal saved, the nominal 0 to 100 mV at 10 V is used and the screen says so. The display shows 0.1 mbar; accuracy is set by the Druck (±0.04 % FS, ±0.41 mbar) and the cal points (`UNC?`).
+The Druck output is ratiometric, so the firmware uses the ratio of signal to excitation (mV/V), read by the INA228 with 128 averages (about 0.4 s; `PMC_PM_MAINS_AVG` 1 gives 600 ms, 30 cycles of 50 Hz mains), once a second. `cal.c` turns the ratio into pressure. The normal cal is the bench two-point: a pumped-down vacuum point (`CAL VAC`, or Calibrate sensor) and an air point at a barometer reading (`CAL AIR`). Both are read live through the INA228 as wired, so the INA228's loading of the Druck output (the reading is about 5 % low uncalibrated) and its gain and offset sit inside the cal. With no cal saved, the nominal 0 to 100 mV at 10 V is used and the screen says so. The display shows 0.1 mbar; accuracy is set by the Druck (±0.04 % FS, ±0.41 mbar) and the cal points (`UNC?`).
 
 ## Storage
 
