@@ -77,8 +77,9 @@ static void right(lv_obj_t *l)
  * Valve page
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *p, *v, *go, *fill, *pfill, *btn[8];
+    lv_obj_t *p, *v, *go, *go_card, *go_chev, *fill, *pfill, *btn[8];
     bool jog;                 // a Close or Open hold is moving the valve
+    int go_live;              // Go to card styled as live (1) or flat (0), -1 not yet
 } vp;
 
 static const char *const valve_help =
@@ -150,7 +151,7 @@ static void goto_cb(lv_event_t *e)
 {
     (void)e;
     if (valve_auto() && !valve_motion_blocked()) {
-        ui_manual_ask();   // in AUTO this button is Switch to MANUAL (simulator row 3)
+        ui_manual_ask();   // in AUTO a tap on Go to asks Switch to MANUAL
         return;
     }
     const char *why = why_not_manual();
@@ -225,24 +226,36 @@ static void hold_btn(lv_obj_t *b, bool open)
 static void valve_build(lv_obj_t *scr)
 {
     memset(&vp, 0, sizeof vp);
+    vp.go_live = -1;
     vp.p = reading(scr, 10, 64, "Pressure", "mB", &vp.pfill);
     vp.v = reading(scr, 166, 64, "Valve", "%", &vp.fill);
+    // Go to is the card itself: tinted with a blue underline and a chevron
+    // when a tap opens the keypad, as Home's boxes (Ryan, 21 Oct).
     vp.go = reading(scr, 322, 64, "Go to", "%", NULL);
+    vp.go_card = lv_obj_get_parent(vp.go);
+    lv_obj_add_flag(vp.go_card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(vp.go_card, goto_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_border_side(vp.go_card, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(vp.go_card, UI_BLUE, 0);
+    lv_obj_set_width(vp.go, 110);
+    vp.go_chev = ui_label(vp.go_card, 126, 28, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT, LV_SYMBOL_RIGHT);
 
-    static const char *const row2[4] = { "Close", "-5 %", "+5 %", "Open" };
+    // Row 1: hold to close or open, 1 % steps; row 2: fully close or open
+    // under them, 5 % steps.
+    static const char *const row1[4] = { "Close", "-1 %", "+1 %", "Open" };
     for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = ui_btn(scr, 10 + i * 118, 120, 106, 40, UI_SECONDARY, row2[i],
-                             i == 1 || i == 2 ? step_cb : NULL, (void *)(intptr_t)(i == 1 ? -50 : 50));
+        lv_obj_t *b = ui_btn(scr, 10 + i * 118, 120, 106, 40, UI_SECONDARY, row1[i],
+                             i == 1 || i == 2 ? step_cb : NULL, (void *)(intptr_t)(i == 1 ? -10 : 10));
         if (i == 0 || i == 3) {
             hold_btn(b, i == 3);
-            ui_btn_text(b, row2[i], "hold");
+            ui_btn_text(b, row1[i], "hold");
         }
         vp.btn[i] = b;
     }
-    vp.btn[4] = ui_btn(scr, 10, 168, 106, 40, UI_PRIMARY, "Go to", goto_cb, NULL);
-    vp.btn[5] = ui_btn(scr, 128, 168, 106, 40, UI_SECONDARY, "Fully close", full_cb, NULL);
-    vp.btn[6] = ui_btn(scr, 246, 168, 106, 40, UI_SECONDARY, "Fully open", full_cb, (void *)1);
-    ui_btn(scr, 364, 168, 106, 40, UI_NAV, "Help", help_cb, (void *)valve_help);
+    vp.btn[4] = ui_btn(scr, 128, 168, 106, 40, UI_SECONDARY, "-5 %", step_cb, (void *)(intptr_t)-50);
+    vp.btn[5] = ui_btn(scr, 246, 168, 106, 40, UI_SECONDARY, "+5 %", step_cb, (void *)(intptr_t)50);
+    vp.btn[6] = ui_btn(scr, 10, 168, 106, 40, UI_SECONDARY, "Fully close", full_cb, NULL);
+    vp.btn[7] = ui_btn(scr, 364, 168, 106, 40, UI_SECONDARY, "Fully open", full_cb, (void *)1);
 }
 
 // Valve %, its bar and Go to, at 10 Hz.
@@ -258,9 +271,11 @@ static void valve_fast(void)
     // away from the button without a release: stop the hold.
     if (vp.jog && ui_overlay_open())
         stepper3_stop_ramped();
-    bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
-    ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
-    ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
+    // Where the valve is going (or last went); "--" during a hold, which
+    // has no target, and before homing; "auto" in AUTO.
+    bool have = cal && !(stepper3_busy() && vp.jog);
+    ui_set_text(vp.go, valve_auto() ? "auto" : have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
+    ui_set_color(vp.go, have && !valve_auto() && why_not_manual() == NULL ? UI_TEXT : UI_IDLE);
 }
 
 static void valve_refresh(void)
@@ -272,11 +287,17 @@ static void valve_refresh(void)
     bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     valve_fast();
     bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
-    bool sw = valve_auto();
-    ui_btn_text(vp.btn[4], sw ? "Switch to\nMANUAL" : "Go to", NULL);
-    for (int i = 0; i < 7; i++)
-        if (vp.btn[i])
-            ui_btn_enable(vp.btn[i], i < 4 ? steps : i == 4 && sw ? true : on);
+    for (int i = 0; i < 8; i++)
+        ui_btn_enable(vp.btn[i], i < 6 ? steps : on);
+    // The Go to card: live (tint, underline, chevron) when a tap opens the
+    // keypad; flat otherwise. In AUTO a tap asks Switch to MANUAL.
+    if (on != vp.go_live) {
+        vp.go_live = on;
+        lv_obj_set_style_bg_color(vp.go_card, lv_color_hex(on ? 0xE9F0F6 : 0xFFFFFF), 0);
+        lv_obj_set_style_border_width(vp.go_card, on ? 3 : 0, 0);
+        if (on) lv_obj_remove_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
+        else    lv_obj_add_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
+    }
     if (vp.jog && !stepper3_busy())
         vp.jog = false;
     ui_status_line();
