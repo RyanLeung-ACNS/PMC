@@ -528,10 +528,10 @@ static void home_refresh(void)
     }
 
     ui_status_line();
-    // Idle with nothing to say, or in AUTO (it moves all the time): no
+    // MANUAL (moving too, Ryan 21 Oct) or AUTO with nothing else to say: no
     // strip, so the sparkline card shows, its left half saying the same.
     int32_t q;
-    bool quiet = !valve_question(&q) && ((m == VALVE_MANUAL && !stepper3_busy()) || m == VALVE_AUTO);
+    bool quiet = !valve_question(&q) && (m == VALVE_MANUAL || m == VALVE_AUTO);
     if (quiet)
         ui_strip_set(UI_STRIP_INFO, UI_MUTED, "");
     char t[48], v[16];
@@ -549,6 +549,8 @@ static void home_refresh(void)
         lv_obj_add_flag(spark_dot, LV_OBJ_FLAG_HIDDEN);
     if (m == VALVE_AUTO)
         auto_text(t, sizeof t, true);
+    else if (m == VALVE_MANUAL && stepper3_busy())
+        lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
     else if (m == VALVE_MANUAL)
         lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
     else
