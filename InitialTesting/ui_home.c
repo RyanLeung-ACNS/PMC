@@ -149,7 +149,7 @@ static void bar_set(tile_t *t, int32_t fill)
 static void box_set(tile_t *t, bool active, const char *text)
 {
     lv_obj_t *b = t->box;
-    lv_color_t bg = lv_color_hex(active ? 0xE9F0F6 : 0xEEF2F6);
+    lv_color_t bg = lv_color_hex(active ? 0x1F3A52 : 0x262E36);
     if (!lv_color_eq(lv_obj_get_style_bg_color(b, 0), bg)) {
         lv_obj_set_style_bg_color(b, bg, 0);
         lv_obj_set_style_border_width(b, active ? 3 : 0, 0);
@@ -196,7 +196,7 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     lv_obj_set_pos(t->box, 67, 116);   // wide enough for "100.00" and the chevron
     lv_obj_set_size(t->box, 88, 40);
     lv_obj_set_style_bg_opa(t->box, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(t->box, lv_color_hex(0xEEF2F6), 0);
+    lv_obj_set_style_bg_color(t->box, lv_color_hex(0x262E36), 0);
     lv_obj_set_style_radius(t->box, 4, 0);
     lv_obj_set_style_border_side(t->box, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(t->box, UI_BLUE, 0);
@@ -534,7 +534,7 @@ void ui_status_line(void)
         static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close to the switch",
                                              "Homing 2 of 3: backing off the switch",
                                              "Homing 3 of 3: slow close onto the switch" };
-        ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
+        ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x8E9AA6), what[step < 0 ? 0 : step]);
     } else if (m == VALVE_PAUSED) {
         if (!nf)
             ui_strip_action("Switch to\nMANUAL", NULL, paused_manual_event);

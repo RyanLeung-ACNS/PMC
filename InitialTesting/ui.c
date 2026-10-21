@@ -47,11 +47,11 @@ static void num_font(lv_font_t *f, const lv_font_t *base)
 /* --------------------------------------------------------------------------
  * Styles (STYLE-GUIDE.md section 6)
  * ------------------------------------------------------------------------ */
-#define UI_EDGE    lv_color_hex(0xAEB9C4)
-#define UI_PRESS   lv_color_hex(0xE3E9EF)
-#define UI_DIS_BG  lv_color_hex(0xE9EEF2)
-#define UI_DIS_TX  lv_color_hex(0x9AA4AE)
-#define UI_CHEV    lv_color_hex(0x7B8794)
+#define UI_EDGE    lv_color_hex(0x0B0F13)
+#define UI_PRESS   lv_color_hex(0x2C353E)
+#define UI_DIS_BG  lv_color_hex(0x181E24)
+#define UI_DIS_TX  lv_color_hex(0x56626D)
+#define UI_CHEV    lv_color_hex(0x8E9AA6)
 
 static lv_style_t st_btn, st_btn_pr, st_btn_dis, st_act, st_act_pr, st_act_small,
                   st_red, st_red_pr, st_dark, st_dark_pr, st_card, st_stop_op, st_stop_op_pr;
@@ -83,16 +83,16 @@ static void styles_init(void)
     lv_style_set_text_color(&st_act, lv_color_white());
     lv_style_set_border_width(&st_act, 0);
     lv_style_init(&st_act_pr);
-    lv_style_set_bg_color(&st_act_pr, lv_color_hex(0x24475F));
+    lv_style_set_bg_color(&st_act_pr, lv_color_hex(0x245780));
     lv_style_init(&st_act_small);
-    lv_style_set_text_color(&st_act_small, lv_color_hex(0xD5E2EC));
+    lv_style_set_text_color(&st_act_small, lv_color_hex(0xC8DCEC));
 
     lv_style_init(&st_red);
     lv_style_set_bg_color(&st_red, UI_FAULT);
     lv_style_set_text_color(&st_red, lv_color_white());
     lv_style_set_border_width(&st_red, 0);
     lv_style_init(&st_red_pr);
-    lv_style_set_bg_color(&st_red_pr, lv_color_hex(0xAA1E1E));
+    lv_style_set_bg_color(&st_red_pr, lv_color_hex(0xB83236));
 
     // STOP outside AUTO (no latch): white with a red edge and red word.
     lv_style_init(&st_stop_op);
@@ -103,15 +103,15 @@ static void styles_init(void)
     lv_style_set_border_color(&st_stop_op, UI_FAULT);
     lv_style_set_pad_all(&st_stop_op, -3);      // the word keeps its place
     lv_style_init(&st_stop_op_pr);
-    lv_style_set_bg_color(&st_stop_op_pr, lv_color_hex(0xF6D5D5));
+    lv_style_set_bg_color(&st_stop_op_pr, lv_color_hex(0x3A1E21));
 
     lv_style_init(&st_dark);
-    lv_style_set_bg_color(&st_dark, UI_TEXT);
+    lv_style_set_bg_color(&st_dark, lv_color_hex(0x0B0F13));
     lv_style_set_text_color(&st_dark, lv_color_white());
     lv_style_set_radius(&st_dark, 0);
     lv_style_set_border_width(&st_dark, 0);
     lv_style_init(&st_dark_pr);
-    lv_style_set_bg_color(&st_dark_pr, lv_color_hex(0x3C4856));
+    lv_style_set_bg_color(&st_dark_pr, lv_color_hex(0x2A333C));
 
     lv_style_init(&st_card);
     lv_style_set_bg_opa(&st_card, LV_OPA_COVER);
@@ -421,7 +421,7 @@ static void build_frame(void)
     hdr = plain(frame);
     lv_obj_set_size(hdr, 480, 40);
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(hdr, UI_TEXT, 0);
+    lv_obj_set_style_bg_color(hdr, lv_color_hex(0x0B0F13), 0);
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);    // touches on the header stop here
     fault_rule = plain(hdr);
     lv_obj_set_pos(fault_rule, 0, 36);
@@ -456,7 +456,7 @@ static void build_frame(void)
     lv_obj_set_pos(mode_dot, 460, 15);
     lv_obj_set_size(mode_dot, 10, 10);
     lv_obj_set_style_radius(mode_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_color(mode_dot, lv_color_hex(0xC3CDD7), 0);
+    lv_obj_set_style_border_color(mode_dot, lv_color_hex(0x6E7A86), 0);
     lv_obj_set_style_bg_color(mode_dot, UI_FAULT, 0);
 
     strip = plain(frame);
@@ -523,7 +523,7 @@ void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb)
 
 static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, bool ok, bool act)
 {
-    static const uint32_t bg[] = { 0xFFFFFF, 0xE0E0E0, 0x3F3F3F, 0x000000 };
+    static const uint32_t bg[] = { 0x1E252C, 0xC9D1D9, 0x4A5560, 0x000000 };
     // Under a popup: one fixed grey whatever the kind or what is behind it
     // (opacity let the dim of a pick list or confirm tint it blue).
     bool dim = overlay != NULL;
@@ -550,7 +550,7 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     bool ring = false, is_mode = lv_color_eq(dot, UI_DOT_MODE);
     if (is_mode) {
         ring = !valve_auto();
-        dot = lv_color_hex(0xC3CDD7);
+        dot = lv_color_hex(0x6E7A86);
     }
     if (dim)
         dot = dis_tx;
@@ -673,7 +673,7 @@ static void frame_refresh(void)
     if (kind != dot_kind) {
         dot_kind = kind;
         lv_obj_set_style_bg_opa(mode_dot, kind ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_bg_color(mode_dot, kind == 2 ? UI_FAULT : lv_color_hex(0xC3CDD7), 0);
+        lv_obj_set_style_bg_color(mode_dot, kind == 2 ? UI_FAULT : lv_color_hex(0x6E7A86), 0);
         lv_obj_set_style_border_width(mode_dot, kind ? 0 : 2, 0);
     }
 
@@ -1075,7 +1075,7 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
         lv_obj_set_size(it, i / rows ? 343 - iw : iw, PICK_ROW);
         lv_obj_add_flag(it, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_bg_opa(it, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(it, i == sel ? lv_color_hex(0x3E4C59) : UI_CARD, 0);
+        lv_obj_set_style_bg_color(it, i == sel ? lv_color_hex(0xC9D1D9) : UI_CARD, 0);
         lv_obj_set_style_bg_color(it, UI_TRACK, LV_STATE_PRESSED);
         lv_obj_set_style_border_side(it, i / rows ? LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(it, 1, 0);
@@ -1116,6 +1116,8 @@ void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), cons
     confirm_mid = on_mid;
     lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
     lv_obj_set_style_radius(box, 8, 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(0x4A5560), 0);
     lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_update_layout(t);

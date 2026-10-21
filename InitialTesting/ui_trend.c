@@ -16,11 +16,11 @@
  *   Spark   10 min, one point per 5 s (slot means, see pts_build), one pen, no axes; pressure linear
  *           (log when the window spans more than a decade), valve 0-100 %.
  * ------------------------------------------------------------------------ */
-#define COL_PV    UI_BLUE
-#define COL_SP    lv_color_hex(0x3F3F3F)
+#define COL_PV    lv_color_hex(0x5AA5E0)
+#define COL_SP    lv_color_hex(0x4A5560)
 #define COL_POS   UI_FILL
-#define COL_GRID  lv_color_hex(0xE3E9EF)
-#define COL_AREA  lv_color_hex(0xDCE3EA)   // valve area on Trend, under the grid
+#define COL_GRID  lv_color_hex(0x2C353E)
+#define COL_AREA  lv_color_hex(0x2A343E)   // valve area on Trend, under the grid
 
 typedef enum { K_P, K_SP, K_V } tkey_t;
 
