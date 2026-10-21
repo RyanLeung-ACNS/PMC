@@ -16,7 +16,7 @@
  * Fonts: tabular digits. Every digit takes the width of the widest, so a
  * right-aligned reading does not shift as it changes.
  * ------------------------------------------------------------------------ */
-lv_font_t ui_num_16, ui_num_26, ui_num_40;
+lv_font_t ui_num_16, ui_num_26, ui_num_40, ui_num_48;
 
 static bool num_glyph_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter, uint32_t next)
 {
@@ -561,6 +561,12 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_x(strip_text, x);
         lv_obj_set_width(strip_text, w);
     }
+    // 16 px on one line when it fits, as Home's card; 12 px on two if not.
+    lv_point_t sz;
+    lv_text_get_size(&sz, text, &ui_font_16, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const lv_font_t *f = sz.x <= w ? &ui_font_16 : &ui_font_12;
+    if (lv_obj_get_style_text_font(strip_text, 0) != f)
+        lv_obj_set_style_text_font(strip_text, f, 0);
     ui_set_text(strip_text, text);
     lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
     // Under a popup the strip stays, updating, greyed and without its buttons.
@@ -1259,6 +1265,7 @@ void ui_init(void)
     num_font(&ui_num_16, &ui_font_16);
     num_font(&ui_num_26, &ui_font_26);
     num_font(&ui_num_40, &ui_font_40);
+    num_font(&ui_num_48, &ui_font_48);
     styles_init();
     home_scr = new_screen();
     cur_scr = home_scr;

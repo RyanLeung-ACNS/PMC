@@ -155,7 +155,7 @@ static void box_set(tile_t *t, bool active, const char *text)
         lv_obj_set_style_bg_color(b, bg, 0);
         lv_obj_set_style_border_width(b, active ? 3 : 0, 0);
         lv_obj_set_style_radius(b, 4, 0);
-        lv_obj_set_width(t->box_text, active ? 74 : 84);
+        lv_obj_set_width(t->box_text, active ? 62 : 72);
         if (active) lv_obj_remove_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
         else        lv_obj_add_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
     }
@@ -172,6 +172,22 @@ static void alarm_set(tile_t *t, bool on)
     }
 }
 
+// A Home reading: 48 px if it fits the bar's width, else 40 px; the digits'
+// bottom stays at y 66 either way. font forces one (16 px for "Homing").
+static void reading_set(lv_obj_t *l, const char *text, const lv_font_t *font)
+{
+    if (!font) {
+        lv_point_t sz;
+        lv_text_get_size(&sz, text, &ui_num_48, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        font = sz.x <= BAR_W ? &ui_num_48 : &ui_num_40;
+    }
+    if (lv_obj_get_style_text_font(l, 0) != font) {
+        lv_obj_set_style_text_font(l, font, 0);
+        lv_obj_set_y(l, font == &ui_font_16 ? 34 : 66 - lv_font_get_line_height(font));
+    }
+    ui_set_text(l, text);
+}
+
 static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, const char *unit,
                       const char *sp, bool log, lv_event_cb_t box_cb)
 {
@@ -180,29 +196,29 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     t->tile = ui_card(scr, x, 48, TILE_W, TILE_H);
     ui_label(t->tile, 12, 4, 90, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, cap);
     ui_label(t->tile, 75, 4, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
-    // The reading, 40 px (Ryan 16 Oct: bigger once the sparklines left the
-    // tiles); "1013.2" just fits, right edge on the bar's.
-    t->reading = ui_label(t->tile, 0, 34, 12 + BAR_W, &ui_num_40, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
+    // The reading, right edge on the bar's: 48 px, or 40 px when it would be
+    // wider than the bar ("1013.2", "100.00"); reading_set.
+    t->reading = ui_label(t->tile, 0, 32, 12 + BAR_W, &ui_num_48, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "----");
     t->bar = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->bar);
     lv_obj_remove_flag(t->bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(t->bar, 12, 83);
     lv_obj_set_size(t->bar, BAR_W, 30);
     lv_obj_add_event_cb(t->bar, bar_draw, LV_EVENT_DRAW_MAIN, t);
-    ui_label(t->tile, 12, 128, 60, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, sp);
+    ui_label(t->tile, 12, 128, 50, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, sp);
     t->box = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->box);
     lv_obj_remove_flag(t->box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(t->box, 55, 116);   // wide enough for "100.00" and the chevron
-    lv_obj_set_size(t->box, 100, 40);
+    lv_obj_set_pos(t->box, 67, 116);   // wide enough for "100.00" and the chevron
+    lv_obj_set_size(t->box, 88, 40);
     lv_obj_set_style_bg_opa(t->box, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(t->box, lv_color_hex(0xEEF2F6), 0);
     lv_obj_set_style_radius(t->box, 4, 0);
     lv_obj_set_style_border_side(t->box, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(t->box, UI_BLUE, 0);
     lv_obj_add_event_cb(t->box, box_cb, LV_EVENT_CLICKED, NULL);
-    t->box_text = ui_label(t->box, 4, 11, 84, &ui_num_16, UI_IDLE, LV_TEXT_ALIGN_RIGHT, "");
-    t->box_chev = ui_label(t->box, 82, 12, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT,
+    t->box_text = ui_label(t->box, 4, 11, 72, &ui_num_16, UI_IDLE, LV_TEXT_ALIGN_RIGHT, "");
+    t->box_chev = ui_label(t->box, 70, 12, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT,
                            LV_SYMBOL_RIGHT);
     lv_obj_add_flag(t->box_chev, LV_OBJ_FLAG_HIDDEN);
 }
@@ -455,11 +471,10 @@ static void home_build(lv_obj_t *scr)
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
     // Pressure sparkline in the strip's row, under the frame's strip.
-    // Left half: what the controller is doing; right half: the last 5 min
-    // (Ryan, 21 Oct: shown in AUTO too).
+    // Left half: what the controller is doing, one 16 px line; right half:
+    // the last 5 min (Ryan, 21 Oct: shown in AUTO too).
     lv_obj_t *c = ui_card(scr, 10, 216, 343, 48);
-    spark_info = ui_label(c, 12, 5, 176, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
-    ui_label(c, 12, 27, 176, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "Pressure, mB, 5 min");
+    spark_info = ui_label(c, 12, 14, 176, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     spark = ui_spark(c, 192, 6, 139, 36, false);
     ui_btn(scr, 361, 160, 109, 48, UI_NAV, "Menu", menu_event, NULL);
 }
@@ -471,14 +486,10 @@ static void home_fast(void)
     char buf[16];
     bool cal = valve_calibrated() && m != VALVE_CALIBRATING;
     if (m == VALVE_CALIBRATING) {
-        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_font_16)
-            lv_obj_set_style_text_font(vt.reading, &ui_font_16, 0);
-        ui_set_text(vt.reading, "Homing");
+        reading_set(vt.reading, "Homing", &ui_font_16);
         ui_set_color(vt.reading, UI_TEXT);
     } else {
-        if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
-            lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
-        ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
+        reading_set(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----", NULL);
         ui_set_color(vt.reading, cal ? UI_TEXT : UI_IDLE);
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
@@ -498,7 +509,7 @@ static void home_refresh(void)
 
     // Pressure.
     bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
-    ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
+    reading_set(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----", NULL);
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
     alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02") || valve_fault_is("F-03"));
