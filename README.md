@@ -204,7 +204,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Use saved X % / Home". It is never used without the operator |
 | `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
 | `CTRL SP <mbar>` | Target, kept to 0.1 mbar, 0 to the sensor range (not saved: none at start-up) |
-| `CTRL AUTO` | Start or resume AUTO after the entry checks |
+| `CTRL AUTO` | Start or resume AUTO after the entry checks. While in AUTO one line a second reads `AUTO 4.62 mB, target 4.8, valve 14.20 % to 14.35 %, In band`, in place of the motor status line |
 | `CTRL MAN [<0-100>]` | To MANUAL: the valve ramps down and holds where it stops, then goes to % if given |
 | `PID?` | The control parameters: KP, TI, OUTMIN, DB, KDIR and BAND can be set, the rest are fixed in `ctrl.h` |
 | `PID KP\|TI\|OUTMIN\|DB\|BAND <v>` | Gain (%/mbar, 4.00), integral time (min, 0.25; 0 off), Auto min (%, 14.0), deadband (steps, 8), target band (mbar, 0.10). Live, AUTO included; `CFG SAVE` keeps them |

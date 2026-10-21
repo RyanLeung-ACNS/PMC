@@ -200,11 +200,13 @@ static void bar_width(lv_obj_t *fill, int32_t w)
         lv_obj_set_width(fill, w);
 }
 
-// Reading card: caption, 26 px number right-aligned, optional bar.
-static lv_obj_t *reading(lv_obj_t *scr, int32_t x, int32_t h, const char *cap, lv_obj_t **fill)
+// Reading card: caption left and unit right as on the Home tiles (Ryan,
+// 21 Oct), 26 px number right-aligned, optional bar.
+static lv_obj_t *reading(lv_obj_t *scr, int32_t x, int32_t h, const char *cap, const char *unit, lv_obj_t **fill)
 {
     lv_obj_t *v = ui_info(scr, x, 48, 148, h, cap);
     lv_obj_t *card = lv_obj_get_parent(v);
+    ui_label(card, 10, 5, 128, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
     right(v);
     lv_obj_set_style_text_font(v, &ui_num_26, 0);
     lv_obj_set_y(v, 20);
@@ -223,9 +225,9 @@ static void hold_btn(lv_obj_t *b, bool open)
 static void valve_build(lv_obj_t *scr)
 {
     memset(&vp, 0, sizeof vp);
-    vp.p = reading(scr, 10, 64, "Pressure, mB", &vp.pfill);
-    vp.v = reading(scr, 166, 64, "Valve, %", &vp.fill);
-    vp.go = reading(scr, 322, 64, "Go to, %", NULL);
+    vp.p = reading(scr, 10, 64, "Pressure", "mB", &vp.pfill);
+    vp.v = reading(scr, 166, 64, "Valve", "%", &vp.fill);
+    vp.go = reading(scr, 322, 64, "Go to", "%", NULL);
 
     static const char *const row2[4] = { "Close", "-5 %", "+5 %", "Open" };
     for (int i = 0; i < 4; i++) {

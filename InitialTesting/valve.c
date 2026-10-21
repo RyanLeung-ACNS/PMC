@@ -142,6 +142,8 @@ static int32_t pct10_of(int32_t pos)
     return (int32_t)(((int64_t)pos * 1000 + (pos >= 0 ? pos_max / 2 : -pos_max / 2)) / pos_max);
 }
 
+static int32_t milli_of(int32_t pos);
+
 static const char *pct_text(char *buf, size_t n, int32_t pos)
 {
     return fixed_fmt(buf, n, pct10_of(pos), 1);
@@ -454,6 +456,22 @@ static void auto_step(void)
 
 bool valve_auto(void) { return is_auto(); }
 
+const char *valve_auto_line(void)
+{
+    static char line[128];
+    static const char *const reg[] = { "no reading", "Regulating", "In band", "Stable" };
+    char p[16], sp[16], v[16], to[16];
+    mbar_text(p, sizeof p, pv_mbar, 2);
+    mbar_text(sp, sizeof sp, ctl.sp, 1);
+    fixed_fmt(v, sizeof v, fixed_round(milli_of(stepper3_position()), 1), 2);
+    fixed_fmt(to, sizeof to, fixed_round(milli_of(stepper3_target()), 1), 2);
+    lv_snprintf(line, sizeof line, "%s %s mB, target %s, valve %s %%%s%s%s, %s", valve_mode_name(),
+                pv_ok ? p : "----", sp, v, stepper3_busy() ? " to " : "", stepper3_busy() ? to : "",
+                stepper3_busy() ? " %" : "",
+                mode == VALVE_PAUSED ? "W-02 not settling, valve held" : reg[valve_regulation()]);
+    return line;
+}
+
 bool valve_start_auto(const char **why)
 {
     if (mode == VALVE_AUTO) return true;
@@ -633,7 +651,13 @@ const char *valve_status(void)
 {
     char p[16], f[40];
     faults_text(f, sizeof f);
-    if (calibrated)
+    if (is_auto()) {
+        // No position here: it changes every second in AUTO, and the AUTO
+        // line (valve_auto_line) carries it; this one prints on a change of state.
+        char a[16];
+        lv_snprintf(status_text, sizeof status_text, "Valve: %s @ %s mB%s%s", valve_mode_name(),
+                    mbar_text(a, sizeof a, ctl.sp, 1), f[0] ? ", faults " : "", f);
+    } else if (calibrated)
         lv_snprintf(status_text, sizeof status_text, "Valve: %s, calibrated, %s %% (count %ld of %ld)%s%s%s",
                     valve_mode_name(), pct_text(p, sizeof p, stepper3_position()),
                     (long)stepper3_position(), (long)pos_max, f[0] ? ", faults " : "", f,
