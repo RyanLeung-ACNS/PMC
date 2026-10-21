@@ -88,13 +88,24 @@ bool stepper3_set_position(int32_t p);
 // valve layer uses it while calibrating or with a fault latched.
 void stepper3_lock(const char *why);
 const char *stepper3_locked(void);
-void stepper3_override_cancel(void);
+// Disarms the override; a closing move using it is stopped at once (true).
+bool stepper3_override_cancel(void);
 // Stops at once and switches every coil off.
 void stepper3_off(void);
 
 bool stepper3_busy(void);
 int32_t stepper3_position(void);
 void stepper3_zero(void);
+// Called when the step count stops matching the valve's homing: MOT ZERO,
+// a change of step mode, direction or coil order (from the link, the motor
+// screen or a loaded record). The valve layer clears its homing.
+void stepper3_on_reference_change(void (*cb)(const char *why));
+// Called just before a move starts from rest, before the coils are
+// energised (main loop only). The saved position is withdrawn there; if
+// the callback returns false with *why, the move is refused.
+void stepper3_on_move_start(bool (*cb)(const char **why));
+// Why the last refused goto or move was refused.
+const char *stepper3_refusal(void);
 stepper3_stop_t stepper3_last_stop(void);
 // The last move started: where from and how long it took (so far, while
 // it runs). False if none since power-up.

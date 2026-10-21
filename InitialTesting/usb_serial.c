@@ -1,3 +1,10 @@
+#include "pmc_config.h"
+
+// USB build only: in the Ethernet build link.c uses ethlink.c, and any
+// TinyUSB reference here would pull in the whole USB stack (see
+// tinyusb_cdc_device.c).
+#if !PMC_LINK_ETHERNET
+
 #include <stdarg.h>
 #include "lvgl.h"  // lv_vsnprintf: avoids pulling in newlib printf
 #include <string.h>
@@ -79,6 +86,13 @@ const char *usb_serial_status(void)
     if (!tud_cdc_connected())
         return "USB: enumerated, port closed (no DTR)";
     return "USB: port open";
+}
+
+size_t usb_serial_tx_room(void)
+{
+    if (!tud_mounted())
+        return (size_t)-1;
+    return tud_cdc_write_available();
 }
 
 void usb_serial_printf(const char *fmt, ...)
@@ -223,3 +237,5 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
     return desc_str;
 }
+
+#endif // !PMC_LINK_ETHERNET

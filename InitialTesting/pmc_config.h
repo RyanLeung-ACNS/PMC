@@ -18,8 +18,15 @@
 // not asked for; it moves the excitation 9-11 V and puts it back.
 #define PMC_PM_DIAG       1
 
+// INA228 averaging window. 1: shunt 2074 us, bus 540 us, temperature
+// 2074 us, 128 averages = 600.06 ms, 30.00 cycles of 50 Hz mains, so mains
+// pickup averages out. 0: the old 1052 us each x128 = 404 ms (20.2 cycles).
+// Redo CAL VAC, CAL AIR and CAL SAVE after changing it: the Druck output
+// loading makes the shunt reading depend slightly on conversion time.
+#define PMC_PM_MAINS_AVG  1
+
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.9.18"
+#define PMC_FW_VERSION    "0.10.21"
 
 // 1 shows the +/- mbar uncertainty under the unit; UNC? works either way.
 #define PMC_SHOW_UNCERTAINTY 0

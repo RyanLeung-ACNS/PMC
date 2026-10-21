@@ -19,7 +19,7 @@
 static const char *why_no_steps(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
-    if (valve_mode() == VALVE_CALIBRATING) return "Calibrating: STOP to cancel";
+    if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
     return NULL;
 }
 
@@ -27,7 +27,7 @@ static const char *why_not_manual(void)
 {
     const char *why = why_no_steps();
     if (why) return why;
-    if (valve_mode() != VALVE_MANUAL) return "Calibrate the valve first";
+    if (valve_mode() != VALVE_MANUAL) return "Home the valve first";
     return NULL;
 }
 
@@ -85,13 +85,14 @@ static const char *const valve_help =
     "-5 %, +5 %: step from where the valve is going.\n"
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
-    "Moves only with no fault. Before a calibration Close, Open, -5 % and +5 % still move, by steps "
-    "(5 % of the travel setting); Go to, Fully close and Fully open need the calibration.\n"
+    "Moves only with no fault. Before homing Close, Open, -5 % and +5 % still move, by steps "
+    "(5 % of the travel setting); Go to, Fully close and Fully open need the valve homed.\n"
     "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
 static bool vp_goto(int32_t pct10)
 {
+    vp.jog = false;   // a new move has its own target (jog_press sets it again)
     const char *why = why_not_manual();
     if (!why && pct10 < valve_pct10() && limit_open_now())
         why = "Limit switch pressed, cannot close";
@@ -111,25 +112,30 @@ static void jog_press(lv_event_t *e)
         vp.jog = vp_goto(open ? 1000 : 0);
 }
 
+// The hold stays marked until the ramp-down ends (valve_refresh clears it):
+// the move's target is still 0 or 100 %, and Go to would show it meanwhile.
 static void jog_release(lv_event_t *e)
 {
     (void)e;
     if (vp.jog)
         stepper3_stop_ramped();
-    vp.jog = false;
 }
 
 static void step_cb(lv_event_t *e)
 {
     int32_t d = (int32_t)(intptr_t)lv_event_get_user_data(e);
+    bool jog = vp.jog;
+    vp.jog = false;   // a new move has its own target
     if (valve_mode() == VALVE_NOT_CAL)
         vp_steps(d);
     else
-        vp_goto((stepper3_busy() ? valve_target_pct10() : valve_pct10()) + d);
+        // From where a move will end; a hold's end (0 or 100 %) is not one.
+        vp_goto((stepper3_busy() && !jog ? valve_target_pct10() : valve_pct10()) + d);
 }
 
 static bool goto_set(int32_t v100, const char **why)
 {
+    vp.jog = false;   // a new move has its own target
     if (!valve_goto_pct100(v100, why)) {
         *why = why_not_manual();
         if (!*why)
@@ -164,7 +170,7 @@ static void full_cb(lv_event_t *e)
 
 static void help_cb(lv_event_t *e)
 {
-    ui_text_view(lv_event_get_user_data(e) == valve_help ? "Valve" : "Calibrate valve",
+    ui_text_view(lv_event_get_user_data(e) == valve_help ? "Valve" : "Valve homing",
                  lv_event_get_user_data(e));
 }
 
@@ -241,6 +247,10 @@ static void valve_fast(void)
     ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
     int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
     bar_width(vp.fill, p * 128 / 10000);
+    // A dialog over a hold (the switch question, a fault) takes the touch
+    // away from the button without a release: stop the hold.
+    if (vp.jog && ui_overlay_open())
+        stepper3_stop_ramped();
     bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
     ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
@@ -279,13 +289,13 @@ static const char *const calib_help =
     "Motor, steps counts the motor as it moves; Time counts up, then shows how long it took.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
-    "reset the fault, calibrate again.";
+    "reset the fault, home again.";
 
 static void start_cb(lv_event_t *e)
 {
     (void)e;
     if (valve_mode() == VALVE_CALIBRATING)
-        ui_msg("Calibrating: STOP to cancel");
+        ui_msg("Homing: STOP to cancel");
     else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
@@ -306,19 +316,28 @@ static void timer_deleted(lv_event_t *e)
 
 static void calib_build(lv_obj_t *scr)
 {
-    cp.state = ui_info(scr, 10, 48, 226, 48, "Valve calibration");
+    cp.state = ui_info(scr, 10, 48, 226, 48, "Homing");
     cp.v = ui_info(scr, 244, 48, 109, 48, "Motor, steps");
     right(cp.v);
-    cp.last = ui_info(scr, 10, 104, 226, 48, "Last calibrated");   // "15/10/26 14:28"
+    cp.last = ui_info(scr, 10, 104, 226, 48, "Last homed");   // "15/10/26 14:28"
     cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
-    cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start calibration", start_cb, NULL);
-    // The three steps; the one running is filled dark (Ryan, 16 Oct).
+    cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start homing", start_cb, NULL);
+    // The three steps as one card split in three, the one running filled
+    // dark (Ryan, 16 Oct: the row should read as one sequence).
     static const char *const cap[3] = { "1 Fast close", "2 Back off", "3 Slow close" };
+    lv_obj_t *steps = ui_card(scr, 10, 160, 343, 48);
+    lv_obj_set_style_clip_corner(steps, true, 0);
     for (int i = 0; i < 3; i++) {
-        cp.tval[i] = ui_info(scr, 10 + i * 117, 160, 109, 48, cap[i]);
+        cp.tval[i] = ui_info(steps, i * 114 + (i > 1), 0, i == 1 ? 115 : 114, 48, cap[i]);
         cp.tile[i] = lv_obj_get_parent(cp.tval[i]);
         cp.tcap[i] = lv_obj_get_child(cp.tile[i], 0);
+        lv_obj_set_style_radius(cp.tile[i], 0, 0);
+        if (i) {
+            lv_obj_set_style_border_side(cp.tile[i], LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_width(cp.tile[i], 1, 0);
+            lv_obj_set_style_border_color(cp.tile[i], UI_TICK, 0);
+        }
     }
     // Time into the calibration, then how long the last one took.
     cp.time = ui_info(scr, 361, 160, 109, 48, "Time taken");
@@ -357,7 +376,7 @@ static void calib_refresh(void)
     if (calib)
         ui_set_text(cp.state, doing[step < 0 ? 0 : step]);
     else
-        ui_set_text(cp.state, valve_calibrated() ? "Calibrated" : "Not calibrated");
+        ui_set_text(cp.state, valve_calibrated() ? "Homed" : "Not homed");
     // Done after a calibration this power-up, not after Use saved position.
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
@@ -378,12 +397,12 @@ static void calib_refresh(void)
     } else {
         ui_set_text(cp.last, "Not since power-up");
     }
-    ui_btn_text(cp.start, calib ? "Calibrating" : "Start calibration", NULL);
+    ui_btn_text(cp.start, calib ? "Homing" : "Start homing", NULL);
     ui_btn_enable(cp.start, !calib && !valve_motion_blocked());
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Calibrate valve", calib_build, calib_refresh, calib_fast };
+const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log
@@ -412,16 +431,16 @@ static const fault_help_t fault_help[] = {
       "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
-    { "F-07", "Calibrating, the valve closed 1.1 x full travel without the limit switch.",
-      "Stopped. The valve is not calibrated.",
+    { "F-07", "Homing, the valve closed 1.1 x full travel without the limit switch.",
+      "Stopped. The valve is not homed.",
       "The switch and its wire, and that the valve turns.",
-      "Any time. Then calibrate again." },
+      "Any time. Then home again." },
     { "F-09", "The limit switch stayed pressed after the valve moved off it.",
-      "Stopped. The valve is not calibrated.",
+      "Stopped. The valve is not homed.",
       "The switch is not stuck (ice) and its wire is not broken.",
-      "Any time. Then calibrate again." },
+      "Any time. Then home again." },
     { "F-13", "A move took longer than its distance at the set rate, plus 2 s.",
-      "Stopped the valve and holds it. Calibration kept.",
+      "Stopped the valve and holds it. Homing kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
     { "F-12", "STOP was pressed in AUTO, or CTRL STOP sent.",
@@ -440,7 +459,7 @@ static const fault_help_t *help_for(const char *tag)
 
 static const char *mode_word(valve_mode_t m)
 {
-    return m == VALVE_CALIBRATING ? "CALIBRATING" : m == VALVE_MANUAL ? "MANUAL" : "NOT CALIBRATED";
+    return m == VALVE_CALIBRATING ? "HOMING" : m == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
 }
 
 static void detail_fill(void)

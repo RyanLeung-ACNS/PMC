@@ -33,6 +33,7 @@
 #include "limit.h"
 #include "sense.h"
 #include "valvepos.h"
+#include "trend.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -89,6 +90,7 @@ static const char *const help_valve[] = {
     "Valve (nothing moves at boot; VALVE CAL first):",
     "  VALVE?                     mode, position, settings, switch question",
     "  VALVE CAL                  calibrate to the closed switch (0 %)",
+    "  VALVE CLOSED               take the valve as closed (0 %) where it stands",
     "  VALVE GOTO <0-100>         go to % open, one decimal",
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
@@ -105,6 +107,7 @@ static const char *const help_sys[] = {
     "  UNC?                       pressure uncertainty budget",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+    "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
 #if PMC_PM_DIAG
     "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
 #endif
@@ -180,7 +183,14 @@ void board_init()
     lv_init();
     // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
     // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
+#if PMC_LINK_ETHERNET
+    // 16 KB in the Ethernet build, whose network buffers need the SRAM: 80 KB
+    // of LVGL heap in all, and the host previews peak at about 56 KB of it
+    // (with 64-bit pointers; less on the board).
+    static uint8_t lv_pool2[16 * 1024] __attribute__((aligned(8)));
+#else
     static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
+#endif
     lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
     lv_port_disp_init();
     lv_port_indev_init();
@@ -277,6 +287,7 @@ int main(void)
         stepper3_poll();
         valve_task();
         valvepos_task();
+        trend_task();
         if (lv_tick_elaps(sense_ms) >= 1000) {
             sense_ms += 1000;
             if (lv_tick_elaps(sense_ms) >= 1000)   // fell behind: no catch-up burst
@@ -286,7 +297,7 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
             !limit_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
