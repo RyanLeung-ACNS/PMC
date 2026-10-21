@@ -187,9 +187,13 @@ static lv_obj_t *thin_bar(lv_obj_t *card, int32_t y)
 {
     lv_obj_t *track = ui_card(card, 10, y, 128, 3);
     lv_obj_set_style_radius(track, 0, 0);
+    lv_obj_set_style_border_width(track, 0, 0);   // a bar, not a HUD card
+    lv_obj_set_style_pad_all(track, 0, 0);
     lv_obj_set_style_bg_color(track, UI_TRACK, 0);
     lv_obj_t *fill = ui_card(track, 0, 0, 0, 3);
     lv_obj_set_style_radius(fill, 0, 0);
+    lv_obj_set_style_border_width(fill, 0, 0);
+    lv_obj_set_style_pad_all(fill, 0, 0);
     lv_obj_set_style_bg_color(fill, UI_FILL, 0);
     return fill;
 }

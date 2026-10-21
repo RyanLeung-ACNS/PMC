@@ -17,11 +17,11 @@
  *           (log when the window spans more than a decade), valve 0-100 %.
  * ------------------------------------------------------------------------ */
 #define COL_PV    UI_BLUE
-#define COL_SP    lv_color_hex(0x585858)
+#define COL_SP    lv_color_hex(0x505050)
 #define COL_POS   UI_FILL
-#define COL_GRID  lv_color_hex(0xBCBCBC)
-#define COL_SPARK lv_color_hex(0xDCDCDC)
-#define COL_AREA  lv_color_hex(0xA4E4FC)   // valve area on Trend, under the grid
+#define COL_GRID  lv_color_hex(0xC0C0C0)
+#define COL_SPARK lv_color_hex(0xE0E0E0)
+#define COL_AREA  lv_color_hex(0xD0F0D0)   // valve area on Trend, under the grid
 
 typedef enum { K_P, K_SP, K_V } tkey_t;
 

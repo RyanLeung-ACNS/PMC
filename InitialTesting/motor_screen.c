@@ -21,17 +21,17 @@
  * Buttons act on press, as the main screen tabs do. Each action is echoed on
  * the link as "MOT screen: ..." so a terminal log shows what was done.
  */
-#define COL_HEADER   lv_color_hex(0x000000)
-#define COL_BG       lv_color_hex(0xA4E4FC)
+#define COL_HEADER   lv_color_hex(0x202020)
+#define COL_BG       lv_color_hex(0xF8F8F8)
 #define COL_CARD     lv_color_white()
-#define COL_TEXT     lv_color_hex(0x000000)
-#define COL_MUTED    lv_color_hex(0x585858)
-#define COL_BTN      lv_color_hex(0xFCFCFC)
-#define COL_BTN_DOWN lv_color_hex(0xBCBCBC)
-#define COL_OK       lv_color_hex(0x00A800)
-#define COL_FAULT    lv_color_hex(0xD82800)
-#define COL_WARN     lv_color_hex(0xF87800)
-#define COL_IDLE     lv_color_hex(0x7C7C7C)
+#define COL_TEXT     lv_color_hex(0x202020)
+#define COL_MUTED    lv_color_hex(0x505050)
+#define COL_BTN      lv_color_hex(0xFFFFFF)
+#define COL_BTN_DOWN lv_color_hex(0xC0C0C0)
+#define COL_OK       lv_color_hex(0x48B848)
+#define COL_FAULT    lv_color_hex(0xE04030)
+#define COL_WARN     lv_color_hex(0xF08020)
+#define COL_IDLE     lv_color_hex(0x808080)
 
 static lv_obj_t *screen;
 static lv_timer_t *refresh_timer;
@@ -420,18 +420,20 @@ void motor_screen_init(void (*go_back)(void))
     lv_obj_remove_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(hdr, 0, 0);
     lv_obj_set_size(hdr, 480, 30);
-    lv_obj_set_style_bg_color(hdr, COL_HEADER, 0);
+    lv_obj_set_style_bg_color(hdr, COL_BG, 0);    // white with a black rule, as the other screens
     lv_obj_set_style_radius(hdr, 0, 0);
-    lv_obj_set_style_border_width(hdr, 0, 0);
+    lv_obj_set_style_border_width(hdr, 2, 0);
+    lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(hdr, COL_TEXT, 0);
     lv_obj_set_style_pad_all(hdr, 0, 0);
     // Close (a cross, Ryan 16 Oct): back to Settings.
     lv_obj_t *back = make_button(hdr, 0, 0, 48, 30, LV_SYMBOL_CLOSE, back_event, 0);
     lv_obj_set_style_radius(back, 0, 0);
-    lv_obj_set_style_bg_color(back, COL_HEADER, 0);
-    lv_obj_set_style_border_color(back, COL_HEADER, 0);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x585858), LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(back, lv_color_white(), 0);
-    lv_obj_t *title = make_label(hdr, "Motor, engineering", lv_color_white());
+    lv_obj_set_style_bg_color(back, COL_BG, 0);
+    lv_obj_set_style_border_width(back, 0, 0);
+    lv_obj_set_style_bg_color(back, COL_BTN_DOWN, LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(back, COL_TEXT, 0);
+    lv_obj_t *title = make_label(hdr, "Motor, engineering", COL_TEXT);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 60, 0);
     state_label = make_label(hdr, "", COL_IDLE);
     lv_obj_align(state_label, LV_ALIGN_RIGHT_MID, -10, 0);
@@ -457,7 +459,7 @@ void motor_screen_init(void (*go_back)(void))
     lv_obj_t *stop = make_button(mc, 8, 92, 206, 32, "STOP", stop_event, 0);
     lv_obj_set_style_bg_color(stop, COL_FAULT, 0);
     lv_obj_set_style_border_color(stop, COL_FAULT, 0);
-    lv_obj_set_style_bg_color(stop, lv_color_hex(0x881400), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(stop, lv_color_hex(0xA02818), LV_STATE_PRESSED);
     lv_obj_set_style_text_color(stop, lv_color_white(), 0);
 
     // Right: settings.

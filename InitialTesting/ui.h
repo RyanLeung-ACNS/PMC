@@ -30,21 +30,21 @@ LV_FONT_DECLARE(ui_font_40)
 extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 
 // Colour roles (STYLE-GUIDE.md section 3).
-#define UI_BG      lv_color_hex(0xA4E4FC)
-#define UI_CARD    lv_color_hex(0xFCFCFC)
-#define UI_TEXT    lv_color_hex(0x000000)
-#define UI_MUTED   lv_color_hex(0x585858)
+#define UI_BG      lv_color_hex(0xF8F8F8)
+#define UI_CARD    lv_color_hex(0xFFFFFF)
+#define UI_TEXT    lv_color_hex(0x202020)
+#define UI_MUTED   lv_color_hex(0x505050)
 // ui_strip_set's dot drawn as the header's mode dot: filled grey in AUTO,
 // a grey ring otherwise (the status line, as Home's card).
 #define UI_DOT_MODE lv_color_hex(0x010203)
-#define UI_IDLE    lv_color_hex(0x7C7C7C)
-#define UI_FAULT   lv_color_hex(0xD82800)
-#define UI_BLUE    lv_color_hex(0x0058F8)
-#define UI_WARN    lv_color_hex(0x585858)
-#define UI_TRACK   lv_color_hex(0xDCDCDC)
-#define UI_FILL    lv_color_hex(0x7C7C7C)
-#define UI_TICK    lv_color_hex(0xBCBCBC)
-#define UI_OK      lv_color_hex(0x00A800)   // AUTO status dot (simulator COL.ok)
+#define UI_IDLE    lv_color_hex(0x808080)
+#define UI_FAULT   lv_color_hex(0xE04030)
+#define UI_BLUE    lv_color_hex(0x3070C8)
+#define UI_WARN    lv_color_hex(0x505050)
+#define UI_TRACK   lv_color_hex(0xE0E0E0)
+#define UI_FILL    lv_color_hex(0x48B848)   // HP-bar green
+#define UI_TICK    lv_color_hex(0xC0C0C0)
+#define UI_OK      lv_color_hex(0x48B848)   // AUTO status dot (simulator COL.ok)
 
 typedef enum { UI_SECONDARY, UI_PRIMARY, UI_NAV, UI_RED, UI_DARK } ui_btn_kind_t;
 
@@ -58,6 +58,8 @@ void ui_btn_enable(lv_obj_t *btn, bool on);
 bool ui_btn_disabled(lv_event_t *e);
 
 lv_obj_t *ui_card(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h);
+// A card's edge: the HUD bracket (left and bottom), or a full red frame on an alarm.
+void ui_card_alarm(lv_obj_t *card, bool on);
 lv_obj_t *ui_label(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, const lv_font_t *font,
                    lv_color_t color, lv_text_align_t align, const char *text);
 // Changes the text or colour only if different (no redraw otherwise).

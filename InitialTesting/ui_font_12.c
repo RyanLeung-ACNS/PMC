@@ -1,4 +1,4 @@
-/* Spleen 6x12 (BSD 2-clause, Frederic Cambus), lv_font_conv 1.5.3, 1 bpp for the 8-bit look. ASCII, degree, plus-minus, micro; en dash, bullet and LV_SYMBOL glyphs from the fallback. */
+/* Spleen 6x12 (BSD 2-clause, Frederic Cambus), lv_font_conv 1.5.3, 1 bpp for the Pokemon (Game Boy) look. ASCII, degree, plus-minus, micro; en dash, bullet and LV_SYMBOL glyphs from the fallback. */
 /*******************************************************************************
  * Size: 12 px
  * Bpp: 1
@@ -483,13 +483,24 @@ extern const lv_font_t lv_font_montserrat_12;
  *  PUBLIC FONT
  *----------------*/
 
+/* Pokemon style: captions in capitals. Lower case letters take the upper
+ * case glyphs; the label text itself is unchanged. */
+static bool caps_glyph_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter, uint32_t next)
+{
+    // m stays small before B or V, so mB and mV/V keep their meaning.
+    bool unit = letter == 'm' && (next == 'B' || next == 'V');
+    if (letter >= 'a' && letter <= 'z' && !unit) letter -= 'a' - 'A';
+    if (next >= 'a' && next <= 'z') next -= 'a' - 'A';
+    return lv_font_get_glyph_dsc_fmt_txt(font, dsc, letter, next);
+}
+
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
 const lv_font_t ui_font_12 = {
 #else
 lv_font_t ui_font_12 = {
 #endif
-    .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
+    .get_glyph_dsc = caps_glyph_dsc,                   /*Capitals only, as Pokemon Red and Blue*/    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/
     .line_height = 12,          /*The maximum line height required by the font*/
     .base_line = 3,             /*Baseline measured from the bottom of the line*/
