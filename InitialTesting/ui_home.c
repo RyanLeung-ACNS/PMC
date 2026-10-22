@@ -123,7 +123,7 @@ static void bar_draw(lv_event_t *e)
         const char *s = t->log ? plab[k] : k == 1 ? NULL : vlab[k];
         if (!s)
             continue;
-        lv_area_t l = { a.x1 + x - 20, y2 + 3, a.x1 + x + 20, y2 + 17 };
+        lv_area_t l = { a.x1 + x - 20, y2 + 5, a.x1 + x + 20, y2 + 19 };
         text.align = LV_TEXT_ALIGN_CENTER;
         if (!t->log && k == 0) { l.x1 = a.x1; l.x2 = a.x1 + 40; text.align = LV_TEXT_ALIGN_LEFT; }
         if (!t->log && k == 2) { l.x1 = a.x2 - 40; l.x2 = a.x2; text.align = LV_TEXT_ALIGN_RIGHT; }
@@ -132,7 +132,8 @@ static void bar_draw(lv_event_t *e)
     }
     if (t->fill >= 0) {
         int32_t x = t->fill - 1 < 0 ? 0 : t->fill - 1 > BAR_W - 3 ? BAR_W - 3 : t->fill - 1;
-        lv_area_t mark = { a.x1 + x, y1 - 3, a.x1 + x + 2, y1 + 10 };
+        // 2 px above the track and 1 below, clear of the axis labels (Ryan, 22 Oct).
+        lv_area_t mark = { a.x1 + x, y1 - 2, a.x1 + x + 2, y2 + 1 };
         r.bg_color = UI_TEXT;
         lv_draw_rect(layer, &r, &mark);
     }
@@ -186,7 +187,7 @@ static void make_tile(lv_obj_t *scr, tile_t *t, int32_t x, const char *cap, cons
     t->bar = lv_obj_create(t->tile);
     lv_obj_remove_style_all(t->bar);
     lv_obj_remove_flag(t->bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_pos(t->bar, 12, 83);
+    lv_obj_set_pos(t->bar, 12, 76);   // 14 px from the digits, as the caption is above them
     lv_obj_set_size(t->bar, BAR_W, 30);
     lv_obj_add_event_cb(t->bar, bar_draw, LV_EVENT_DRAW_MAIN, t);
     ui_label(t->tile, 12, 128, 50, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, sp);
@@ -459,7 +460,7 @@ static void home_fast(void)
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
             lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
-        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : cal ? UI_MUTED : UI_IDLE);   // mid grey in AUTO (Ryan, 22 Oct)
+        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "auto" (Ryan, 22 Oct)
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
     bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
