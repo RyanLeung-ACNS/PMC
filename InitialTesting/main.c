@@ -98,7 +98,7 @@ static const char *const help_valve[] = {
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
     "  CTRL STOP                  stop now (latches F-12 in AUTO)",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
-    "  EVT? [1-200]               last events (default 20)",
+    "  EVT? [1-100]               last events (default 20)",
 };
 static const char *const help_auto[] = {
     "AUTO (pressure control; the valve homed, no fault, a target set):",

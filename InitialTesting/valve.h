@@ -60,7 +60,7 @@
  *   CTRL STOP                    stop now, cancel calibration (F-12 in AUTO)
  *   CTRL RESET                   clear latches whose cause has gone
  *   CTRL?                        latched faults, highest priority first
- *   EVT? [n]                     the last n events (default 20, 200 kept)
+ *   EVT? [n]                     the last n events (default 20, 100 kept)
  * Each event is also sent when it happens as "EVT <s> <tag> <text>".
  */
 
@@ -142,7 +142,7 @@ typedef struct {
 } valve_fault_t;
 bool valve_fault_get(int i, valve_fault_t *f);
 
-// Event log: i = 0 is the newest, below valve_event_count() (up to 200).
+// Event log: i = 0 is the newest, below valve_event_count() (up to 100).
 int valve_event_count(void);
 uint32_t valve_event_total(void);                // since boot
 bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **text);

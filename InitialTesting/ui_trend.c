@@ -34,7 +34,7 @@ static int32_t val(const trend_pt_t *q, tkey_t k) { return k == K_P ? q->p : k =
 // The pressure pen draws each slot through its first sample, the two either
 // side of its largest change and its last, so a step draws upright, not as
 // a slope across the slot (Ryan, 21 Oct); lo and hi set the scale.
-#define PTS_MAX 160
+#define PTS_MAX 128   // the most any range plots is 121 (win / slot + 1)
 static struct {
     float age;            // seconds before the newest sample
     int32_t v[3];         // K_P, K_SP, K_V means, or TREND_NONE

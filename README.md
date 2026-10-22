@@ -77,7 +77,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `sense.c` | The once-a-second read, DATA and status lines |
 | `limit.c` | Limit switch input: a trip counts at once, the release is debounced (20 ms) |
 | `stepper3.c` | Step sequences (wave, full, half), ramps, absolute moves with retarget, the limit stop, F-13 timeout |
-| `valve.c` | Modes (NOT HOMED, HOMING, MANUAL, AUTO, AUTO PAUSED), homing, % position, STOP, fault latches, the event log (200 kept), runs AUTO |
+| `valve.c` | Modes (NOT HOMED, HOMING, MANUAL, AUTO, AUTO PAUSED), homing, % position, STOP, fault latches, the event log (100 kept), runs AUTO |
 | `ctrl.c` | AUTO control step, ported from the simulator: PI, anti-windup, deadband, response monitor, F-02 and W-02 checks (no hardware calls; `tools/ctrl-test` runs it on a PC) |
 | `valvepos.c` | Saves the step count at standstill and every 2 s while moving, so a restart can offer it |
 | `cfg.c` | Settings record in serial flash, two sectors in turn, CRC32, read back before it counts |
@@ -212,7 +212,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `CTRL STOP` | Stop now; in AUTO it latches F-12. Cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
-| `EVT? [1-200]` | The last events (default 20), sent a line at a time as the link has room. Each event is also sent as it happens: `EVT <s> <tag> <text>` |
+| `EVT? [1-100]` | The last events (default 20), sent a line at a time as the link has room. Each event is also sent as it happens: `EVT <s> <tag> <text>` |
 
 Faults latch until `CTRL RESET`: F-01 no Druck signal, F-03 excitation outside 9.5 to 10.5 V, F-07 switch not found while homing, F-09 switch still pressed after moving off it, F-10 no pressure response, F-16 and F-17 pressure moving the wrong way, F-02 above the sensor range (AUTO only), F-13 motion timeout, F-12 STOP in AUTO. All but F-01, F-03 and F-02 stop the motor and refuse VALVE and MOT moves; from 0.9.10 the sensor faults do not, so the valve can be moved and homed with no Druck connected. F-01, F-03 and F-02 only reset once the cause has gone. In AUTO, VALVE and MOT moves, homing and the valve settings answer "Switch to MANUAL first" (`CTRL MAN`).
 

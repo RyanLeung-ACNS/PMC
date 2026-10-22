@@ -48,9 +48,10 @@ _Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
 #define EXC_MAX_MV    10500
 
 /* --------------------------------------------------------------------------
- * Event log: 200 in RAM, each also sent as an EVT line.
+ * Event log: 100 in RAM, each also sent as an EVT line (200 to 0.11.17;
+ * the 10 KB went to the draw buffer, display_lvgl.c).
  * ------------------------------------------------------------------------ */
-#define EVT_N 200
+#define EVT_N 100
 typedef struct {
     uint32_t t_ms;
     char tag[6];
