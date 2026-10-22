@@ -535,32 +535,33 @@ void ui_status_line(void)
         char t[64], v[16];
         lv_snprintf(t, sizeof t, "W-01 Limit switch pressed at %s %%",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
-        ui_strip_set(UI_STRIP_WARN, UI_IDLE, t);
+        ui_strip_set(UI_STRIP_WARN, NULL, t);
     } else if (m == VALVE_NOT_CAL) {
-        ui_strip_set(UI_STRIP_PROMPT, UI_IDLE, "Valve not homed");
+        // A plain info line with the valve icon, as the others (Ryan, 22 Oct).
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_VALVE, "Valve not homed");
     } else if (m == VALVE_CALIBRATING) {
         static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close to the switch",
                                              "Homing 2 of 3: backing off the switch",
                                              "Homing 3 of 3: slow close onto the switch" };
-        ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
+        ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
     } else if (m == VALVE_MANUAL && valve_w02()) {
         // No PAUSED state (Ryan, 22 Oct): W-02 drops to MANUAL; shown until OK.
         if (!nf)
             ui_strip_action("OK", NULL, w02_ok_event);
-        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling: switched to MANUAL, valve idle");
+        ui_strip_set(UI_STRIP_WARN, NULL, "W-02 Not settling: switched to MANUAL, valve idle");
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];
-        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, auto_text(t, sizeof t, true));
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, auto_text(t, sizeof t, true));
     } else if (stepper3_busy()) {
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
-        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, t);
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
         // Idle: where the valve is, nothing alarming (Ryan, 16 Oct).
         char t[32], v[16];
         lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
-        ui_strip_set(UI_STRIP_INFO, UI_DOT_MODE, t);
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     }
 }
 

@@ -273,9 +273,10 @@ static void valve_fast(void)
     if (vp.jog && ui_overlay_open())
         stepper3_stop_ramped();
     // Where the valve is going (or last went); "--" during a hold, which
-    // has no target, and before homing; "AUTO" in AUTO.
+    // has no target, and before homing. In AUTO the position AUTO is
+    // sending it to, greyed (Ryan, 22 Oct; was "AUTO").
     bool have = cal && !(stepper3_busy() && vp.jog);
-    ui_set_text(vp.go, valve_auto() ? "AUTO" : have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
+    ui_set_text(vp.go, have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, have && !valve_auto() && why_not_manual() == NULL ? UI_TEXT : UI_IDLE);
 }
 
@@ -756,7 +757,7 @@ static void faults_refresh(void)
     char t[48];
     int n = valve_fault_count();
     lv_snprintf(t, sizeof t, n ? "%d latched. Tap one for detail." : "No faults latched", n);
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
+    ui_strip_set(UI_STRIP_INFO, n ? LV_SYMBOL_WARNING : LV_SYMBOL_OK, t);
 }
 
 const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refresh, NULL };
@@ -841,7 +842,7 @@ static void diag_refresh(void)
     char t[16];
     lv_snprintf(buf, sizeof buf, "Firmware %s. Board %s \xC2\xB0" "C. Link %s.", PMC_FW_VERSION,
                 ui_fmt1(t, sizeof t, s->die_mc), PMC_LINK_ETHERNET ? "Ethernet" : "USB");
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, buf);
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, buf);
 }
 
 const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };

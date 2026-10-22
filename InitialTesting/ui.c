@@ -339,8 +339,8 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *fault_rule;
-static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_shape, *strip_text, *strip_ok, *strip_act, *strip_spark;
+static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl;
+static lv_obj_t *strip, *strip_icon, *strip_shape, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
@@ -360,7 +360,7 @@ static char msg_text[96];
 static uint32_t msg_until;
 
 static ui_strip_kind_t line_kind;
-static lv_color_t line_dot;
+static const char *line_icon;
 static char line_text[96];
 static lv_event_cb_t act_cb;
 static int32_t strip_w = 343;
@@ -469,12 +469,6 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(hdr, UI_TEXT, 0);
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);    // touches on the header stop here
-    fault_rule = plain(hdr);
-    lv_obj_set_pos(fault_rule, 0, 36);
-    lv_obj_set_size(fault_rule, 480, 4);
-    lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
-    lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
     // Back and Home, icons only, 48 px each; the title is centred (Ryan,
     // 16 Oct). Home is hidden on Home and under popups, where Back closes
     // the popup.
@@ -486,7 +480,6 @@ static void build_frame(void)
     lv_obj_set_ext_click_area(home_btn, 8);
     // The fault rule runs the full width, over Back and Home (not clickable,
     // so their touches still reach them).
-    lv_obj_move_foreground(fault_rule);
     for (int i = 0; i < 2; i++) {
         lv_obj_t *l = lv_obj_get_child(i ? home_btn : back_btn, 0);
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -510,11 +503,6 @@ static void build_frame(void)
     lv_obj_set_size(strip, 343, 48);
     lv_obj_add_style(strip, &st_card, 0);
     lv_obj_add_flag(strip, LV_OBJ_FLAG_CLICKABLE);
-    strip_dot = plain(strip);
-    lv_obj_set_pos(strip_dot, 12, 20);
-    lv_obj_set_size(strip_dot, 8, 8);
-    lv_obj_set_style_radius(strip_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_opa(strip_dot, LV_OPA_COVER, 0);
     strip_icon = ui_label(strip, 12, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
                           LV_SYMBOL_WARNING);
     // Drawn icons with no font glyph: the valve symbol and the target.
@@ -559,10 +547,10 @@ void ui_msg(const char *text)
         msg_until = 1;
 }
 
-void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text)
+void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text)
 {
     line_kind = kind;
-    line_dot = dot;
+    line_icon = icon;
     lv_strlcpy(line_text, text, sizeof line_text);
 }
 
@@ -575,7 +563,7 @@ void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb)
         ui_btn_text(strip_act, text, small);
 }
 
-static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, bool ok, bool act)
+static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text, bool ok, bool act)
 {
     static const uint32_t bg[] = { 0xFFFFFF, 0xE0E0E0, 0x3F3F3F, 0x000000 };
     // Under a popup: one fixed grey whatever the kind or what is behind it
@@ -600,32 +588,27 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_pad_all(strip, -bw, 0);    // children keep their place
         lv_obj_set_style_border_color(strip, bc, 0);
     }
-    // The status line has no mode dot: the header badge carries the mode
-    // (Ryan, 22 Oct). Other info lines keep their dot.
-    bool is_mode = lv_color_eq(dot, UI_DOT_MODE);
-    show(strip_dot, kind == UI_STRIP_INFO && !is_mode);
-    if (dim)
-        dot = dis_tx;
-    if (kind == UI_STRIP_INFO && !is_mode && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
-        lv_obj_set_style_bg_color(strip_dot, dot, 0);
+    bool is_mode = icon == UI_ICON_MODE;
     // The status line's icon (Ryan, 22 Oct), grey as the text: the loop
     // while AUTO regulates, a target once Stable, an arrow while the valve
-    // moves, the valve symbol when it is held in MANUAL.
-    const char *glyph = LV_SYMBOL_WARNING;
-    int sh = -1;
-    if (is_mode && kind < UI_STRIP_WARN) {
+    // moves, the valve symbol when it is idle in MANUAL.
+    if (kind >= UI_STRIP_WARN)
+        icon = LV_SYMBOL_WARNING;
+    else if (is_mode) {
         if (valve_auto() && valve_regulation() == CTRL_REG_STABLE)
-            sh = SHAPE_TARGET;
+            icon = UI_ICON_TARGET;
         else if (valve_auto())
-            glyph = LV_SYMBOL_LOOP;
+            icon = LV_SYMBOL_LOOP;
         else if (stepper3_busy())
-            glyph = stepper3_target() > stepper3_position() ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
+            icon = stepper3_target() > stepper3_position() ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
         else
-            sh = SHAPE_VALVE;
+            icon = UI_ICON_VALVE;
     }
+    int sh = icon == UI_ICON_VALVE ? SHAPE_VALVE : icon == UI_ICON_TARGET ? SHAPE_TARGET : -1;
+    const char *glyph = icon && sh < 0 ? icon : LV_SYMBOL_WARNING;
     lv_color_t ic = dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT
                   : kind >= UI_STRIP_WARN ? lv_color_white() : UI_MUTED;
-    show(strip_icon, (kind >= UI_STRIP_WARN || is_mode) && sh < 0);
+    show(strip_icon, icon && sh < 0);
     show(strip_shape, sh >= 0);
     if (sh >= 0 && (sh != (int)shape || !lv_color_eq(ic, shape_col))) {
         shape = (shape_t)sh;
@@ -634,8 +617,8 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     ui_set_text(strip_icon, glyph);
     ui_set_color(strip_icon, ic);
-    // The font's arrows and loop sit 1 px above the text's middle; the
-    // triangle (beside two lines) and the drawn icons do not (Ryan, 22 Oct).
+    // The font's symbols sit 1 px above the text's middle; the triangle
+    // (beside two lines) and the drawn icons do not (Ryan, 22 Oct).
     int32_t dy = glyph != LV_SYMBOL_WARNING ? 1 : 0;
     static int32_t dy_set;
     if (dy != dy_set) {
@@ -646,7 +629,7 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
-    int32_t x = kind == UI_STRIP_PROMPT ? 12 : kind >= UI_STRIP_WARN || is_mode ? 36 : 28;
+    int32_t x = icon ? 36 : 12;
     int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
@@ -736,7 +719,6 @@ static void frame_refresh(void)
         if (text_w(home_title) < 353 - 12)
             lv_obj_set_x(pmc_lbl, 12);
     }
-    show(fault_rule, nf > 0);
     bool op = !valve_stop_latches();
     if (op != lv_obj_has_state(stop_btn, LV_STATE_USER_2)) {
         if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
@@ -745,12 +727,14 @@ static void frame_refresh(void)
     // Mode badge: red and filled with a latched fault, filled white in
     // AUTO (dark lettering), outlined white in every other mode.
     static int badge_kind = -1;
-    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : 0;
+    // NOT HOMED (kind 3): white text, no outline (Ryan, 22 Oct).
+    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : m == VALVE_NOT_CAL ? 3 : 0;
     if (kind != badge_kind) {
         badge_kind = kind;
         lv_obj_set_style_bg_opa(mode_lbl, kind == 1 || kind == 2 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
         lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
+        lv_obj_set_style_border_opa(mode_lbl, kind == 3 ? LV_OPA_TRANSP : LV_OPA_COVER, 0);   // width kept: text stays put
         ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
     }
 
@@ -777,19 +761,19 @@ static void frame_refresh(void)
     show(strip, (!overlay || !kp_open) && !quiet);
     char buf[96];
     if (msg_until) {
-        strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
+        strip_draw(UI_STRIP_WARN, NULL, msg_text, true, false);
     } else if (valve_fault_first(&tag, &text)) {
         if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
         else
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
-        strip_draw(UI_STRIP_FAULT, UI_IDLE, buf, false, act_cb != NULL);
+        strip_draw(UI_STRIP_FAULT, NULL, buf, false, act_cb != NULL);
     } else if (stepper3_override()) {
         // Cancel on every screen while it is armed (Ryan, 16 Oct).
         ui_strip_action("Cancel", NULL, override_cancel_event);
-        strip_draw(UI_STRIP_WARN, UI_IDLE, "Limit override on", false, true);
+        strip_draw(UI_STRIP_WARN, NULL, "Limit override on", false, true);
     } else {
-        strip_draw(line_kind, line_dot, line_text, false, act_cb != NULL);
+        strip_draw(line_kind, line_icon, line_text, false, act_cb != NULL);
     }
 }
 

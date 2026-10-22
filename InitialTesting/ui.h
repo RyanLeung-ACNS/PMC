@@ -34,9 +34,6 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_CARD    lv_color_hex(0xFFFFFF)
 #define UI_TEXT    lv_color_hex(0x1F2933)
 #define UI_MUTED   lv_color_hex(0x546374)
-// ui_strip_set: the status line (no dot drawn; the header badge shows the
-// mode).
-#define UI_DOT_MODE lv_color_hex(0x010203)
 #define UI_IDLE    lv_color_hex(0x969EA6)
 #define UI_FAULT   lv_color_hex(0xD63031)
 #define UI_BLUE    lv_color_hex(0x2D5877)
@@ -96,7 +93,14 @@ bool ui_on_service(void);
 // line; refusals use it. The strip's action button is Home's.
 void ui_msg(const char *text);
 typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } ui_strip_kind_t;
-void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text);
+// icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
+// NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
+// and fault lines take the triangle. UI_ICON_MODE: the status line's icon,
+// picked from the valve state.
+#define UI_ICON_MODE   "\x01m"
+#define UI_ICON_VALVE  "\x01v"
+#define UI_ICON_TARGET "\x01t"
+void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);
 // Strip width for this screen (343 unless a screen sets it in build()).
 void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none

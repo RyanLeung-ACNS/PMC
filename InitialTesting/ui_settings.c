@@ -83,6 +83,13 @@ static int unsaved(void)
     return n + (other > 0 ? other : 0);
 }
 
+// The settings line's icon: a pencil for unsaved drafts, the save symbol
+// for changes in use but not saved, a tick when all is saved.
+static const char *save_icon(int n)
+{
+    return drafts() ? LV_SYMBOL_EDIT : n ? LV_SYMBOL_SAVE : LV_SYMBOL_OK;
+}
+
 // A save is named by when it was made: "16/10/26 14:32", or "no date"
 // when the clock was not set at the time.
 static const char *save_when(char *buf, size_t n, const char *at)
@@ -512,7 +519,7 @@ static void side_refresh(void)
         lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
-    ui_strip_set(UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED, t);
+    ui_strip_set(UI_STRIP_INFO, save_icon(n), t);
 }
 
 /* --------------------------------------------------------------------------
@@ -618,7 +625,7 @@ static void settings_refresh(void)
         lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
-    ui_strip_set(ov ? UI_STRIP_WARN : UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED,
+    ui_strip_set(ov ? UI_STRIP_WARN : UI_STRIP_INFO, save_icon(n),
                  ov ? "Limit override on for the next move" : t);
 }
 
@@ -741,7 +748,7 @@ static void nm_build(lv_obj_t *scr)
 
 static void nm_refresh(void)
 {
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Shown on Home. Save settings to keep it.");
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_HOME, "Shown on Home. Save settings to keep it.");
 }
 
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
