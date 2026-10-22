@@ -443,40 +443,71 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && !v_cal);   // still waiting for the operator
     CHECK(valvepos_use(&why) && v_cal && m_pos == 33880 && !valvepos_offer(&c));
 
-    // A move: the entry is withdrawn before the motor turns, so a reset
-    // straight after the start (no valvepos_task yet) offers nothing.
+    // A move: a moving entry at the start goes before the motor turns, so
+    // a reset straight after the start (no valvepos_task yet) offers the
+    // start count, marked as saved while moving.
+    int32_t off;
     start_move(34000);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));   // as if the power went mid-move
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate);
+    valvepos_decline();
 
-    // Still for less than 2 s: nothing saved, whatever the tick's parity.
+    // While it moves: the count every 1 s, no more often (Ryan, 22 Oct).
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 10000;
+    tick(2500);                                   // safe at 10000
+    CHECK(start_move(10100));                     // moving entry at 10000
+    tick(1100);                                   // 1 s on: 10100
+    m_pos = 10300;
+    tick(500);                                    // under 1 s since: not yet
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 10100 && valvepos_offer_moving(&off));
+    valvepos_decline();
+    v_cal = true; v_mode = VALVE_MANUAL; m_busy = true; m_pos = 10300;
+    tick(1100);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 10300 && valvepos_offer_moving(&off));
+    valvepos_decline();
+
+    // Calibrated at a new count without a move (VALVE CLOSED): the old
+    // entry is replaced at once, as moving; safe after 2 s still.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
     lv_tick_inc(1);               // odd/even tick no longer matters
     tick(1500);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 20000 && valvepos_offer_moving(&off));
+    valvepos_decline();
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
     tick(2500);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 20000);
+    CHECK(valvepos_offer(&c) && c == 20000 && !valvepos_offer_moving(&off));
     valvepos_decline();
 
-    // The withdrawal write fails once: the second try takes it, in the
+    // Calibration lost: withdrawn, nothing on offer.
+    v_cal = false; v_mode = VALVE_NOT_CAL;
+    tick(100);
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
+
+    // The move-start write fails once: the second try takes it, in the
     // next slot, after a blank one. valvepos_init() clears the module's RAM
     // as a reset does, so only the flash tells it what happened.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
+    tick(2500);
     write_fails = 1;
     CHECK(start_move(21000));
     m_busy = false;
     v_cal = false; v_mode = VALVE_NOT_CAL;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 20000 && valvepos_offer_moving(&off));
+    valvepos_decline();
 
-    // The same with a save first, as the review's case: 33880 saved, first
-    // withdrawal fails, retry works, move to 34000, cold restart.
+    // The same as the review's case: 33880 saved, first write fails, retry
+    // works, move to 34000, cold restart: the start, as moving, not safe.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 33880;
     tick(2500);
     write_fails = 1;
@@ -484,7 +515,8 @@ static void test_valvepos(void)
     m_busy = false;
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off));
+    valvepos_decline();
 
     // Both tries fail: the move is refused, so the saved count still
     // matches the valve and is still offered after a restart.
@@ -494,7 +526,7 @@ static void test_valvepos(void)
     CHECK(!start_move(31000) && m_pos == 30000 && !m_busy);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 30000);
+    CHECK(valvepos_offer(&c) && c == 30000 && !valvepos_offer_moving(&off));
     valvepos_decline();
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 30000;
     CHECK(start_move(31000));   // flash good again: the move goes
@@ -517,7 +549,7 @@ static void test_valvepos(void)
     // Declined: Calibrate instead. The next move withdraws the entry.
     valvepos_decline();
     CHECK(!valvepos_offer(&c));
-    v_mode = VALVE_CALIBRATING; m_busy = true;
+    v_cal = false; v_mode = VALVE_CALIBRATING; m_busy = true;   // valve.c uncalibrates while homing
     tick(100);
     valvepos_init();
     CHECK(!valvepos_offer(&c));

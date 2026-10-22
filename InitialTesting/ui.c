@@ -1257,7 +1257,7 @@ static void question_check(void)
     // A keypad or confirm the operator opened stays; the question waits.
     if (!want || overlay_q || asking || (want == 2 && overlay))
         return;
-    static char t[128], ok[32];
+    static char t[160], ok[32];
     char v[16];
     asking = true;
     if (want == 1) {
@@ -1267,8 +1267,18 @@ static void question_check(void)
     } else {
         int32_t pm = valve_pos_max();
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
-        lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. Not checked: "
-                    "if it was moved while off, home it. Use it, or home the valve?", v);
+        int32_t off;
+        if (valvepos_offer_moving(&off)) {
+            // Saved during a move: up to 1 s of travel short (valvepos.c).
+            char e[16];
+            int64_t m = ((int64_t)off * 100000 + pm - 1) / pm;   // 0.001 %, rounded up to 0.1
+            ui_fmt1(e, sizeof e, (m + 99) / 100 * 100);
+            lv_snprintf(t, sizeof t, "Valve position saved at %s %% while it was moving, so it may be out "
+                        "by up to %s %%. Use it, or home the valve?", v, e);
+        } else {
+            lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. Not checked: "
+                        "if it was moved while off, home it. Use it, or home the valve?", v);
+        }
         lv_snprintf(ok, sizeof ok, "Use %s %%", v);
         ui_ask(t, "Home", sp_calibrate, ok, sp_use);
     }

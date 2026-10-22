@@ -159,10 +159,11 @@ bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]) { memcpy(v_set, v, si
 int32_t valve_pos_max(void) { return v_set[0]; }
 void valve_uncalibrate(const char *why) { (void)why; v_cal = false; v_mode = VALVE_NOT_CAL; }
 void valve_event(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; }
-static bool vp_offer;
+static bool vp_offer, vp_moving;
 bool valvepos_offer(int32_t *c) { if (vp_offer) *c = 33880; return vp_offer; }
 bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_mode = VALVE_MANUAL; return true; }
 void valvepos_decline(void) { vp_offer = false; }
+bool valvepos_offer_moving(int32_t *s) { *s = 400; return vp_offer && vp_moving; }
 
 static uint32_t crc32(const void *data, size_t len)
 {
@@ -394,6 +395,7 @@ int main(int argc, char **argv)
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
     if (!strcmp(st, "bootask")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
+    if (!strcmp(st, "bootmove")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; vp_moving = true; }
     // Settings (stage 6).
     bool set = !strncmp(st, "set-", 4);
     if (set) { tap(415, 184); tap(379, 184); }
