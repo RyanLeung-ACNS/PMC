@@ -103,12 +103,12 @@ static const char *const help_valve[] = {
 static const char *const help_auto[] = {
     "AUTO (pressure control; the valve homed, no fault, a target set):",
     "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
-    "  CTRL AUTO                  start or resume AUTO, bumpless",
+    "  CTRL AUTO                  start AUTO, bumpless",
     "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
     "  PID?                       all control parameters",
     "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
-    "In AUTO: F-06 no response, W-02 pauses after 1800 s",
+    "In AUTO: F-06 no response, W-02 to MANUAL after 1800 s",
 };
 static const char *const help_sys[] = {
     "System:",

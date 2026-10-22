@@ -15,15 +15,16 @@
  * by CFG SAVE (cfg.c, stage 3).
  *
  * Modes: NOT CALIBRATED (boot, watchdog reset, after F-03/F-04 or an
- * aborted calibration), CALIBRATING, MANUAL, AUTO and AUTO PAUSED (stage 8,
+ * aborted calibration), CALIBRATING, MANUAL and AUTO (stage 8,
  * ctrl.c). Nothing moves at boot.
  *
- * AUTO (from MANUAL, or PAUSED) after the entry checks (ctrl_check), with
+ * AUTO (from MANUAL) after the entry checks (ctrl_check), with
  * the target set; bumpless from where the valve is going. Every second,
  * after the pressure read, ctrl_step works out the valve command and the
  * checks. A fault stops the valve and drops to MANUAL, holding where it
- * stopped (sensor faults too). W-02 (not settling) stops it and pauses:
- * Resume AUTO or Switch to MANUAL. Leaving AUTO ramps the valve down and
+ * stopped (sensor faults too). W-02 (not settling) stops it and drops to
+ * MANUAL too, the valve held (no PAUSED state since 0.11.25, Ryan 22 Oct);
+ * the strip shows W-02 until OK or the next Start AUTO. Leaving AUTO ramps the valve down and
  * MANUAL holds where it stops. MANUAL moves, homing and the valve settings
  * are refused in AUTO ("Switch to MANUAL first").
  *
@@ -53,7 +54,7 @@
  *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question (or the screen)
  *   VALVE CLOSED                 take the valve as closed (0 %) where it stands, homed
  *   VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (idle)
- *   CTRL AUTO                    start (or resume) AUTO, after the entry checks
+ *   CTRL AUTO                    start AUTO, after the entry checks
  *   CTRL MAN [<0-100>]           to MANUAL (ramped stop), then optionally go to %
  *   CTRL SP <mbar>               target, 0.1 mbar, 0 to the sensor range
  *   CTRL STOP                    stop now, cancel calibration (AUTO ends)
@@ -63,7 +64,7 @@
  * Each event is also sent when it happens as "EVT <s> <tag> <text>".
  */
 
-typedef enum { VALVE_NOT_CAL, VALVE_CALIBRATING, VALVE_MANUAL, VALVE_AUTO, VALVE_PAUSED } valve_mode_t;
+typedef enum { VALVE_NOT_CAL, VALVE_CALIBRATING, VALVE_MANUAL, VALVE_AUTO } valve_mode_t;
 
 void valve_init(void);           // after stepper3_init(); logs BOOT power-up
 void valve_task(void);           // every main-loop pass: calibration, limit hits
@@ -79,8 +80,11 @@ bool valve_fault_latched(void);
 bool valve_motion_blocked(void); // a latched fault that stops the motor (not F-01, F-02)
 const char *valve_status(void);  // one status line
 
-// AUTO (stage 8). valve_auto(): AUTO or AUTO PAUSED.
+// AUTO (stage 8).
 bool valve_auto(void);
+// W-02 fired since the last Start AUTO, not yet acknowledged.
+bool valve_w02(void);
+void valve_w02_clear(void);
 bool valve_start_auto(const char **why);         // CTRL AUTO, Start / Resume AUTO
 bool valve_to_manual(const char **why);          // CTRL MAN, Switch to MANUAL
 // Target in 0.001 mbar, kept to 0.1 mbar; refused outside 0 to the range.

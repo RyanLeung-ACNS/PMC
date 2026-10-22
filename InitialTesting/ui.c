@@ -412,7 +412,6 @@ static void act_event(lv_event_t *e)
         act_cb(e);
 }
 
-static void badge_draw(lv_event_t *e);
 static void build_frame(void)
 {
     frame = plain(lv_layer_top());
@@ -459,7 +458,6 @@ static void build_frame(void)
     lv_obj_set_style_radius(mode_lbl, 4, 0);
     lv_obj_set_style_border_width(mode_lbl, 2, 0);
     lv_obj_set_style_border_color(mode_lbl, lv_color_white(), 0);
-    lv_obj_add_event_cb(mode_lbl, badge_draw, LV_EVENT_DRAW_POST, NULL);
 
     strip = plain(frame);
     lv_obj_set_pos(strip, 10, 216);
@@ -597,36 +595,6 @@ static int32_t text_w(const char *t)
 // Centre the title on the screen; when the mode word leaves no room for
 // that, centre it in the gap between Back and Home (or the edge, on Home)
 // and the mode word, and cut it with dots only if it is wider than the gap.
-// PAUSED: a dashed outline whose dashes step along every 500 ms (Ryan,
-// 22 Oct), drawn over the badge; LVGL borders have no dashes.
-#define DASH 6
-#define DASH_GAP 4
-static int badge_phase(void) { return (int)(lv_tick_get() / 500 % 2) * (DASH + DASH_GAP) / 2; }
-
-static void badge_draw(lv_event_t *e)
-{
-    if (valve_mode() != VALVE_PAUSED || valve_fault_count())
-        return;
-    lv_layer_t *layer = lv_event_get_layer(e);
-    lv_area_t a;
-    lv_obj_get_coords(lv_event_get_target_obj(e), &a);
-    lv_draw_rect_dsc_t r;
-    lv_draw_rect_dsc_init(&r);
-    r.bg_color = lv_color_white();
-    const int32_t w = lv_area_get_width(&a), h = lv_area_get_height(&a), per = DASH + DASH_GAP;
-    // Clockwise round the edge from the top left, 2 px thick.
-    for (int32_t d = badge_phase() - per; d < 2 * (w + h); d += per) {
-        for (int32_t p = d < 0 ? 0 : d; p < d + DASH && p < 2 * (w + h); p++) {
-            lv_area_t q;
-            if (p < w)              { q.x1 = a.x1 + p;           q.y1 = a.y1;               q.x2 = q.x1;     q.y2 = q.y1 + 1; }
-            else if (p < w + h)     { q.x1 = a.x2 - 1;           q.y1 = a.y1 + (p - w);     q.x2 = a.x2;     q.y2 = q.y1; }
-            else if (p < 2 * w + h) { q.x1 = a.x2 - (p - w - h); q.y1 = a.y2 - 1;           q.x2 = q.x1;     q.y2 = a.y2; }
-            else                    { q.x1 = a.x1;               q.y1 = a.y2 - (p - 2 * w - h); q.x2 = a.x1 + 1; q.y2 = q.y1; }
-            lv_draw_rect(layer, &r, &q);
-        }
-    }
-}
-
 static void title_fit(lv_obj_t *l, const char *text, int32_t left)
 {
     int32_t right = 353;   // the mode badge starts at 361
@@ -654,8 +622,7 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    // "AUTO PAUSED" is wider than the badge: PAUSED (the filled badge says AUTO).
-    const char *mode_txt = nf ? "FAULT" : m == VALVE_PAUSED ? "PAUSED" : valve_mode_name();
+    const char *mode_txt = nf ? "FAULT" : valve_mode_name();
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -690,15 +657,13 @@ static void frame_refresh(void)
     }
     // Mode badge: red and filled with a latched fault, filled white in
     // AUTO (dark lettering), outlined white in every other mode.
-    // PAUSED (kind 3, valve held, nothing regulating): clear, dashed, not filled.
     static int badge_kind = -1;
-    int kind = nf ? 2 : m == VALVE_PAUSED ? 3 : m == VALVE_AUTO ? 1 : 0;
+    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : 0;
     if (kind != badge_kind) {
         badge_kind = kind;
         lv_obj_set_style_bg_opa(mode_lbl, kind == 1 || kind == 2 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
         lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
-        lv_obj_set_style_border_opa(mode_lbl, kind == 3 ? LV_OPA_TRANSP : LV_OPA_COVER, 0);   // width kept: text stays put
         ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
     }
 
@@ -758,12 +723,6 @@ static void fast_timer(lv_timer_t *t)
         cur->fast();
     if (kp_open)
         kp_side();             // the keypad's present value follows the valve
-    // PAUSED badge: its dashes step every 500 ms; redraw the badge only.
-    static int phase_seen = -1;
-    if (valve_mode() == VALVE_PAUSED && !valve_fault_count() && badge_phase() != phase_seen) {
-        phase_seen = badge_phase();
-        lv_obj_invalidate(mode_lbl);
-    }
 }
 
 static void refresh_timer(lv_timer_t *t)

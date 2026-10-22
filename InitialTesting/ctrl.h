@@ -23,7 +23,7 @@
  *     windows with no response. A window with the valve pinned fully open,
  *     or at AUTO min, while the loop asks for more is judged too. A
  *     wrong-way change counts as a response (no fault since 0.11.20).
- *   - W-02: outside the target band for CTRL_TCONV s; AUTO pauses.
+ *   - W-02: outside the target band for CTRL_TCONV s; AUTO ends, MANUAL, valve held.
  */
 
 // Fixed for now (the simulator's DEF_P); the tuning in cfg.c is KP, TI,
@@ -62,7 +62,7 @@ typedef struct {
 typedef enum {
     CTRL_RUN,          // carry on (a move may be requested)
     CTRL_F06,          // no pressure response
-    CTRL_W02           // not settling: pause
+    CTRL_W02           // not settling: to MANUAL
 } ctrl_result_t;
 
 typedef enum { CTRL_REG_NONE, CTRL_REG_REGULATING, CTRL_REG_BAND, CTRL_REG_STABLE } ctrl_reg_t;

@@ -498,7 +498,6 @@ static const char *mode_word(valve_mode_t m)
     case VALVE_CALIBRATING: return "HOMING";
     case VALVE_MANUAL:      return "MANUAL";
     case VALVE_AUTO:        return "AUTO";
-    case VALVE_PAUSED:      return "AUTO PAUSED";
     default:                return "NOT HOMED";
     }
 }

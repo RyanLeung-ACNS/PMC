@@ -310,10 +310,10 @@ void ui_manual_ask(void)
     ui_confirm("Switch to MANUAL? Valve holds where it is.", "Switch to\nMANUAL", to_manual);
 }
 
-static void paused_manual_event(lv_event_t *e)
+static void w02_ok_event(lv_event_t *e)
 {
     (void)e;
-    ui_manual_ask();
+    valve_w02_clear();
 }
 
 static void target_event(lv_event_t *e)
@@ -409,10 +409,7 @@ static void mode_event(lv_event_t *e)
         ui_msg("Homing: STOP to cancel");
     else if (m == VALVE_AUTO)
         ui_manual_ask();
-    else if (m == VALVE_PAUSED) {
-        lv_snprintf(q, sizeof q, "Resume AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
-        ui_ask3(q, "Cancel", NULL, "MANUAL", to_manual, "Resume\nAUTO", start_auto);
-    } else if (m == VALVE_MANUAL && valve_fault_count())
+    else if (m == VALVE_MANUAL && valve_fault_count())
         ui_msg("Reset the fault first");
     else if (m == VALVE_MANUAL && !have)
         keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
@@ -513,9 +510,6 @@ static void home_refresh(void)
     } else if (m == VALVE_AUTO) {
         ui_btn_text(mode_btn, "Switch to\nMANUAL", NULL);
         ui_btn_enable(mode_btn, true);
-    } else if (m == VALVE_PAUSED) {
-        ui_btn_text(mode_btn, "Resume AUTO", NULL);
-        ui_btn_enable(mode_btn, true);
     } else {
         ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
@@ -549,10 +543,11 @@ void ui_status_line(void)
                                              "Homing 2 of 3: backing off the switch",
                                              "Homing 3 of 3: slow close onto the switch" };
         ui_strip_set(UI_STRIP_INFO, lv_color_hex(0x5B6B7B), what[step < 0 ? 0 : step]);
-    } else if (m == VALVE_PAUSED) {
+    } else if (m == VALVE_MANUAL && valve_w02()) {
+        // No PAUSED state (Ryan, 22 Oct): W-02 drops to MANUAL; shown until OK.
         if (!nf)
-            ui_strip_action("Switch to\nMANUAL", NULL, paused_manual_event);
-        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling, valve held");
+            ui_strip_action("OK", NULL, w02_ok_event);
+        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling: switched to MANUAL, valve held");
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];

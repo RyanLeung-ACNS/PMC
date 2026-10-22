@@ -50,13 +50,16 @@ valve_mode_t valve_mode(void) { return v_mode; }
 const char *valve_mode_name(void)
 {
     return v_mode == VALVE_CALIBRATING ? "HOMING" : v_mode == VALVE_MANUAL ? "MANUAL"
-         : v_mode == VALVE_AUTO ? "AUTO" : v_mode == VALVE_PAUSED ? "AUTO PAUSED" : "NOT HOMED";
+         : v_mode == VALVE_AUTO ? "AUTO" : "NOT HOMED";
 }
 // AUTO (stage 8).
 static bool v_sp_set;
 static int32_t v_sp = 5000;
 static ctrl_reg_t v_reg = CTRL_REG_BAND;
-bool valve_auto(void) { return v_mode == VALVE_AUTO || v_mode == VALVE_PAUSED; }
+bool valve_auto(void) { return v_mode == VALVE_AUTO; }
+static bool v_w02;
+bool valve_w02(void) { return v_w02; }
+void valve_w02_clear(void) { v_w02 = false; }
 int valve_fault_count(void);
 bool valve_start_auto(const char **why)
 {
@@ -287,7 +290,7 @@ int main(int argc, char **argv)
         !strcmp(st, "automan") || !strcmp(st, "autovalve")) v_mode = VALVE_AUTO;
     if (!strcmp(st, "autostable")) v_reg = CTRL_REG_STABLE;
     if (!strcmp(st, "autoreg")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 356; v_reg = CTRL_REG_REGULATING; }
-    if (!strcmp(st, "paused")) v_mode = VALVE_PAUSED;
+    if (!strcmp(st, "paused")) v_w02 = true;   // W-02: MANUAL, shown until OK
     if (!strcmp(st, "f08")) v_f16 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 

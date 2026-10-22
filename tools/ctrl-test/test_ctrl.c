@@ -1,7 +1,7 @@
 /* Host test of ctrl.c (stage 8) against the C port of the simulator's flow
  * line (model.c). Runs the porting plan's cases and checks them:
  *   closed to 5 mB, 4.5 to 10 mB, targets 5, 7, 3, 5 with no false trip,
- *   helium off -> F-06, pump off -> W-02 pause (no wrong-way fault since 0.11.20),
+ *   helium off -> F-06, pump off -> W-02 to MANUAL (no wrong-way fault since 0.11.20),
  *   slipping drive -> F-06, and the
  *   entry refusals. -v prints a line a second. */
 #include <math.h>
@@ -20,7 +20,8 @@ static int fails;
 static ctrl_tune_t K = { 4.0f, 0.25f, 8, 1, 0.1f, 14.0f, 99072 };
 #define FS 1034.0f
 
-typedef enum { MANUAL, AUTO, PAUSED } mode_t_;
+typedef enum { MANUAL, AUTO } mode_t_;
+static bool w02;
 static mode_t_ mode;
 static ctrl_t C;
 static ctrl_result_t fault;   // last fault, CTRL_RUN if none
@@ -49,7 +50,8 @@ static void ctrl_tick(void)
             ctrl_sent(&C);
     } else if (r == CTRL_W02) {
         model_stop();
-        mode = PAUSED;
+        mode = MANUAL;
+        w02 = true;
     } else {
         model_stop();
         fault = r;
@@ -102,6 +104,7 @@ static void fresh(void)
     ctrl_init(&C);
     mode = MANUAL;
     fault = CTRL_RUN;
+    w02 = false;
     run(120, 0);
 }
 
@@ -193,7 +196,7 @@ int main(int argc, char **argv)
     M.pump = false;
     t0 = M.t;
     run(2000, 5);
-    CHECK(fault == CTRL_RUN && mode == PAUSED, "pump off: no fault, W-02 pauses AUTO (t %.0f s)", M.t - t0);
+    CHECK(fault == CTRL_RUN && w02 && mode == MANUAL, "pump off: no fault, W-02 to MANUAL (t %.0f s)", M.t - t0);
 
     // Slipping drive at 5 mB, then a step in target.
     fresh();

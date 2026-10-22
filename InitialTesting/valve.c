@@ -152,7 +152,9 @@ static const char *pct_text(char *buf, size_t n, int32_t pos)
 // stop the valve and drop to MANUAL like any other fault.
 static bool sensor_fault(fault_t f) { return f == F01 || f == F02; }
 
-static bool is_auto(void) { return mode == VALVE_AUTO || mode == VALVE_PAUSED; }
+static bool is_auto(void) { return mode == VALVE_AUTO; }
+
+static bool w02;   // W-02 shown until OK or the next Start AUTO
 
 static bool any_latched(void)
 {
@@ -429,8 +431,9 @@ static void auto_step(void)
         break;
     case CTRL_W02:
         stepper3_stop();
-        mode = VALVE_PAUSED;
-        ev("W-02", "Convergence timeout after %d s, auto paused", CTRL_TCONV_S);
+        mode = VALVE_MANUAL;
+        w02 = true;
+        ev("W-02", "Convergence timeout after %d s, AUTO ended, MANUAL, valve held", CTRL_TCONV_S);
         update_lock();
         break;
     case CTRL_F06:
@@ -441,6 +444,8 @@ static void auto_step(void)
 }
 
 bool valve_auto(void) { return is_auto(); }
+bool valve_w02(void) { return w02; }
+void valve_w02_clear(void) { w02 = false; }
 
 const char *valve_auto_line(void)
 {
@@ -454,7 +459,7 @@ const char *valve_auto_line(void)
     lv_snprintf(line, sizeof line, "%s %s mB, target %s, valve %s %%%s%s%s, %s", valve_mode_name(),
                 pv_ok ? p : "----", sp, v, stepper3_busy() ? " to " : "", stepper3_busy() ? to : "",
                 stepper3_busy() ? " %" : "",
-                mode == VALVE_PAUSED ? "W-02 not settling, valve held" : reg[valve_regulation()]);
+                reg[valve_regulation()]);
     return line;
 }
 
@@ -469,12 +474,12 @@ bool valve_start_auto(const char **why)
     // Bumpless from where the valve is going (a manual move still running
     // carries on to its end under AUTO).
     int32_t now = stepper3_target();
-    bool resumed = mode == VALVE_PAUSED;
     ctrl_start(&ctl, &k, lv_tick_get(), pv_mbar, now);
     mode = VALVE_AUTO;
+    w02 = false;
     update_lock();
     char a[16], p[16];
-    ev("MODE", "%s at target %s mB, valve %s %%", resumed ? "Auto resumed" : "Auto",
+    ev("MODE", "%s at target %s mB, valve %s %%", "Auto",
        mbar_text(a, sizeof a, ctl.sp, 1), pct_text(p, sizeof p, now));
     return true;
 }
@@ -619,7 +624,6 @@ const char *valve_mode_name(void)
     case VALVE_CALIBRATING: return "HOMING";
     case VALVE_MANUAL:      return "MANUAL";
     case VALVE_AUTO:        return "AUTO";
-    case VALVE_PAUSED:      return "AUTO PAUSED";
     default:                return "NOT HOMED";
     }
 }
