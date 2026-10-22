@@ -354,7 +354,6 @@ static void kp_side(void);
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
 static const ui_screen_t *cur = &ui_scr_home;
-static bool service;
 
 static char msg_text[96];
 static uint32_t msg_until;
@@ -788,8 +787,6 @@ static void override_cancel_event(lv_event_t *e)
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service)
-        return;
     if (cur->fast)
         cur->fast();
     if (kp_open)
@@ -799,10 +796,6 @@ static void fast_timer(lv_timer_t *t)
 static void refresh_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service) {
-        // Back on Home once the motor screen is left (its Back calls ui_home()).
-        return;
-    }
     frame_refresh();
 }
 
@@ -825,7 +818,7 @@ void ui_open(const ui_screen_t *s)
 {
     if (cur == s)   // e.g. the strip's sparkline tapped on Trend
         return;
-    if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
+    if (cur != &ui_scr_home && cur != s && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
         back_stack[back_n++] = cur;
     open_screen(s);
 }
@@ -855,54 +848,19 @@ void ui_home(void)
     cur_scr = home_scr;
     strip_w = 343;
     lv_screen_load(home_scr);
-    if (service) {
-        service = false;
-        show(frame, true);
-        motor_screen_close();   // its LVGL heap back
-    } else if (old != home_scr) {
+    if (old != home_scr) {
         lv_obj_delete(old);
     }
     frame_refresh();
 }
 
-// Back from the motor screen: Settings, with Menu and Home behind it. Run
-// after the Back event, so the motor screen can be freed before Menu and
-// Settings are built (both at once ran a host test's heap out).
-static void service_back_now(void *p)
-{
-    (void)p;
-    if (!service)
-        return;
-    ui_home();
-    ui_open(&ui_scr_menu);
-    ui_open(&ui_scr_settings);
-}
-
-static void service_back(void)
-{
-    lv_async_call(service_back_now, NULL);
-}
-
+// Settings > Motor override, a framework screen since 0.11.32.
 void ui_service(void)
 {
-    ui_overlay_close();
-    show(frame, false);
-    service = true;
-    // The screen left (Settings) goes first, so the two are never built
-    // at once; the motor screen is built on open and freed on leave.
-    if (cur_scr != home_scr) {
-        lv_screen_load(home_scr);
-        lv_obj_delete(cur_scr);
-    }
-    cur = &ui_scr_home;
-    cur_scr = home_scr;
-    motor_screen_init(service_back);
-    motor_screen_show();
+    ui_open(&ui_scr_motor);
 }
 
-bool ui_on_service(void) { return service; }
-
-bool ui_showing(const ui_screen_t *s) { return cur == s && !service; }
+bool ui_showing(const ui_screen_t *s) { return cur == s; }
 
 /* --------------------------------------------------------------------------
  * Overlays: keypad and confirm, over 0,40 480x232 (STOP stays on top)

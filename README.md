@@ -90,7 +90,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `ui_valve.c` | Valve, Home valve, Faults and log, Diagnostics |
 | `ui_settings.c` | Settings pages and Calibrate sensor |
 | `ui_trend.c` | Trend page and the Home sparkline (drawn on a draw event, no lv_chart) |
-| `motor_screen.c` | The 0.6.0 engineering motor screen, opened from Settings > Motor override; built on open and freed on leave |
+| `motor_screen.c` | Settings > Motor override: a framework screen (header, strip, STOP) with every MOT move and setting |
 | `driver/` | Display and touch ports for LVGL; `display_px.c` is the pixel loop |
 | `fixed.c` | Fixed-point text and parsing (lv_snprintf has no float) |
 
@@ -115,7 +115,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 - **Menu**: Records (Trend, Faults and log), Calibrate (Valve homing, Sensor), System (Diagnostics, Settings).
 - **Valve**: manual moves and the valve's state. **Home valve**: homing state, motor step count, limit switch, the three steps and the time taken. **Faults and log**: latched faults (tap for detail and help) and the event log. **Diagnostics**: readings and hardware state.
 - **Trend**: pressure (left axis), the target while in AUTO (dashed), and valve (right axis, 0 to 100 %) over 1, 2, 5, 10, 30 min or 1 hour. Each point is the mean of a fixed slot of time counted from start-up, so the line keeps its shape as it scrolls.
-- **Settings**: Cryostat name (a keyboard; up to 12 characters, in use at once and unsaved until Save settings), Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override (while armed the strip says so on every screen, with Cancel), Motor override (the 0.6.0 motor screen; its cross closes it). Edits are drafts until Save settings, which checks them together and saves all or nothing.
+- **Settings**: Cryostat name (a keyboard; up to 12 characters, in use at once and unsaved until Save settings), Choose sensor (up to four Druck sensors, each with its own cal; one in use), Valve setup (travel, direction; homing speeds and back-off; drive rates), Control tuning (for AUTO), Review and save, Load settings (last save, previous save, factory), Limit override (while armed the strip says so on every screen, with Cancel), Motor override (position, step size 1 to 10k, Close / Open, Zero, Hold, Coils off; mode, run, start and accel rates, coil order, direction; the strip reads the motor state and the limit switch). Edits are drafts until Save settings, which checks them together and saves all or nothing.
 - **Calibrate sensor**: the bench two-point cal from the screen (vacuum, then air at a barometer reading).
 
 Display formats: pressure 1 decimal, valve % and keypad 2 decimals, dates DD/MM/YY. Fonts are Montserrat Medium 12, 16 and 26 px (`ui_font_*.c`, converted with lv_font_conv, ASCII plus ± ° µ – •), and 40 px digits only for the Home readings (`ui_font_40.c`). The display is driven over the SSD1963's 16-bit 8080 bus, bit-banged on GPIOE (WR on PF11); touch is read over I2C every 5 ms.
