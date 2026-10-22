@@ -450,7 +450,7 @@ static void test_valvepos(void)
     start_move(34000);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate);
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate * 2);
     valvepos_decline();
 
     // While it moves: the count every 2 s, no more often (Ryan, 22 Oct).
