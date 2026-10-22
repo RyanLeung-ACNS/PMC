@@ -212,7 +212,7 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
         stepper3_stop();
         mode = VALVE_MANUAL;
         char p[16];
-        ev("MODE", "Manual after %s, valve held at %s %%", fault_tag[f],
+        ev("MODE", "Manual after %s, valve idle at %s %%", fault_tag[f],
            pct_text(p, sizeof p, stepper3_position()));
     } else if (!sensor_fault(f)) {
         stepper3_stop();
@@ -433,7 +433,7 @@ static void auto_step(void)
         stepper3_stop();
         mode = VALVE_MANUAL;
         w02 = true;
-        ev("W-02", "Convergence timeout after %d s, AUTO ended, MANUAL, valve held", CTRL_TCONV_S);
+        ev("W-02", "Convergence timeout after %d s, AUTO ended, MANUAL, valve idle", CTRL_TCONV_S);
         update_lock();
         break;
     case CTRL_F06:

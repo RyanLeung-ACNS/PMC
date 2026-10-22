@@ -23,7 +23,7 @@
  *     windows with no response. A window with the valve pinned fully open,
  *     or at AUTO min, while the loop asks for more is judged too. A
  *     wrong-way change counts as a response (no fault since 0.11.20).
- *   - W-02: outside the target band for CTRL_TCONV s; AUTO ends, MANUAL, valve held.
+ *   - W-02: outside the target band for CTRL_TCONV s; AUTO ends, MANUAL, valve idle.
  */
 
 // Fixed for now (the simulator's DEF_P); the tuning in cfg.c is KP, TI,

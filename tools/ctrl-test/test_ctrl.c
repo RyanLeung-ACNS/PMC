@@ -186,7 +186,7 @@ int main(int argc, char **argv)
     run(2000, 5);
     // No wrong-way fault: with the valve pinned open and the pressure flat,
     // the response monitor catches it instead.
-    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-06 after %.0f s, MANUAL, valve held", fault_t - t0);
+    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-06 after %.0f s, MANUAL, valve idle", fault_t - t0);
 
     // Pump off at 5 mB.
     fresh();

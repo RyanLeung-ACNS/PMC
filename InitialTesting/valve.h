@@ -23,7 +23,7 @@
  * after the pressure read, ctrl_step works out the valve command and the
  * checks. A fault stops the valve and drops to MANUAL, holding where it
  * stopped (sensor faults too). W-02 (not settling) stops it and drops to
- * MANUAL too, the valve held (no PAUSED state since 0.11.25, Ryan 22 Oct);
+ * MANUAL too, the valve idle (no PAUSED state since 0.11.25, Ryan 22 Oct);
  * the strip shows W-02 until OK or the next Start AUTO. Leaving AUTO ramps the valve down and
  * MANUAL holds where it stops. MANUAL moves, homing and the valve settings
  * are refused in AUTO ("Switch to MANUAL first").

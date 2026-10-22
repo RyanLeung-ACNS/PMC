@@ -547,7 +547,7 @@ void ui_status_line(void)
         // No PAUSED state (Ryan, 22 Oct): W-02 drops to MANUAL; shown until OK.
         if (!nf)
             ui_strip_action("OK", NULL, w02_ok_event);
-        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling: switched to MANUAL, valve held");
+        ui_strip_set(UI_STRIP_WARN, UI_IDLE, "W-02 Not settling: switched to MANUAL, valve idle");
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];
