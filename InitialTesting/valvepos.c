@@ -17,7 +17,7 @@
 #define VP_MOVING    0x45564F4DUL   // "MOVE": during a move, within MOVE_MS of travel
 #define VP_UNSAFE    0UL            // not calibrated: nothing to offer
 #define STILL_MS     2000
-#define MOVE_MS      1000           // a moving entry at most this often (Ryan, 22 Oct)
+#define MOVE_MS      2000           // a moving entry at most this often (Ryan, 22 Oct)
 
 typedef struct {
     uint32_t seq;        // +1 each entry, never 0xFFFFFFFF

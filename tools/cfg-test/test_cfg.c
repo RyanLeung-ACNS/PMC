@@ -453,19 +453,19 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate);
     valvepos_decline();
 
-    // While it moves: the count every 1 s, no more often (Ryan, 22 Oct).
+    // While it moves: the count every 2 s, no more often (Ryan, 22 Oct).
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 10000;
     tick(2500);                                   // safe at 10000
     CHECK(start_move(10100));                     // moving entry at 10000
-    tick(1100);                                   // 1 s on: 10100
+    tick(2100);                                   // 2 s on: 10100
     m_pos = 10300;
-    tick(500);                                    // under 1 s since: not yet
+    tick(1500);                                   // under 2 s since: not yet
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
     valvepos_init();
     CHECK(valvepos_offer(&c) && c == 10100 && valvepos_offer_moving(&off));
     valvepos_decline();
     v_cal = true; v_mode = VALVE_MANUAL; m_busy = true; m_pos = 10300;
-    tick(1100);
+    tick(2100);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
     valvepos_init();
     CHECK(valvepos_offer(&c) && c == 10300 && valvepos_offer_moving(&off));
