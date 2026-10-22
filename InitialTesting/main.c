@@ -196,15 +196,15 @@ void board_init()
     lv_init();
     // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
     // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
-#if PMC_LINK_ETHERNET
-    // 16 KB in the Ethernet build, whose network buffers need the SRAM: 80 KB
-    // of LVGL heap in all, and the host previews peak at about 56 KB of it
-    // (with 64-bit pointers; less on the board).
-    static uint8_t lv_pool2[16 * 1024] __attribute__((aligned(8)));
-#else
+#if !PMC_LINK_ETHERNET
+    // Not in the Ethernet build (0.11.30): with it, .bss ran to within about
+    // 3 KB of the top of SRAM, which left no room for the stack and the
+    // network buffers (malloc'd), and the screen stayed blank at boot. That
+    // build has the 64 KB in CCM only; the host previews peak at about 55 KB
+    // with 64-bit pointers, and the board read 33 KB on 14 Oct.
     static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
-#endif
     lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
+#endif
     lv_port_disp_init();
     lv_port_indev_init();
 
