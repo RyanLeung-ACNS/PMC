@@ -1,7 +1,7 @@
 /* Host test of ctrl.c (stage 8) against the C port of the simulator's flow
  * line (model.c). Runs the porting plan's cases and checks them:
  *   closed to 5 mB, 4.5 to 10 mB, targets 5, 7, 3, 5 with no false trip,
- *   helium off -> F-16, pump off -> F-17, slipping drive -> F-10, and the
+ *   helium off -> F-08, pump off -> F-09, slipping drive -> F-07, and the
  *   entry refusals. -v prints a line a second. */
 #include <math.h>
 #include <stdio.h>
@@ -180,7 +180,7 @@ int main(int argc, char **argv)
     M.he = false;
     double t0 = M.t;
     run(900, 5);
-    CHECK(fault == CTRL_F16 && mode == MANUAL && !M.moving && fabs(fault_t - t0 - 60) <= 2, "helium off: F-16 after %.0f s (sim 60), MANUAL, valve held", fault_t - t0);
+    CHECK(fault == CTRL_F08 && mode == MANUAL && !M.moving && fabs(fault_t - t0 - 60) <= 2, "helium off: F-08 after %.0f s (sim 60), MANUAL, valve held", fault_t - t0);
 
     // Pump off at 5 mB.
     fresh();
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
     M.pump = false;
     t0 = M.t;
     run(900, 5);
-    CHECK(fault == CTRL_F17 && mode == MANUAL && fabs(fault_t - t0 - 60) <= 2, "pump off: F-17 after %.0f s (sim 60)", fault_t - t0);
+    CHECK(fault == CTRL_F09 && mode == MANUAL && fabs(fault_t - t0 - 60) <= 2, "pump off: F-09 after %.0f s (sim 60)", fault_t - t0);
 
     // Slipping drive at 5 mB, then a step in target.
     fresh();
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
     set_sp(7);
     t0 = M.t;
     run(900, 7);
-    CHECK(fault == CTRL_F10 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-10 after %.0f s (sim 150)", fault_t - t0);
+    CHECK(fault == CTRL_F07 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-07 after %.0f s (sim 150)", fault_t - t0);
 
     // Room air, target above the reading (the bench test with no process).
     fresh();
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
     to_auto();
     t0 = M.t;
     run(400, 1030);
-    CHECK(fault == CTRL_F10, "room air, target above: F-10 after %.0f s", fault_t - t0);
+    CHECK(fault == CTRL_F07, "room air, target above: F-07 after %.0f s", fault_t - t0);
 
     printf(fails ? "%d failed\n" : "all passed\n", fails);
     return fails ? 1 : 0;

@@ -24,7 +24,7 @@
 
 #define COL_DRAFT  lv_color_hex(0x6A4C93)
 #define COL_GREY   lv_color_hex(0x5B6B7B)
-#define STEPS_PER_TURN 16512   // 48 steps x 344:1 gearbox
+#define STEPS_PER_TURN 8256    // per output turn: half the 48 x 344 figure, as measured on the bench (Ryan, 22 Oct)
 
 static const int32_t RY[4] = { 48, 104, 160, 216 };
 #define RH 48
@@ -336,17 +336,15 @@ static void edit(cfg_key_t k)
             ed_turns_keypad();
             return;
         }
-        lv_snprintf(t, sizeof t, "100 %% travel is %s turns (%ld steps). Type a value, or use the present "
-                    "position (%s turns)?", value_text(a, sizeof a, k, shown(k)), (long)shown(k),
+        lv_snprintf(t, sizeof t, "Use the present position (%s turns) as 100 %%, or type turns?",
                     value_text(b, sizeof b, k, pos));
         ui_ask(t, "Present", ed_turns_present, "Type turns", ed_turns_keypad);
     } else if (F[k].kind == K_TOGGLE) {
         if (k == CFG_REVERSE)
-            lv_snprintf(t, sizeof t, "Set motor direction to %s? Use Reversed if Open drives the valve closed. "
-                        "Saving it clears the zero.", shown(k) ? "Normal" : "Reversed");
+            lv_snprintf(t, sizeof t, "Set motor direction to %s? Saving clears the zero.",
+                        shown(k) ? "Normal" : "Reversed");
         else
-            lv_snprintf(t, sizeof t, "Set pressure response to %s? A needle valve feeding the pot normally "
-                        "raises it.", shown(k) > 0 ? "Opening lowers pressure" : "Opening raises pressure");
+            lv_snprintf(t, sizeof t, "Set to %s?", shown(k) > 0 ? "Opening lowers pressure" : "Opening raises pressure");
         ui_confirm(t, "Change", ed_toggle_ok);
     } else if (F[k].kind == K_CHOICE) {
         static char names[CFG_SENS_MAX][40];
@@ -427,7 +425,7 @@ static void save_ask(void)
         return;
     }
     (void)rev; (void)at; (void)w;
-    lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart.", plural(c, sizeof c, n, "change"));
+    lv_snprintf(t, sizeof t, "Save %s?", plural(c, sizeof c, n, "change"));
     ui_confirm(t, "Save settings", save_now);
 }
 
@@ -459,13 +457,12 @@ static void discard_ask(void)
     const char *at;
     int n = drafts();
     if (n) {
-        lv_snprintf(t, sizeof t, "Discard %s? Settings in use are not affected.",
+        lv_snprintf(t, sizeof t, "Discard %s?",
                     plural(c, sizeof c, n, "unsaved change"));
         ui_confirm(t, "Discard changes", discard_drafts);
     } else if (cfg_unsaved() && cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
         char w[24];
-        lv_snprintf(t, sizeof t, "Put the last save%s%s back in use? The %s in use since then %s lost.",
-                    at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "", plural(c, sizeof c, cfg_unsaved(), "change"),
+        lv_snprintf(t, sizeof t, "Put the last save back? %s %s lost.", plural(c, sizeof c, cfg_unsaved(), "change"),
                     cfg_unsaved() == 1 ? "is" : "are");
         ui_confirm(t, "Put back", discard_live);
     } else {
@@ -547,8 +544,7 @@ static void override_cb(lv_event_t *e)
         ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
         return;
     }
-    ui_confirm("Let the next move close past the closed switch? Only for a stuck switch: the valve can be "
-               "driven into the seat. Ends when that move stops.", "Override", override_on);
+    ui_confirm("Let the next move close past the switch? Only for a stuck switch.", "Override", override_on);
 }
 
 static void motor_go(void) { ui_service(); }
@@ -560,7 +556,7 @@ static void motor_cb(lv_event_t *e)
         ui_msg("Wait for the valve to stop");
         return;
     }
-    ui_confirm("Open Motor override? It drives the motor directly by steps.", "Open", motor_go);
+    ui_confirm("Open Motor override? Drives the motor by steps.", "Open", motor_go);
 }
 
 static void settings_build(lv_obj_t *scr)
@@ -847,7 +843,7 @@ static void add_cal(void)
 
 static void add_range(int i)
 {
-    static const int32_t psi10[6] = { 50, 100, 150, 300, 500, 1000 };
+    static const int32_t psi10[2] = { 150, 300 };   // 15 and 30 psi only (Ryan, 22 Oct)
     const char *why;
     char t[80], n[40];
     if (!cfg_sensor_add(add_serial, psi10[i], &why)) {
@@ -856,20 +852,19 @@ static void add_range(int i)
         return;
     }
     static char q[140];
-    lv_snprintf(q, sizeof q, "%s added. Calibrate it now? It goes in use straight away, not saved; "
-                "Discard changes puts the last save back.", sensor_name(n, sizeof n, add_serial));
+    lv_snprintf(q, sizeof q, "%s added. Calibrate it now?", sensor_name(n, sizeof n, add_serial));
     ui_ask(q, "Later", NULL, "Calibrate", add_cal);
 }
 
 static bool add_serial_set(int32_t v, const char **why)
 {
-    static const char *const ranges[6] = { "5 psi", "10 psi", "15 psi", "30 psi", "50 psi", "100 psi" };
+    static const char *const ranges[2] = { "15 psi", "30 psi" };
     static char title[40];
     if (sensor_index((uint32_t)v) >= 0) { *why = "That serial number is already on the board"; return false; }
     if (cfg_sensor_count() >= CFG_SENS_MAX) { *why = "Four sensors already on the board"; return false; }
     add_serial = (uint32_t)v;
     lv_snprintf(title, sizeof title, "Range of s/n %lu", (unsigned long)add_serial);
-    ui_pick(title, ranges, 6, -1, add_range);
+    ui_pick(title, ranges, 2, -1, add_range);
     return true;
 }
 
@@ -906,8 +901,7 @@ static void rm_pick(int i)
     static char t[140];
     char n[40];
     rm_serial = rm_list[i];
-    lv_snprintf(t, sizeof t, "Remove %s and its calibration from the board? The last save keeps it until "
-                "Save settings.", sensor_name(n, sizeof n, rm_serial));
+    lv_snprintf(t, sizeof t, "Remove %s and its calibration?", sensor_name(n, sizeof n, rm_serial));
     ui_confirm(t, "Remove", rm_do);
 }
 
@@ -1180,8 +1174,7 @@ static void load_pick(int i)
     }
     char w[24];
     cfg_rev(load_sel, &rev, &at);
-    lv_snprintf(t, sizeof t, "Put the %s save%s%s in use now, sensors and calibrations included? Drafts are "
-                "dropped. Save settings keeps it; Discard changes puts the last save back.",
+    lv_snprintf(t, sizeof t, "Load the %s save%s%s? Drafts are dropped.",
                 load_sel == CFG_FROM_SAVED ? "last" : "previous", at[0] ? ", " : "",
                 at[0] ? save_when(w, sizeof w, at) : "");
     ui_confirm(t, "Load", load_do);
@@ -1298,7 +1291,7 @@ static const char *cs_help(void)
            "if a gauge reads more).\n"
            "Capture air: vent the sensor to the room, then type the lab barometer reading in mB, for example "
            "1013.2.\n"
-           "Each capture averages 10 readings. Either point can be redone on its own; the other is kept.\n"
+           "Each capture averages 5 readings. Either point can be redone on its own; the other is kept.\n"
            "Signal: the Druck output over its excitation, in mV/V.\n"
            "Saved cal: the pressure from the saved calibration. Captured: the pressure from the points "
            "captured here, once both are held (None yet until then).\n"
@@ -1351,7 +1344,7 @@ static void vac_cb(lv_event_t *e)
         ui_msg(cal_capturing() ? "A capture is running" : "No Druck signal");
         return;
     }
-    ui_ask("Pump the sensor down to vacuum first. Capture takes 10 readings and calls them 0 mB.",
+    ui_ask("Sensor at vacuum? Capture sets 0 mB.",
            "Not 0 mB", cs_vac_typed, "Capture", cs_vac0);
 }
 
@@ -1406,11 +1399,11 @@ static void cs_refresh(void)
     ui_set_text(cs.nw, !ok ? "----" : v.have && a.have && !q.saved ? ui_fmt1(t, sizeof t, s->p_mmbar) : "None yet");
     int cap = cal_capturing(), left = cal_capture_left();
     if (cap == 1)
-        lv_snprintf(t, sizeof t, "Capturing %d of 10", 10 - left);
+        lv_snprintf(t, sizeof t, "Capturing %d of %d", CAL_CAPTURE_N - left, CAL_CAPTURE_N);
     ui_set_text(cs.vac, cap == 1 ? t : pt_text(t, sizeof t, v.have, v.p_mmbar, v.r_ppb));
     char u[40];
     if (cap == 2)
-        lv_snprintf(u, sizeof u, "Capturing %d of 10", 10 - left);
+        lv_snprintf(u, sizeof u, "Capturing %d of %d", CAL_CAPTURE_N - left, CAL_CAPTURE_N);
     ui_set_text(cs.air, cap == 2 ? u : pt_text(u, sizeof u, a.have, a.p_mmbar, a.r_ppb));
     ui_btn_enable(cs.bv, ok && !cap);
     ui_btn_enable(cs.ba, ok && !cap);

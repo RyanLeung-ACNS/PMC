@@ -95,14 +95,14 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         c->in_band_ms = in->t_ms;
     }
 
-    // F-02, armed in AUTO only.
+    // F-03, armed in AUTO only.
     if (pv > in->fs) {
         if (!c->f02_on) {
             c->f02_on = true;
             c->f02_ms = in->t_ms;
         }
-        if (since(in->t_ms, c->f02_ms) >= CTRL_F02_S * 1000u)
-            return CTRL_F02;
+        if (since(in->t_ms, c->f02_ms) >= CTRL_F03_S * 1000u)
+            return CTRL_F03;
     } else {
         c->f02_on = false;
     }
@@ -156,12 +156,12 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
                 c->wrong_way = way;
                 c->noresp = 0;
                 if (c->wrong >= 2)
-                    return way > 0 ? CTRL_F16 : CTRL_F17;
+                    return way > 0 ? CTRL_F08 : CTRL_F09;
             } else if (judged && fabsf(dp) < CTRL_DPMIN) {
                 c->noresp++;
                 c->wrong = 0;
                 if (c->noresp >= CTRL_NRESP)
-                    return CTRL_F10;
+                    return CTRL_F07;
             } else {
                 c->noresp = 0;
                 c->wrong = 0;

@@ -621,7 +621,7 @@ static void frame_refresh(void)
 {
     const char *tag, *text;
     int nf = valve_fault_count();
-    bool f12 = valve_fault_is("F-12");
+    bool f10 = valve_fault_is("F-10");
     valve_mode_t m = valve_mode();
 
     // Header.
@@ -630,7 +630,7 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    const char *mode_txt = f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
+    const char *mode_txt = f10 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -701,7 +701,7 @@ static void frame_refresh(void)
     if (msg_until) {
         strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
     } else if (valve_fault_first(&tag, &text)) {
-        if (f12)
+        if (f10)
             lv_strlcpy(buf, "Stopped where it was, not closed.", sizeof buf);
         else if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
@@ -1088,12 +1088,12 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
 }
 
 // Confirm and question dialogs.
-static void (*confirm_ok)(void), (*confirm_cancel)(void), (*confirm_mid)(void);
+static void (*confirm_ok)(void), (*confirm_cancel)(void), (*confirm_mid)(void), (*confirm_mid2)(void);
 
 static void confirm_event(lv_event_t *e)
 {
-    intptr_t k = (intptr_t)lv_event_get_user_data(e);   // 0 cancel, 1 OK, 2 middle
-    void (*f)(void) = k == 1 ? confirm_ok : k == 2 ? confirm_mid : confirm_cancel;
+    intptr_t k = (intptr_t)lv_event_get_user_data(e);   // 0 cancel, 1 OK, 2 middle, 3 second middle
+    void (*f)(void) = k == 1 ? confirm_ok : k == 2 ? confirm_mid : k == 3 ? confirm_mid2 : confirm_cancel;
     ui_overlay_close();
     if (f)
         f();
@@ -1108,24 +1108,38 @@ void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const
 void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
              void (*on_mid)(void), const char *ok, void (*on_ok)(void))
 {
+    ui_ask4(text, cancel, on_cancel, mid, on_mid, NULL, NULL, ok, on_ok);
+}
+
+void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *mid2, void (*on_mid2)(void), const char *ok, void (*on_ok)(void))
+{
     lv_obj_t *o = overlay_new();
     lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
     lv_obj_set_style_bg_opa(o, 140, 0);
     confirm_ok = on_ok;
     confirm_cancel = on_cancel;
     confirm_mid = on_mid;
-    lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
+    confirm_mid2 = on_mid2;
+    // Four buttons need a wider box: 420 px, four of 91.
+    int32_t bw = mid2 ? 420 : 340;
+    lv_obj_t *box = ui_card(o, (480 - bw) / 2, 0, bw, 100);
     lv_obj_set_style_radius(box, 8, 0);
-    lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    lv_obj_t *t = ui_label(box, 16, 14, bw - 32, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_update_layout(t);
     int32_t th = lv_obj_get_height(t);
     if (th > 84) th = 84;
     int32_t by = 14 + th + 10, h = by + 60;
     lv_obj_set_height(t, th);
-    lv_obj_set_size(box, 340, h);
+    lv_obj_set_size(box, bw, h);
     lv_obj_set_y(box, (168 - h) / 2);
-    if (mid) {
+    if (mid2) {
+        ui_btn(box, 16, by, 91, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+        ui_btn(box, 115, by, 91, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
+        ui_btn(box, 214, by, 91, 48, UI_SECONDARY, mid2, confirm_event, (void *)3);
+        ui_btn(box, 313, by, 91, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    } else if (mid) {
         ui_btn(box, 16, by, 96, 48, UI_SECONDARY, cancel, confirm_event, NULL);
         ui_btn(box, 122, by, 96, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
         ui_btn(box, 228, by, 96, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
@@ -1261,7 +1275,7 @@ static void question_check(void)
     char v[16];
     asking = true;
     if (want == 1) {
-        lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
+        lv_snprintf(t, sizeof t, "Limit switch at %s %%. Set as 0 %%?",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
     } else {
@@ -1269,15 +1283,13 @@ static void question_check(void)
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
         int32_t off;
         if (valvepos_offer_moving(&off)) {
-            // Saved during a move: up to 1 s of travel short (valvepos.c).
+            // Saved during a move: up to 2 s of travel short (valvepos.c).
             char e[16];
             int64_t m = ((int64_t)off * 100000 + pm - 1) / pm;   // 0.001 %, rounded up to 0.1
             ui_fmt1(e, sizeof e, (m + 99) / 100 * 100);
-            lv_snprintf(t, sizeof t, "Valve position saved at %s %% while it was moving, so it may be out "
-                        "by up to %s %%. Use it, or home the valve?", v, e);
+            lv_snprintf(t, sizeof t, "Saved position %s %%, may be out by %s %%. Use it, or home the valve?", v, e);
         } else {
-            lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. Not checked: "
-                        "if it was moved while off, home it. Use it, or home the valve?", v);
+            lv_snprintf(t, sizeof t, "Saved position %s %%. Use it, or home the valve?", v);
         }
         lv_snprintf(ok, sizeof ok, "Use %s %%", v);
         ui_ask(t, "Home", sp_calibrate, ok, sp_use);

@@ -42,7 +42,7 @@ static bool from_old;              // active came from the old record at start-u
  * (one a second) of the live ratio, taken through the INA228 as it is
  * wired, so the input loading and INA228 gain and offset are in the table.
  */
-#define CAPTURE_N   10
+#define CAPTURE_N   CAL_CAPTURE_N
 static struct {
     bool have_vac, have_air;
     int32_t r_vac, p_vac, u_vac;      // ppb, 0.001 mbar

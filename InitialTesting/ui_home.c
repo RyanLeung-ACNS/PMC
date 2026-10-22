@@ -271,9 +271,8 @@ static bool sp_set(int32_t v10, const char **why)
     sp_pending = v10;
     if (v10 - now > (int32_t)(CTRL_SP_CONFIRM * 10) || now - v10 > (int32_t)(CTRL_SP_CONFIRM * 10)) {
         static char q[64];
-        char a[16], b[16];
-        lv_snprintf(q, sizeof q, "Change target %s to %s mB?", ui_fmt1(a, sizeof a, (int64_t)now * 100),
-                    ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
+        char b[16];
+        lv_snprintf(q, sizeof q, "Change target to %s mB?", ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
         ui_confirm(q, "Change\ntarget", sp_change);
         return true;
     }
@@ -307,10 +306,8 @@ static const char *auto_text(char *t, size_t n, bool unit)
 
 void ui_manual_ask(void)
 {
-    static char q[64];
-    char v[16];
-    lv_snprintf(q, sizeof q, "Switch to MANUAL? Valve holds at %s %%.", ui_fmt2(v, sizeof v, valve_pct_milli()));
-    ui_confirm(q, "Switch to\nMANUAL", to_manual);
+    // No %: the valve keeps moving while this is up (Ryan, 22 Oct).
+    ui_confirm("Switch to MANUAL? Valve holds where it is.", "Switch to\nMANUAL", to_manual);
 }
 
 static void paused_manual_event(lv_event_t *e)
@@ -366,20 +363,38 @@ static void set_closed(void)
         ui_msg("Valve set as closed, 0 %, switch not checked");
 }
 
+static bool set_position(int32_t v100, const char **why)
+{
+    if (!valve_set_position(v100, why)) {
+        if (valve_motion_blocked()) *why = "Reset the fault first";
+        return false;
+    }
+    char v[16], t[48];
+    lv_snprintf(t, sizeof t, "Valve set as %s %%, switch not checked", ui_fmt2(v, sizeof v, (int64_t)v100 * 10));
+    ui_msg(t);
+    return true;
+}
+
+// Set position: the operator knows where the valve is (Ryan, 22 Oct).
+static void set_position_ask(void)
+{
+    ui_keypad("Set position, %", "0 closed, 100 open", 0, 10000, NULL, NULL, set_position);
+}
+
 static void set_closed_ask(void)
 {
-    ui_confirm("Take the valve as fully closed where it is now, without homing? The switch is not checked: "
-               "only if you know it is seated.", "Set as closed", set_closed);
+    ui_confirm("Set as 0 % without homing? Only if the valve is seated.", "Set as closed", set_closed);
 }
 
 void ui_calibrate_ask(void)
 {
     static char q[96];
     uint32_t s = valve_cal_budget_s();
-    lv_snprintf(q, sizeof q, "Home the valve? It closes to the seat to find 0 %%, up to %lu min.",
+    lv_snprintf(q, sizeof q, "Home the valve? Up to %lu min.",
                 (unsigned long)((s + 59) / 60));
     // Set as closed: the valve is known to be seated already (Ryan, 16 Oct).
-    ui_ask3(q, "Cancel", NULL, "Set as\nclosed", set_closed_ask, "Start\nhoming", calibrate);
+    ui_ask4(q, "Cancel", NULL, "Set as\nclosed", set_closed_ask, "Set\nposition", set_position_ask,
+            "Start\nhoming", calibrate);
 }
 
 static void mode_event(lv_event_t *e)
@@ -481,8 +496,8 @@ static void home_refresh(void)
     box_set(&pt, auto_on, valve_target(&sp) ? ui_fmt1(buf, sizeof buf, sp) : "Not set");
 
     home_fast();
-    alarm_set(&vt, valve_fault_is("F-07") || valve_fault_is("F-09") || valve_fault_is("F-10") ||
-                   valve_fault_is("F-13") || valve_fault_is("F-16") || valve_fault_is("F-17"));
+    alarm_set(&vt, valve_fault_is("F-04") || valve_fault_is("F-05") || valve_fault_is("F-07") ||
+                   valve_fault_is("F-06") || valve_fault_is("F-08") || valve_fault_is("F-09"));
     bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
     box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "auto" : "");
 

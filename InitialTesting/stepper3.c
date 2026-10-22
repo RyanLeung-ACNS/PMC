@@ -77,7 +77,8 @@ static uint32_t rate_start = 200;    // steps/s, ramp starts and ends here
 static uint32_t accel      = 3200;   // steps/s^2
 static stepper3_mode_t mode = STEPPER3_FULL;
 static bool hold;                    // coils on when idle
-static bool reverse = true;          // flips the sequence direction; reversed by default (Ryan, 19 Oct)
+static bool reverse;                // flips the sequence direction. Normal (0) is the direction that was
+                                    // "Reversed" before 0.11.19, the factory default (Ryan, 22 Oct)
 static uint8_t order[4] = { 0, 2, 1, 3 };   // coil n -> output order[n]; 0213 found on the bench (8 Oct, 26M motor)
 
 /* --------------------------------------------------------------------------
@@ -97,7 +98,7 @@ static uint32_t v_fp;                   // current rate, steps/s * 256
 static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
-static uint32_t deadline_ms;            // F-13: lv_tick_get() past this = timeout
+static uint32_t deadline_ms;            // F-06: lv_tick_get() past this = timeout
 static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
 static int32_t move_from;                // last move: start position and times
 static uint32_t move_t0;
@@ -264,7 +265,7 @@ void TIM7_IRQHandler(void)
     }
 
     int8_t inc = (mode == STEPPER3_HALF) ? 1 : 2;
-    if (reverse != (dir < 0))
+    if (reverse == (dir < 0))
         inc = -inc;
     phase = (uint8_t)(phase + inc) & 7;
     write_coils(seq[phase]);
@@ -331,7 +332,7 @@ static void step_irq_release(void) { TIM7->DIER = TIM_DIER_UIE; }
 
 static int32_t abs32(int32_t v) { return v < 0 ? -v : v; }
 
-// F-13: the move should be done within |distance| / rate, plus the ramps
+// F-06: the move should be done within |distance| / rate, plus the ramps
 // (counted twice over, for a turn round), plus 2 s.
 static void set_deadline(void)
 {
@@ -459,7 +460,7 @@ void stepper3_poll(void)
         return;
     stepper3_stop();
     last_stop = STEPPER3_STOP_TIMEOUT;
-    link_printf("F-13 motion timeout: stopped at %ld, target %ld\r\n",
+    link_printf("F-06 motion timeout: stopped at %ld, target %ld\r\n",
                 (long)position, (long)target);
 }
 
@@ -665,7 +666,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_DONE:  return "done";
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
-    case STEPPER3_STOP_TIMEOUT: return "F-13 timeout";
+    case STEPPER3_STOP_TIMEOUT: return "F-06 timeout";
     default:                  return "none";
     }
 }

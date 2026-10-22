@@ -49,6 +49,7 @@
 // Default uncertainties of the two bench points, 0.001 mbar.
 #define CAL_VAC_UNC_DEFAULT 10     // 0.010 mbar: pumped to about 1e-2 mbar, taken as 0
 #define CAL_AIR_UNC_DEFAULT 1000   // 1.0 mbar: room barometer
+#define CAL_CAPTURE_N       5      // readings per bench capture point, one a second (Ryan, 22 Oct: was 10)
 
 #define CAL_MAGIC       0x4C414350UL  // "PCAL"
 #define CAL_VERSION     4   // 4: bench two-point; 1 to 3 (CAL ATM era) are not loaded

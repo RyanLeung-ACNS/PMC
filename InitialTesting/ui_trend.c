@@ -473,10 +473,8 @@ static void trend_view(void);
 static void range_cb(lv_event_t *e)
 {
     int d = lv_event_get_user_data(e) ? 1 : -1;
-    if (ui_btn_disabled(e)) {
-        ui_msg(d > 0 ? "1 hour is the longest" : "1 min is the shortest");
-        return;
-    }
+    if (ui_btn_disabled(e))
+        return;   // at the end of the ranges: no message (Ryan, 22 Oct)
     win_i += d;
     if (win_i < 0) win_i = 0;
     if (win_i > 5) win_i = 5;

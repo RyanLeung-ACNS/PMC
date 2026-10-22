@@ -19,12 +19,12 @@
  *     is still more than CTRL_LEAD_MAX steps short of the last command.
  *   - Commands within the deadband (DB steps) of the last one sent are held.
  *   - Response monitor: every CTRL_TCHECK s, the counted position through a
- *     CTRL_TLAG s lag against the pressure change. F-10 after CTRL_NRESP
- *     windows with no response, F-16 (opening, pressure falling) and F-17
+ *     CTRL_TLAG s lag against the pressure change. F-07 after CTRL_NRESP
+ *     windows with no response, F-08 (opening, pressure falling) and F-09
  *     (closing, pressure rising) after two windows in a row. A window with
  *     the valve pinned fully open, or at Auto min, while the loop asks for
  *     more is judged too.
- *   - F-02: pressure above the sensor range for 5 s.
+ *   - F-03: pressure above the sensor range for 5 s.
  *   - W-02: outside the target band for CTRL_TCONV s; AUTO pauses.
  */
 
@@ -33,14 +33,14 @@
 #define CTRL_TS_S       1       // control step, s
 #define CTRL_KD         0.0f    // derivative, % per mbar/s (off)
 #define CTRL_TCHECK_S   30      // response window, s
-#define CTRL_NRESP      5       // windows with no response before F-10
+#define CTRL_NRESP      5       // windows with no response before F-07
 #define CTRL_DPMIN      0.05f   // smallest pressure change that counts, mbar
 #define CTRL_CHECKMIN   1000    // smallest lagged move that is judged, steps
 #define CTRL_TCONV_S    1800    // W-02 after this long outside the band, s
 #define CTRL_LEAD_MAX   3000    // travel anti-windup, steps
 #define CTRL_TLAG_S     40      // process lag for the response monitor, s
 #define CTRL_STABLE_S   60      // in band this long reads Stable, s
-#define CTRL_F02_S      5       // above the sensor range this long, s
+#define CTRL_F03_S      5       // above the sensor range this long, s
 #define CTRL_SP_CONFIRM 5.0f    // target changes larger than this ask first, mbar
 
 typedef struct {
@@ -64,10 +64,10 @@ typedef struct {
 
 typedef enum {
     CTRL_RUN,          // carry on (a move may be requested)
-    CTRL_F02,          // above the sensor range for 5 s
-    CTRL_F10,          // no pressure response
-    CTRL_F16,          // opening while the pressure kept falling
-    CTRL_F17,          // closing while the pressure kept rising
+    CTRL_F03,          // above the sensor range for 5 s
+    CTRL_F07,          // no pressure response
+    CTRL_F08,          // opening while the pressure kept falling
+    CTRL_F09,          // closing while the pressure kept rising
     CTRL_W02           // not settling: pause
 } ctrl_result_t;
 

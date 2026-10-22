@@ -13,7 +13,7 @@
  * Built once on lv_layer_top(), over every screen:
  *   header  0,0 480x40    Back (one screen back; not on Home), title, mode word and dot
  *   strip   10,216 343x48 status: fault, message (with OK), prompt or info
- *   STOP    361,216 109x48 latches F-12 (CTRL STOP), on every screen
+ *   STOP    361,216 109x48 latches F-10 (CTRL STOP), on every screen
  * Home is kept; other screens are created on open and deleted on leave.
  * A keypad or confirm dialog covers 0,40 480x232 except the STOP slot.
  *
@@ -129,6 +129,9 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void));
 // Same with a named cancel button and its own action.
 void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void));
 // With a third button between them (NULL mid: as ui_ask).
+// Four buttons: Cancel, two middle ones, OK (Home valve).
+void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *mid2, void (*on_mid2)(void), const char *ok, void (*on_ok)(void));
 void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
              void (*on_mid)(void), const char *ok, void (*on_ok)(void));
 // A list to pick one of (Sensor in use, Load settings); sel -1 for none.
