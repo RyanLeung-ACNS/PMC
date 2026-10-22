@@ -120,9 +120,7 @@ static void bar_draw(lv_event_t *e)
         int32_t x = t->log ? PPAD + k * (BAR_W - 2 * PPAD) / 4 : k * (BAR_W - 1) / 2;
         lv_area_t tick = { a.x1 + x, y1, a.x1 + x, y2 };
         lv_draw_rect(layer, &r, &tick);
-        const char *s = t->log ? plab[k] : k == 1 ? NULL : vlab[k];
-        if (!s)
-            continue;
+        const char *s = t->log ? plab[k] : vlab[k];
         lv_area_t l = { a.x1 + x - 20, y2 + 5, a.x1 + x + 20, y2 + 19 };
         text.align = LV_TEXT_ALIGN_CENTER;
         if (!t->log && k == 0) { l.x1 = a.x1; l.x2 = a.x1 + 40; text.align = LV_TEXT_ALIGN_LEFT; }
