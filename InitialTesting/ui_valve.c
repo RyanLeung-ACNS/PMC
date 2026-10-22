@@ -229,8 +229,9 @@ static void valve_build(lv_obj_t *scr)
     vp.go_live = -1;
     vp.p = reading(scr, 10, 64, "Pressure", "mB", &vp.pfill);
     vp.v = reading(scr, 166, 64, "Valve", "%", &vp.fill);
-    // Go to is the card itself: tinted with a blue underline and a chevron
-    // when a tap opens the keypad, as Home's boxes (Ryan, 21 Oct).
+    // Go to is the card itself: white as the other cards, with a blue
+    // underline and a chevron when a tap opens the keypad (Ryan, 22 Oct:
+    // the tint looked odd).
     vp.go = reading(scr, 322, 64, "Go to", "%", NULL);
     vp.go_card = lv_obj_get_parent(vp.go);
     lv_obj_add_flag(vp.go_card, LV_OBJ_FLAG_CLICKABLE);
@@ -289,11 +290,10 @@ static void valve_refresh(void)
     bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
     for (int i = 0; i < 8; i++)
         ui_btn_enable(vp.btn[i], i < 6 ? steps : on);
-    // The Go to card: live (tint, underline, chevron) when a tap opens the
+    // The Go to card: live (underline, chevron) when a tap opens the
     // keypad; flat otherwise. In AUTO a tap asks Switch to MANUAL.
     if (on != vp.go_live) {
         vp.go_live = on;
-        lv_obj_set_style_bg_color(vp.go_card, lv_color_hex(on ? 0xE9F0F6 : 0xFFFFFF), 0);
         lv_obj_set_style_border_width(vp.go_card, on ? 3 : 0, 0);
         if (on) lv_obj_remove_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
         else    lv_obj_add_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
