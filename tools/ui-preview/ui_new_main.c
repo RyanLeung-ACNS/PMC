@@ -434,7 +434,7 @@ int main(int argc, char **argv)
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage") || !strcmp(st, "calpage2")) { tap(415, 184); tap(210, 128); }
-    if (!strcmp(st, "diag")) { tap(415, 184); tap(120, 184); }
+    if (!strcmp(st, "diag")) { tap(415, 184); tap(200, 184); }
     run(1200);
 
     FILE *f = fopen(argv[2], "wb");

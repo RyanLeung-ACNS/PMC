@@ -772,9 +772,11 @@ static void diag_build(lv_obj_t *scr)
                                          "Result", "Moved, steps", "Took, s" };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
-        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
+        // 16 px as the Menu captions, centred on the row (Ryan, 22 Oct).
+        lv_obj_t *l = ui_label(scr, 10, 0, 84, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
+        lv_obj_update_layout(l);
+        lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
         for (int c = 0; c < 3; c++)
             dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
