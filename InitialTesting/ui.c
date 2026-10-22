@@ -471,7 +471,7 @@ static void build_frame(void)
     lv_obj_set_size(strip_dot, 8, 8);
     lv_obj_set_style_radius(strip_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(strip_dot, LV_OPA_COVER, 0);
-    strip_icon = ui_label(strip, 6, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
+    strip_icon = ui_label(strip, 12, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
                           LV_SYMBOL_WARNING);
     strip_text = ui_label(strip, 28, 0, 303, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(strip_text, LV_LABEL_LONG_WRAP);
@@ -548,27 +548,20 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_pad_all(strip, -bw, 0);    // children keep their place
         lv_obj_set_style_border_color(strip, bc, 0);
     }
-    show(strip_dot, kind == UI_STRIP_INFO);
-    bool ring = false, is_mode = lv_color_eq(dot, UI_DOT_MODE);
-    if (is_mode) {
-        ring = !valve_auto();
-        dot = lv_color_hex(0xC3CDD7);
-    }
+    // The status line has no mode dot: the header badge carries the mode
+    // (Ryan, 22 Oct). Other info lines keep their dot.
+    bool is_mode = lv_color_eq(dot, UI_DOT_MODE);
+    show(strip_dot, kind == UI_STRIP_INFO && !is_mode);
     if (dim)
         dot = dis_tx;
-    if (kind == UI_STRIP_INFO && (!lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot) ||
-                                  (lv_obj_get_style_border_width(strip_dot, 0) != 0) != ring)) {
+    if (kind == UI_STRIP_INFO && !is_mode && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
-        lv_obj_set_style_border_color(strip_dot, dot, 0);
-        lv_obj_set_style_border_width(strip_dot, ring ? 2 : 0, 0);
-        lv_obj_set_style_bg_opa(strip_dot, ring ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
-    }
     show(strip_icon, kind >= UI_STRIP_WARN);
     ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
-    int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
+    int32_t x = kind == UI_STRIP_PROMPT || is_mode ? 12 : kind >= UI_STRIP_WARN ? 36 : 28;
     int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);

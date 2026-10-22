@@ -34,8 +34,8 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_CARD    lv_color_hex(0xFFFFFF)
 #define UI_TEXT    lv_color_hex(0x1F2933)
 #define UI_MUTED   lv_color_hex(0x546374)
-// ui_strip_set's dot drawn as a mode dot: filled grey in AUTO,
-// a grey ring otherwise (the status line, as Home's card).
+// ui_strip_set: the status line (no dot drawn; the header badge shows the
+// mode).
 #define UI_DOT_MODE lv_color_hex(0x010203)
 #define UI_IDLE    lv_color_hex(0x969EA6)
 #define UI_FAULT   lv_color_hex(0xD63031)
