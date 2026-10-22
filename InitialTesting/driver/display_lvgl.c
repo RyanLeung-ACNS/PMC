@@ -5,6 +5,7 @@
 #include "lvgl_common.h"
 #include "mcu.h"
 #include "display_px.h"
+#include "lv_port_indev.h"
 
 static void disp_init(void);
 static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t * px_map);
@@ -91,6 +92,12 @@ static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t *
 
     /* Deselect display. */
     display_deselect();
+
+    /* A full redraw is many strips and can take longer than a tap, and touch
+     * is otherwise read only between LVGL passes: read it here too, so a
+     * press made during the redraw is latched, not lost (touch_poll limits
+     * itself to once per 5 ms). */
+    touch_poll();
 
     /* IMPORTANT: tell LVGL flushing is finished. */
     lv_display_flush_ready(display);

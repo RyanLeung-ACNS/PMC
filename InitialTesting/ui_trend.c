@@ -45,6 +45,14 @@ static struct {
 } pts[PTS_MAX];
 static int pts_n;
 
+// Seconds per plotted point for a window of win seconds in n points.
+static uint32_t slot_s(uint32_t win, int n)
+{
+    uint32_t r = win <= TREND_FINE_N ? 1 : 10;
+    uint32_t slot = (win + (uint32_t)(n - 2)) / (uint32_t)(n - 1);
+    return (slot + r - 1) / r * r;
+}
+
 static void pts_build(uint32_t win, int n)
 {
     // The board draws in 10-row strips, and the draw event runs once per
@@ -58,8 +66,7 @@ static void pts_build(uint32_t win, int n)
     b_n = n;
     b_total = total;
     uint32_t r = win <= TREND_FINE_N ? 1 : 10;            // sample spacing, s
-    uint32_t slot = (win + (uint32_t)(n - 2)) / (uint32_t)(n - 1);
-    slot = (slot + r - 1) / r * r;
+    uint32_t slot = slot_s(win, n);
     pts_n = 0;
     if (!total)
         return;
@@ -383,6 +390,7 @@ static struct {
     int win_seen;
 } tr;
 
+#define CARD_W 343
 #define PL 46   // plot inside the card: left, right, top, bottom margins (46: "1018.0" fits)
 #define PR 40
 #define PT 32
@@ -477,7 +485,7 @@ static void range_cb(lv_event_t *e)
 
 static void trend_build(lv_obj_t *scr)
 {
-    tr.plot = ui_card(scr, 10, 48, 343, 160);
+    tr.plot = ui_card(scr, 10, 48, CARD_W, 160);
     lv_obj_add_event_cb(tr.plot, trend_draw, LV_EVENT_DRAW_MAIN_END, NULL);
     tr.up = ui_btn(scr, 361, 48, 109, 48, UI_SECONDARY, LV_SYMBOL_UP, range_cb, (void *)1);
     tr.range = ui_info(scr, 361, 104, 109, 48, "Range");
@@ -486,15 +494,18 @@ static void trend_build(lv_obj_t *scr)
     tr.win_seen = -1;
 }
 
-// Range card, Up / Down and the plot; the plot is redrawn once per new
-// sample or range change, not at every refresh.
+// Range card, Up / Down and the plot; the plot is redrawn when a plotted
+// point completes (each second on 1 and 2 min, every 5 s on 10 min, 30 s
+// on 1 hour) or the range changes, not at every new sample: a redraw costs
+// about as much as a whole screen change, and touch waited on it each second.
 static void trend_view(void)
 {
     ui_set_text(tr.range, WIN_NAME[win_i]);
     ui_btn_enable(tr.up, win_i < 5);
     ui_btn_enable(tr.down, win_i > 0);
-    if (trend_seconds() != tr.seen || win_i != tr.win_seen) {
-        tr.seen = trend_seconds();
+    uint32_t done = trend_seconds() / slot_s(WINS[win_i], (CARD_W - PL - PR) / 2 + 1);
+    if (done != tr.seen || win_i != tr.win_seen) {
+        tr.seen = done;
         tr.win_seen = win_i;
         lv_obj_invalidate(tr.plot);
     }
