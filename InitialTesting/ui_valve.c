@@ -264,7 +264,7 @@ static void valve_fast(void)
     char buf[16];
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
-    ui_set_color(vp.v, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "auto"
+    ui_set_color(vp.v, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "AUTO"
     int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch
@@ -272,9 +272,9 @@ static void valve_fast(void)
     if (vp.jog && ui_overlay_open())
         stepper3_stop_ramped();
     // Where the valve is going (or last went); "--" during a hold, which
-    // has no target, and before homing; "auto" in AUTO.
+    // has no target, and before homing; "AUTO" in AUTO.
     bool have = cal && !(stepper3_busy() && vp.jog);
-    ui_set_text(vp.go, valve_auto() ? "auto" : have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
+    ui_set_text(vp.go, valve_auto() ? "AUTO" : have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
     ui_set_color(vp.go, have && !valve_auto() && why_not_manual() == NULL ? UI_TEXT : UI_IDLE);
 }
 

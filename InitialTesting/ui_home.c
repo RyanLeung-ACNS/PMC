@@ -12,7 +12,7 @@
  * Valve and Menu. AUTO (stage 8): the first Start AUTO asks for a target and
  * Set starts AUTO; later ones confirm the target kept or offer New target.
  * In AUTO the Target box opens the keypad (changes over 5 mB ask first) and
- * the Go to box reads "auto", flat. The strip shows the status line, with
+ * the Go to box reads "AUTO", flat. The strip shows the status line, with
  * the 5 min pressure sparkline on its right as on the operator screens
  * (ui.c, Ryan 21 Oct). A tap on the sparkline opens Trend.
  * ------------------------------------------------------------------------ */
@@ -473,7 +473,7 @@ static void home_fast(void)
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
             lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
-        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "auto" (Ryan, 22 Oct)
+        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "AUTO" (Ryan, 22 Oct)
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
     bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
@@ -499,7 +499,7 @@ static void home_refresh(void)
     alarm_set(&vt, valve_fault_is("F-03") || valve_fault_is("F-04") || valve_fault_is("F-05") ||
                    valve_fault_is("F-06"));
     bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
-    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "auto" : "");
+    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "AUTO" : "");
 
     // Mode button.
     int step = valve_cal_step();

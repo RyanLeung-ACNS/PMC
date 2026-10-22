@@ -339,7 +339,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
+static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *fault_rule;
 static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
@@ -451,13 +451,13 @@ static void build_frame(void)
     lv_label_set_long_mode(pmc_lbl, LV_LABEL_LONG_DOT);
     title_lbl = ui_label(hdr, 100, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
-    mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
-    mode_dot = plain(hdr);
-    lv_obj_set_pos(mode_dot, 460, 15);
-    lv_obj_set_size(mode_dot, 10, 10);
-    lv_obj_set_style_radius(mode_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_color(mode_dot, lv_color_hex(0xC3CDD7), 0);
-    lv_obj_set_style_bg_color(mode_dot, UI_FAULT, 0);
+    // Mode badge, as wide as the button column under it (x 361, 109 px;
+    // Ryan, 22 Oct): filled white in AUTO, outlined otherwise, red with a fault.
+    mode_lbl = ui_label(hdr, 361, 5, 109, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
+    lv_obj_set_style_pad_ver(mode_lbl, 4, 0);
+    lv_obj_set_style_radius(mode_lbl, 4, 0);
+    lv_obj_set_style_border_width(mode_lbl, 2, 0);
+    lv_obj_set_style_border_color(mode_lbl, lv_color_white(), 0);
 
     strip = plain(frame);
     lv_obj_set_pos(strip, 10, 216);
@@ -602,9 +602,9 @@ static int32_t text_w(const char *t)
 // Centre the title on the screen; when the mode word leaves no room for
 // that, centre it in the gap between Back and Home (or the edge, on Home)
 // and the mode word, and cut it with dots only if it is wider than the gap.
-static void title_fit(lv_obj_t *l, const char *text, const char *mode_txt, int32_t left)
+static void title_fit(lv_obj_t *l, const char *text, int32_t left)
 {
-    int32_t right = 454 - text_w(mode_txt) - 8;
+    int32_t right = 353;   // the mode badge starts at 361
     int32_t w = text_w(text);
     int32_t x = 240 - w / 2;
     if (w > right - left)
@@ -629,7 +629,8 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    const char *mode_txt = nf ? "FAULT" : valve_mode_name();
+    // "AUTO PAUSED" is wider than the badge: PAUSED (the filled badge says AUTO).
+    const char *mode_txt = nf ? "FAULT" : m == VALVE_PAUSED ? "PAUSED" : valve_mode_name();
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -648,12 +649,12 @@ static void frame_refresh(void)
         if (!home) {
             fit_title = cur->title;
             ui_set_text(title_lbl, cur->title);
-            title_fit(title_lbl, cur->title, mode_txt, 2 * HDR_BTN_W + 4);
+            title_fit(title_lbl, cur->title, 2 * HDR_BTN_W + 4);
         }
         // Home's title sits on the left (Ryan, 16 Oct: centred left the
         // top left empty); it is centred in the gap only if it is too long.
-        title_fit(pmc_lbl, home_title, mode_txt, 10);
-        if (text_w(home_title) < 454 - text_w(mode_txt) - 8 - 12)
+        title_fit(pmc_lbl, home_title, 10);
+        if (text_w(home_title) < 353 - 12)
             lv_obj_set_x(pmc_lbl, 12);
     }
     show(fault_rule, nf > 0);
@@ -662,18 +663,16 @@ static void frame_refresh(void)
         if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
         else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
     }
-    // Mode dot (simulator WP023 S4): red and filled with a latched fault,
-    // filled grey in AUTO, a grey ring in every other mode; shape, not
-    // colour, tells AUTO apart. (Before 0.10.5 the ring never drew: its
-    // border was only set on a change of fill, and the first was none.)
-    static int dot_kind = -1;
-    bool in_auto = valve_auto();
-    int kind = nf ? 2 : in_auto ? 1 : 0;
-    if (kind != dot_kind) {
-        dot_kind = kind;
-        lv_obj_set_style_bg_opa(mode_dot, kind ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_bg_color(mode_dot, kind == 2 ? UI_FAULT : lv_color_hex(0xC3CDD7), 0);
-        lv_obj_set_style_border_width(mode_dot, kind ? 0 : 2, 0);
+    // Mode badge: red and filled with a latched fault, filled white in
+    // AUTO (dark lettering), outlined white in every other mode.
+    static int badge_kind = -1;
+    int kind = nf ? 2 : valve_auto() ? 1 : 0;
+    if (kind != badge_kind) {
+        badge_kind = kind;
+        lv_obj_set_style_bg_opa(mode_lbl, kind ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
+        lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
+        ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
     }
 
     question_check();
