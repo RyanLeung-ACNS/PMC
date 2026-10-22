@@ -98,7 +98,7 @@ static uint32_t v_fp;                   // current rate, steps/s * 256
 static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
-static uint32_t deadline_ms;            // F-06: lv_tick_get() past this = timeout
+static uint32_t deadline_ms;            // F-05: lv_tick_get() past this = timeout
 static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
 static int32_t move_from;                // last move: start position and times
 static uint32_t move_t0;
@@ -332,7 +332,7 @@ static void step_irq_release(void) { TIM7->DIER = TIM_DIER_UIE; }
 
 static int32_t abs32(int32_t v) { return v < 0 ? -v : v; }
 
-// F-06: the move should be done within |distance| / rate, plus the ramps
+// F-05: the move should be done within |distance| / rate, plus the ramps
 // (counted twice over, for a turn round), plus 2 s.
 static void set_deadline(void)
 {
@@ -460,7 +460,7 @@ void stepper3_poll(void)
         return;
     stepper3_stop();
     last_stop = STEPPER3_STOP_TIMEOUT;
-    link_printf("F-06 motion timeout: stopped at %ld, target %ld\r\n",
+    link_printf("F-05 motion timeout: stopped at %ld, target %ld\r\n",
                 (long)position, (long)target);
 }
 
@@ -666,7 +666,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_DONE:  return "done";
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
-    case STEPPER3_STOP_TIMEOUT: return "F-06 timeout";
+    case STEPPER3_STOP_TIMEOUT: return "F-05 timeout";
     default:                  return "none";
     }
 }

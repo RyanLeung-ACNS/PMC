@@ -318,7 +318,7 @@ static const char *const calib_help =
     "2 back off it, 3 slow close onto it. The step running is filled dark; "
     "Motor, steps counts the motor as it moves; Time counts up, then shows how long it took.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
-    "F-04 switch not found, F-05 switch stuck: check the switch and its wire, "
+    "F-03 switch not found, F-04 switch stuck: check the switch and its wire, "
     "reset the fault, home again.";
 
 static void start_cb(lv_event_t *e)
@@ -463,38 +463,22 @@ static const fault_help_t fault_help[] = {
       "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
-    { "F-03", "The pressure stayed above the sensor range for 5 s in AUTO.",
-      "Stopped the valve and holds it. MANUAL. The valve still moves.",
-      "Pumping line and pump; the sensor range.",
-      "The pressure is back in the range. Then start AUTO again." },
-    { "F-04", "Homing, the valve closed 1.1 x full travel without the limit switch.",
+    { "F-03", "Homing, the valve closed 1.1 x full travel without the limit switch.",
       "Stopped. The valve is not homed.",
       "The switch and its wire, and that the valve turns.",
       "Any time. Then home again." },
-    { "F-05", "The limit switch stayed pressed after the valve moved off it.",
+    { "F-04", "The limit switch stayed pressed after the valve moved off it.",
       "Stopped. The valve is not homed.",
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then home again." },
-    { "F-06", "A move took longer than its distance at the set rate, plus 2 s.",
+    { "F-05", "A move took longer than its distance at the set rate, plus 2 s.",
       "Stopped the valve and holds it. Homing kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
-    { "F-07", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
+    { "F-06", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
       "Stopped the valve and holds it. MANUAL.",
       "Drive slipping, motor unplugged, needle seized.",
       "Any time. Check before starting AUTO." },
-    { "F-08", "The valve kept opening in AUTO while the pressure kept falling.",
-      "Stopped the valve and holds it. MANUAL.",
-      "Helium supply (bath empty, capillary blocked). On first use, Pressure response.",
-      "Any time. Check before starting AUTO." },
-    { "F-09", "The valve kept closing in AUTO while the pressure kept rising.",
-      "Stopped the valve and holds it. MANUAL.",
-      "Pump stopped, pumping valve shut, heat load. On first use, Pressure response.",
-      "Any time. Check before starting AUTO." },
-    { "F-10", "STOP was pressed in AUTO, or CTRL STOP sent.",
-      "Stopped the valve and holds it, not closed.",
-      "Why it was stopped.",
-      "Any time." },
 };
 
 static const fault_help_t *help_for(const char *tag)

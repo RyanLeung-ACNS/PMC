@@ -490,14 +490,14 @@ static void home_refresh(void)
     ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
-    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02") || valve_fault_is("F-03"));
+    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02"));
     int32_t sp;
     bool auto_on = valve_auto();
     box_set(&pt, auto_on, valve_target(&sp) ? ui_fmt1(buf, sizeof buf, sp) : "Not set");
 
     home_fast();
-    alarm_set(&vt, valve_fault_is("F-04") || valve_fault_is("F-05") || valve_fault_is("F-07") ||
-                   valve_fault_is("F-06") || valve_fault_is("F-08") || valve_fault_is("F-09"));
+    alarm_set(&vt, valve_fault_is("F-03") || valve_fault_is("F-04") || valve_fault_is("F-05") ||
+                   valve_fault_is("F-06"));
     bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
     box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "auto" : "");
 

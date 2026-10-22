@@ -14,7 +14,7 @@
  * Ported from the simulator (stage 2 of the porting plan). Settings are kept
  * by CFG SAVE (cfg.c, stage 3).
  *
- * Modes: NOT CALIBRATED (boot, watchdog reset, after F-04/F-05 or an
+ * Modes: NOT CALIBRATED (boot, watchdog reset, after F-03/F-04 or an
  * aborted calibration), CALIBRATING, MANUAL, AUTO and AUTO PAUSED (stage 8,
  * ctrl.c). Nothing moves at boot.
  *
@@ -28,10 +28,10 @@
  * are refused in AUTO ("Switch to MANUAL first").
  *
  * Calibration (Control Logic 4): if the switch is pressed, an N_clear
- * clearance move off it first (F-05 if still pressed); a fast close at
- * f_home for up to 1.1 x POS_MAX (F-04 if the switch is not found); an
- * N_backoff back-off (F-05 if still pressed); a creep close at f_creep
- * (F-04 if not found); the switch point is N_offset (0 %).
+ * clearance move off it first (F-04 if still pressed); a fast close at
+ * f_home for up to 1.1 x POS_MAX (F-03 if the switch is not found); an
+ * N_backoff back-off (F-04 if still pressed); a creep close at f_creep
+ * (F-03 if not found); the switch point is N_offset (0 %).
  *
  * The switch pressed during any other move, once calibrated: the move stops
  * (stepper3.c), a W-01 event, and a question waits for VALVE SETZERO (this
@@ -40,11 +40,10 @@
  * Faults latch, stop the motor and lock out MOT moves until CTRL RESET,
  * which clears only the latches whose cause has gone:
  *   F-01 no Druck signal, F-02 excitation outside 9.5-10.5 V or tripped,
- *   F-04 switch not found while calibrating, F-05 switch still pressed
- *   after moving off it, F-06 motion timeout, F-10 STOP in AUTO (CTRL STOP);
- *   in AUTO only: F-03 above the sensor range for 5 s, F-07 no pressure
- *   response, F-08 opening with the pressure falling, F-09 closing with the
- *   pressure rising. F-01, F-02 and F-03 do not block manual moves.
+ *   F-03 switch not found while calibrating, F-04 switch still pressed
+ *   after moving off it, F-05 motion timeout; in AUTO only: F-06 no
+ *   pressure response. F-01 and F-02 do not block manual moves. STOP
+ *   latches nothing; in AUTO it drops to MANUAL.
  * Outside AUTO, STOP stops and holds the valve without a latch (STOP event).
  *
  * Commands:
@@ -57,7 +56,7 @@
  *   CTRL AUTO                    start (or resume) AUTO, after the entry checks
  *   CTRL MAN [<0-100>]           to MANUAL (ramped stop), then optionally go to %
  *   CTRL SP <mbar>               target, 0.1 mbar, 0 to the sensor range
- *   CTRL STOP                    stop now, cancel calibration (F-10 in AUTO)
+ *   CTRL STOP                    stop now, cancel calibration (AUTO ends)
  *   CTRL RESET                   clear latches whose cause has gone
  *   CTRL?                        latched faults, highest priority first
  *   EVT? [n]                     the last n events (default 20, 100 kept)
@@ -125,13 +124,13 @@ bool valve_move_steps(int32_t steps, const char **why);
 int32_t valve_target_pct10(void);                // where the valve is going
 int32_t valve_pct_milli(void);                   // position in 0.001 % (for 2 dp on screen)
 int32_t valve_target_pct_milli(void);
-void valve_stop(void);                           // CTRL STOP (latches F-10 in AUTO only)
-bool valve_stop_latches(void);                   // STOP would latch F-10 now
+void valve_stop(void);                           // CTRL STOP (in AUTO: MANUAL, nothing latched)
+bool valve_stop_latches(void);                   // STOP would end AUTO now (red STOP button)
 // CTRL RESET; returns the number latched before, left = those kept.
 int valve_reset(char *left, size_t n);
 int valve_fault_count(void);
 bool valve_fault_first(const char **tag, const char **text);   // highest priority
-bool valve_fault_is(const char *tag);            // e.g. "F-10" latched
+bool valve_fault_is(const char *tag);            // e.g. "F-05" latched
 bool valve_question(int32_t *pct10);             // switch question waiting, where
 bool valve_answer(bool set_zero, const char **why);   // VALVE SETZERO / VALVE SKIP
 

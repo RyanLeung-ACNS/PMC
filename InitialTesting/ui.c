@@ -621,7 +621,6 @@ static void frame_refresh(void)
 {
     const char *tag, *text;
     int nf = valve_fault_count();
-    bool f10 = valve_fault_is("F-10");
     valve_mode_t m = valve_mode();
 
     // Header.
@@ -630,7 +629,7 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    const char *mode_txt = f10 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
+    const char *mode_txt = nf ? "FAULT" : valve_mode_name();
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -701,9 +700,7 @@ static void frame_refresh(void)
     if (msg_until) {
         strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
     } else if (valve_fault_first(&tag, &text)) {
-        if (f10)
-            lv_strlcpy(buf, "Stopped where it was, not closed.", sizeof buf);
-        else if (nf > 1)
+        if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
         else
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);

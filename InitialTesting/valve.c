@@ -91,20 +91,17 @@ void valve_event(const char *tag, const char *fmt, ...)
 /* --------------------------------------------------------------------------
  * Faults, in the simulator's FAULT_ORDER (highest priority first).
  * ------------------------------------------------------------------------ */
-typedef enum { F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F_N } fault_t;   // priority order (Ryan, 22 Oct)
+typedef enum { F01, F02, F03, F04, F05, F06, F_N } fault_t;   // priority order (Ryan, 22 Oct)
 
-static const char *const fault_tag[F_N]   = { "F-01", "F-02", "F-03", "F-04", "F-05", "F-06",
-                                              "F-07", "F-08", "F-09", "F-10" };
+static const char *const fault_tag[F_N]   = { "F-01", "F-02", "F-03", "F-04", "F-05", "F-06" };
 static const char *const fault_short[F_N] = {
-    "No Druck signal", "Excitation out of window", "Pressure out of range", "Limit not found while calibrating",
-    "Limit still active after clearance", "Motion timeout", "No pressure response",
-    "Pressure falling, valve opening", "Pressure rising, valve closing", "Operator STOP" };
+    "No Druck signal", "Excitation out of window", "Limit not found while calibrating",
+    "Limit still active after clearance", "Motion timeout", "No pressure response" };
 
 static bool latched[F_N];
 static uint32_t latched_ms[F_N];    // when each latched
 static valve_mode_t latched_mode[F_N];
 static bool cause_f01, cause_f02;   // from the last sensor read
-static bool cause_f03;              // the last good reading above the sensor range
 static bool sensed;                 // at least one sensor read since boot
 
 /* --------------------------------------------------------------------------
@@ -150,11 +147,10 @@ static const char *pct_text(char *buf, size_t n, int32_t pos)
     return fixed_fmt(buf, n, pct10_of(pos), 1);
 }
 
-// The pressure faults (F-01 no Druck, F-02 excitation, F-03 above the
-// range) do not block the motor: manual moves and calibrating use the step
+// The pressure faults (F-01 no Druck, F-02 excitation) do not block the motor: manual moves and calibrating use the step
 // count and the limit switch, not the pressure (Ryan 16 Oct). In AUTO they
 // stop the valve and drop to MANUAL like any other fault.
-static bool sensor_fault(fault_t f) { return f == F01 || f == F02 || f == F03; }
+static bool sensor_fault(fault_t f) { return f == F01 || f == F02; }
 
 static bool is_auto(void) { return mode == VALVE_AUTO || mode == VALVE_PAUSED; }
 
@@ -239,7 +235,7 @@ static void cal_fast(void)
     int32_t n = (int32_t)(((int64_t)pos_max * 11 + 5) / 10);
     cal_stage = CAL_FAST;
     if (!cal_move(stepper3_position() - n, f_home))
-        raise(F04, true, "Homing: closing move refused at count %ld (%s)", (long)stepper3_position(),
+        raise(F03, true, "Homing: closing move refused at count %ld (%s)", (long)stepper3_position(),
               stepper3_refusal());
 }
 
@@ -247,7 +243,7 @@ static void cal_creep(void)
 {
     cal_stage = CAL_CREEP;
     if (!cal_move(stepper3_position() - (n_backoff + CREEP_EXTRA), f_creep))
-        raise(F04, true, "Homing: creep move refused at count %ld", (long)stepper3_position());
+        raise(F03, true, "Homing: creep move refused at count %ld", (long)stepper3_position());
 }
 
 static bool cal_start(const char **err)
@@ -291,7 +287,7 @@ static void cal_move_ended(stepper3_stop_t why)
             cal_stage = CAL_BACK;
             cal_move(stepper3_position() + n_backoff, f_home);
         } else if (why == STEPPER3_STOP_DONE) {
-            raise(F04, true, "Homing: switch not found within %ld steps",
+            raise(F03, true, "Homing: switch not found within %ld steps",
                   (long)(((int64_t)pos_max * 11 + 5) / 10));
         } else {
             cal_abort(stepper3_stop_name(why));
@@ -311,7 +307,7 @@ static void cal_move_ended(stepper3_stop_t why)
             ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
             cal_end(VALVE_MANUAL);
         } else if (why == STEPPER3_STOP_DONE) {
-            raise(F04, true, "Homing: switch not found on the creep close");
+            raise(F03, true, "Homing: switch not found on the creep close");
         } else {
             cal_abort(stepper3_stop_name(why));
         }
@@ -326,7 +322,7 @@ static void cal_settled(void)
     cal_settling = false;
     int32_t moved = cal_stage == CAL_CLEAR ? n_clear : n_backoff;
     if (limit_open_now()) {
-        raise(F05, true, "Switch still active after %ld-step %s", (long)moved,
+        raise(F04, true, "Switch still active after %ld-step %s", (long)moved,
               cal_stage == CAL_CLEAR ? "clearance move" : "back-off");
     } else if (cal_stage == CAL_CLEAR) {
         cal_fast();
@@ -366,7 +362,7 @@ void valve_task(void)
         seq_seen = seq;
         stepper3_stop_t why = stepper3_last_stop();
         if (why == STEPPER3_STOP_TIMEOUT)
-            raise(F06, false, "Motion timeout at count %ld", (long)stepper3_position());
+            raise(F05, false, "Motion timeout at count %ld", (long)stepper3_position());
         else if (mode == VALVE_CALIBRATING && cal_moving)
             cal_move_ended(why);
         else if (why == STEPPER3_STOP_LIMIT)
@@ -424,7 +420,6 @@ static void auto_step(void)
     }
     ctrl_tune_t k = tune_now();
     ctrl_in_t in = { lv_tick_get(), pv_mbar, stepper3_position(), stepper3_busy(), limit_open_now(), range_mbar() };
-    char a[16], b[16];
     switch (ctrl_step(&ctl, &k, &in)) {
     case CTRL_RUN:
         // The closed switch blocks closing from rest (stepper3 refuses it);
@@ -438,19 +433,9 @@ static void auto_step(void)
         ev("W-02", "Convergence timeout after %d s, auto paused", CTRL_TCONV_S);
         update_lock();
         break;
-    case CTRL_F03:
-        raise(F03, false, "Pressure %s above the sensor range %s mB", mbar_text(a, sizeof a, pv_mbar, 2),
-              mbar_text(b, sizeof b, range_mbar(), 1));
-        break;
-    case CTRL_F07:
-        raise(F07, false, "No pressure response in %d windows: drive slipping, motor unplugged or needle seized",
+    case CTRL_F06:
+        raise(F06, false, "No pressure response in %d windows: drive slipping, motor unplugged or needle seized",
               CTRL_NRESP);
-        break;
-    case CTRL_F08:
-        raise(F08, false, "Pressure falling, valve opening, 2 windows: helium supply lost? First use: KDIR");
-        break;
-    case CTRL_F09:
-        raise(F09, false, "Pressure rising, valve closing, 2 windows: pot not pumped? First use: KDIR");
         break;
     }
 }
@@ -561,8 +546,6 @@ void valve_sense(const clicks_state_t *s)
     }
     pv_ok = s->pm_found && s->reading_ok && !s->boost_tripped && !cause_f01 && !cause_f02;
     pv_mbar = (float)s->p_mmbar / 1000.0f;
-    if (pv_ok)
-        cause_f03 = s->p_mmbar > valve_range_mmbar();
     auto_step();
 }
 
@@ -688,13 +671,12 @@ static bool can_reset(fault_t f)
 {
     if (f == F01) return sensed && !cause_f01;
     if (f == F02) return sensed && !cause_f02;
-    if (f == F03) return sensed && pv_ok && !cause_f03;
     return true;
 }
 
 bool valve_stop_latches(void)
 {
-    return is_auto();   // in AUTO it holds AUTO off until a reset; outside, a plain stop
+    return is_auto();   // STOP ends AUTO (nothing latched since 0.11.20); outside, a plain stop
 }
 
 void valve_stop(void)
@@ -705,24 +687,18 @@ void valve_stop(void)
         stepper3_override_cancel();
         ev("LIM", "Limit override off (STOP)");
     }
-    if (!valve_stop_latches()) {
-        // Outside AUTO, STOP is an operating stop: stop and hold, nothing latched.
-        stepper3_stop();
-        seq_seen = stepper3_move_seq();
-        cal_abort("STOP");
-        ev("STOP", "Operator stop at count %ld%s", (long)stepper3_position(),
-           was_cal ? ", calibrating cancelled" : "");
-    } else if (latched[F10]) {
-        // STOP always stops, even with F-10 already latched.
-        stepper3_stop();
-        cal_abort("STOP");
-        ev("F-10", "STOP again at count %ld", (long)stepper3_position());
-    } else {
-        stepper3_stop();
-        seq_seen = stepper3_move_seq();
-        raise(F10, false, "Operator stop at count %ld%s", (long)stepper3_position(),
-              was_cal ? ", calibrating cancelled" : "");
+    // An operating stop: stop and hold, nothing latched. In AUTO it also
+    // drops to MANUAL (no fault since 0.11.20, Ryan 22 Oct).
+    bool was_auto = is_auto();
+    stepper3_stop();
+    seq_seen = stepper3_move_seq();
+    cal_abort("STOP");
+    if (was_auto) {
+        mode = VALVE_MANUAL;
+        update_lock();
     }
+    ev("STOP", "Operator stop at count %ld%s", (long)stepper3_position(),
+       was_cal ? ", calibrating cancelled" : was_auto ? ", AUTO ended, MANUAL" : "");
 }
 
 static void stop_command(void)

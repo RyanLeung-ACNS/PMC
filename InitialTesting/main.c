@@ -96,7 +96,7 @@ static const char *const help_valve[] = {
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
-    "  CTRL STOP                  stop now (latches F-10 in AUTO)",
+    "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
     "  EVT? [1-100]               last events (default 20)",
 };
@@ -108,7 +108,7 @@ static const char *const help_auto[] = {
     "  PID?                       all control parameters",
     "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
-    "In AUTO: F-03 above range 5 s, F-07 no response, F-08/F-09 wrong way, W-02 pauses after 1800 s",
+    "In AUTO: F-06 no response, W-02 pauses after 1800 s",
 };
 static const char *const help_sys[] = {
     "System:",

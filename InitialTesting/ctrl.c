@@ -6,7 +6,7 @@
 /* --------------------------------------------------------------------------
  * Ported from the simulator v63 (toAuto, setSP, ctrlTick, regulation). The
  * names follow it: I, posCmd, lastSent, posF, winT/winPos/winPV, noresp,
- * wrong/wrongWay, convStart, f02Since, inBandSince.
+ * convStart, inBandSince.
  * ------------------------------------------------------------------------ */
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -54,9 +54,8 @@ void ctrl_start(ctrl_t *c, const ctrl_tune_t *k, uint32_t t_ms, float pv, int32_
     c->win_t = 0;
     c->win_pos = c->pos_f;
     c->win_pv = pv;
-    c->noresp = c->wrong = 0;
+    c->noresp = 0;
     c->conv_ms = t_ms;
-    c->f02_on = false;
     c->move = false;
 }
 
@@ -93,18 +92,6 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
     else if (!c->in_band) {
         c->in_band = true;
         c->in_band_ms = in->t_ms;
-    }
-
-    // F-03, armed in AUTO only.
-    if (pv > in->fs) {
-        if (!c->f02_on) {
-            c->f02_on = true;
-            c->f02_ms = in->t_ms;
-        }
-        if (since(in->t_ms, c->f02_ms) >= CTRL_F03_S * 1000u)
-            return CTRL_F03;
-    } else {
-        c->f02_on = false;
     }
 
     const float e = (float)k->kdir * (c->sp - pv);
@@ -150,25 +137,16 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         const bool judged = fabsf(moved) >= judge;
         const int way = judged ? sgnf(moved) : !in->moving && pin_open ? 1 : !in->moving && pin_min ? -1 : 0;
         if (way) {
-            const int exp = way * k->kdir;
-            if (dp * (float)exp < -CTRL_DPMIN) {
-                c->wrong = (c->wrong_way == way ? c->wrong : 0) + 1;
-                c->wrong_way = way;
-                c->noresp = 0;
-                if (c->wrong >= 2)
-                    return way > 0 ? CTRL_F08 : CTRL_F09;
-            } else if (judged && fabsf(dp) < CTRL_DPMIN) {
-                c->noresp++;
-                c->wrong = 0;
-                if (c->noresp >= CTRL_NRESP)
-                    return CTRL_F07;
+            // A wrong-way change is a response too: no fault for it (Ryan, 22 Oct;
+            // on the model a lost helium supply shows as F-06, a stopped pump as W-02).
+            if (judged && fabsf(dp) < CTRL_DPMIN) {
+                if (++c->noresp >= CTRL_NRESP)
+                    return CTRL_F06;
             } else {
                 c->noresp = 0;
-                c->wrong = 0;
             }
         } else {
-            c->noresp = 0;   // a window not judged resets both counts
-            c->wrong = 0;
+            c->noresp = 0;   // a window not judged resets the count
         }
         c->win_t = 0;
         c->win_pos = c->pos_f;

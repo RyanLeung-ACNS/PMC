@@ -91,13 +91,13 @@ bool valve_motion_blocked(void) { return v_f12 || v_f16; }
 bool valve_fault_first(const char **tag, const char **text)
 {
     if (v_f01) { *tag = "F-01"; *text = "No Druck signal"; return true; }
-    if (v_f16) { *tag = "F-08"; *text = "Pressure falling, valve opening"; return true; }
-    if (v_f12) { *tag = "F-10"; *text = "Operator STOP"; return true; }
+    if (v_f12) { *tag = "F-05"; *text = "Motion timeout"; return true; }
+    if (v_f16) { *tag = "F-06"; *text = "No pressure response"; return true; }
     return false;
 }
 bool valve_fault_is(const char *tag)
 {
-    return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-10")) || (v_f16 && !strcmp(tag, "F-08"));
+    return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-05")) || (v_f16 && !strcmp(tag, "F-06"));
 }
 int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = v_f16 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
 static bool v_q;
@@ -105,20 +105,20 @@ bool valve_question(int32_t *p) { if (v_q && p) *p = 187; return v_q; }
 bool valve_answer(bool z, const char **why) { (void)z; (void)why; v_q = false; return true; }
 bool valve_fault_get(int i, valve_fault_t *f)
 {
-    const char *tags[3] = { "F-01", "F-08", "F-10" },
-               *texts[3] = { "No Druck signal", "Pressure falling, valve opening", "Operator STOP" };
-    bool on[3] = { v_f01, v_f16, v_f12 };
+    const char *tags[3] = { "F-01", "F-05", "F-06" },
+               *texts[3] = { "No Druck signal", "Motion timeout", "No pressure response" };
+    bool on[3] = { v_f01, v_f12, v_f16 };
     int k = 0;
     for (int j = 0; j < 3; j++) {
         if (!on[j]) continue;
         if (k++ != i) continue;
         f->tag = tags[j]; f->text = texts[j]; f->age_ms = j ? 64000 : 312000;
-        f->mode = j == 1 ? VALVE_AUTO : VALVE_MANUAL; f->can_reset = j != 0;
+        f->mode = j == 2 ? VALVE_AUTO : VALVE_MANUAL; f->can_reset = j != 0;
         return true;
     }
     return false;
 }
-static const char *const ev_tag[] = { "F-10", "W-01", "REF", "REF", "BOOT" };
+static const char *const ev_tag[] = { "STOP", "W-01", "REF", "REF", "BOOT" };
 static const char *const ev_text[] = { "Operator stop at count 33880", "Point set as 0 %, count 0",
     "Homed in 15 s, position 0", "Homing started at count 1203", "Power-up (event only), valve not homed" };
 int valve_event_count(void) { return 5; }
