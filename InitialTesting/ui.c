@@ -634,6 +634,14 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
     }
     ui_set_text(strip_icon, glyph);
     ui_set_color(strip_icon, ic);
+    // The font's arrows and loop sit 1 px above the text's middle; the
+    // triangle (beside two lines) and the drawn icons do not (Ryan, 22 Oct).
+    int32_t dy = glyph != LV_SYMBOL_WARNING ? 1 : 0;
+    static int32_t dy_set;
+    if (dy != dy_set) {
+        dy_set = dy;
+        lv_obj_align(strip_icon, LV_ALIGN_LEFT_MID, 12, dy);
+    }
 
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
