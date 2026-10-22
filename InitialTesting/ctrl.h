@@ -14,14 +14,14 @@
  * Once per Ts (1 s), straight after the pressure read:
  *   - PI in position form, D on the measurement (Kd 0, off), output in steps.
  *     Bumpless entry: the first output is the position in force.
- *   - Anti-windup: no integration past POS_MAX or Auto min in the direction
+ *   - Anti-windup: no integration past POS_MAX or AUTO min in the direction
  *     of the error, while the closed switch blocks closing, or while the valve
  *     is still more than CTRL_LEAD_MAX steps short of the last command.
  *   - Commands within the deadband (DB steps) of the last one sent are held.
  *   - Response monitor: every CTRL_TCHECK s, the counted position through a
  *     CTRL_TLAG s lag against the pressure change. F-06 after CTRL_NRESP
  *     windows with no response. A window with the valve pinned fully open,
- *     or at Auto min, while the loop asks for more is judged too. A
+ *     or at AUTO min, while the loop asks for more is judged too. A
  *     wrong-way change counts as a response (no fault since 0.11.20).
  *   - W-02: outside the target band for CTRL_TCONV s; AUTO pauses.
  */
@@ -46,7 +46,7 @@ typedef struct {
     int32_t db;        // deadband, steps
     int kdir;          // +1 opening raises the pressure, -1 lowers it, 0 not set
     float band;        // target band, mbar
-    float outmin;      // Auto min, % open
+    float outmin;      // AUTO min, % open
     int32_t pos_max;   // steps for 100 %
 } ctrl_tune_t;
 

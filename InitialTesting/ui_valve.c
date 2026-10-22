@@ -441,7 +441,7 @@ const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, c
  * ------------------------------------------------------------------------ */
 #define LOG_ROWS 40
 static struct {
-    lv_obj_t *list, *none, *reset, *log, *box, *page[2];
+    lv_obj_t *list, *none, *reset, *log, *log_time, *log_tag, *box, *page[2];
     int nf;                   // rows built
     char sig[64];             // tags shown, to rebuild on change
     uint32_t log_total;
@@ -449,6 +449,9 @@ static struct {
     lv_obj_t *d_title, *d_when, *d_text[4], *d_next;
 } fp;
 static char log_text[LOG_ROWS * 112];
+// Time and tag columns, one line per wrapped text line (Ryan, 22 Oct: the
+// event texts start at one x).
+static char log_time[LOG_ROWS * 20], log_tag[LOG_ROWS * 12];
 
 typedef struct {
     const char *tag, *happened, *controller, *check, *reset;
@@ -642,9 +645,12 @@ static void faults_build(lv_obj_t *scr)
         lv_obj_add_event_cb(b, log_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
         fp.page[i] = b;
     }
+    fp.log_time = ui_label(box, 0, 0, 0, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    fp.log_tag = ui_label(box, 0, 0, 0, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     fp.log = ui_label(box, 0, 0, 317, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(fp.log, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(fp.log, 2, 0);
+    for (int i = 0; i < 3; i++)
+        lv_obj_set_style_text_line_space(i == 0 ? fp.log_time : i == 1 ? fp.log_tag : fp.log, 2, 0);
     fp.log_total = (uint32_t)-1;
 }
 
@@ -689,18 +695,52 @@ static void faults_log(void)
     if (total == fp.log_total)
         return;
     fp.log_total = total;
-    size_t len = 0;
-    log_text[0] = '\0';
-    for (int i = 0; i < LOG_ROWS; i++) {
+    // Column widths from the widest time and tag shown.
+    const lv_font_t *f = &ui_font_12;
+    int32_t tw = 0, gw = 0;
+    int n = 0;
+    for (; n < LOG_ROWS; n++) {
+        uint32_t age;
+        const char *tag, *text;
+        char w[16];
+        if (!valve_event_get(n, &age, &tag, &text))
+            break;
+        lv_point_t a, b;
+        lv_text_get_size(&a, ui_when(w, sizeof w, age), f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_text_get_size(&b, tag, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (a.x > tw) tw = a.x;
+        if (b.x > gw) gw = b.x;
+    }
+    const int32_t gap = 8, x_tag = tw + gap, x_text = x_tag + gw + gap, text_w = 317 - x_text;
+    size_t lt = 0, lg = 0, lx = 0;
+    log_text[0] = log_time[0] = log_tag[0] = '\0';
+    for (int i = 0; i < n; i++) {
         uint32_t age;
         const char *tag, *text;
         char w[16];
         if (!valve_event_get(i, &age, &tag, &text))
             break;
-        lv_snprintf(log_text + len, sizeof log_text - len, "%s%s  %s  %s", i ? "\n" : "",
-                    ui_when(w, sizeof w, age), tag, text);
-        len += strlen(log_text + len);
+        // Lines the text wraps to: the time and tag columns skip as many.
+        lv_point_t sz;
+        lv_text_get_size(&sz, text, f, 0, 2, text_w, LV_TEXT_FLAG_NONE);
+        int lines = (sz.y + 2) / (lv_font_get_line_height(f) + 2);
+        if (lines < 1) lines = 1;
+        lv_snprintf(log_time + lt, sizeof log_time - lt, "%s%s", i ? "\n" : "", ui_when(w, sizeof w, age));
+        lv_snprintf(log_tag + lg, sizeof log_tag - lg, "%s%s", i ? "\n" : "", tag);
+        lv_snprintf(log_text + lx, sizeof log_text - lx, "%s%s", i ? "\n" : "", text);
+        lt += strlen(log_time + lt);
+        lg += strlen(log_tag + lg);
+        lx += strlen(log_text + lx);
+        for (int k = 1; k < lines; k++) {
+            if (lt + 1 < sizeof log_time) { log_time[lt++] = '\n'; log_time[lt] = '\0'; }
+            if (lg + 1 < sizeof log_tag)  { log_tag[lg++] = '\n'; log_tag[lg] = '\0'; }
+        }
     }
+    lv_obj_set_x(fp.log_tag, x_tag);
+    lv_obj_set_x(fp.log, x_text);
+    lv_obj_set_width(fp.log, text_w);
+    lv_label_set_text_static(fp.log_time, log_time);
+    lv_label_set_text_static(fp.log_tag, log_tag);
     lv_label_set_text_static(fp.log, log_text);
     log_buttons();
 }

@@ -100,7 +100,7 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
     c->prev_pv = pv;
     const float i_new = c->i + ki * e * CTRL_TS_S;
     const float raw = kp * e + i_new + d;
-    const float lo = k->outmin / 100.0f * pos_max;   // Auto min
+    const float lo = k->outmin / 100.0f * pos_max;   // AUTO min
     bool integrate = true;
     if (raw > pos_max && e > 0) integrate = false;
     if (raw < lo && e < 0) integrate = false;
