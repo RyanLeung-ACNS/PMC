@@ -340,7 +340,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
 static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *fault_rule;
-static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act, *strip_spark;
+static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_shape, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
@@ -412,6 +412,52 @@ static void act_event(lv_event_t *e)
         act_cb(e);
 }
 
+// The status line's drawn icons, 16 x 16, in the label colour.
+typedef enum { SHAPE_VALVE, SHAPE_TARGET } shape_t;
+static shape_t shape;
+static lv_color_t shape_col;
+
+static void shape_draw(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target_obj(e), &a);
+    int32_t x = a.x1, y = a.y1;
+    lv_draw_rect_dsc_t r;
+    lv_draw_rect_dsc_init(&r);
+    r.bg_color = shape_col;
+    if (shape == SHAPE_VALVE) {
+        // P&ID hand valve: two triangles tip to tip, stem and handle.
+        lv_draw_triangle_dsc_t t;
+        lv_draw_triangle_dsc_init(&t);
+        t.color = shape_col;
+        t.p[0].x = x + 1;  t.p[0].y = y + 5;  t.p[1].x = x + 1;  t.p[1].y = y + 15; t.p[2].x = x + 8; t.p[2].y = y + 10;
+        lv_draw_triangle(layer, &t);
+        t.p[0].x = x + 15; t.p[0].y = y + 5;  t.p[1].x = x + 15; t.p[1].y = y + 15; t.p[2].x = x + 8; t.p[2].y = y + 10;
+        lv_draw_triangle(layer, &t);
+        lv_area_t q = { x + 7, y + 2, x + 8, y + 10 };
+        lv_draw_rect(layer, &r, &q);
+        lv_area_t h = { x + 4, y + 1, x + 11, y + 2 };
+        lv_draw_rect(layer, &r, &h);
+    } else {
+        // Target: two rings and a centre dot.
+        r.radius = LV_RADIUS_CIRCLE;
+        r.bg_opa = LV_OPA_TRANSP;
+        r.border_color = shape_col;
+        r.border_width = 2;
+        lv_area_t o = { x, y, x + 15, y + 15 };
+        lv_draw_rect(layer, &r, &o);
+        lv_area_t i = { x + 4, y + 4, x + 11, y + 11 };
+        lv_draw_rect(layer, &r, &i);
+        r.bg_opa = LV_OPA_COVER;
+        r.border_width = 0;
+        lv_area_t d = { x + 7, y + 7, x + 8, y + 8 };
+        lv_draw_rect(layer, &r, &d);
+    }
+}
+
+
+
 static void build_frame(void)
 {
     frame = plain(lv_layer_top());
@@ -471,6 +517,14 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(strip_dot, LV_OPA_COVER, 0);
     strip_icon = ui_label(strip, 12, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
                           LV_SYMBOL_WARNING);
+    // Drawn icons with no font glyph: the valve symbol and the target.
+    strip_shape = plain(strip);
+    lv_obj_set_size(strip_shape, 16, 16);
+    lv_obj_add_event_cb(strip_shape, shape_draw, LV_EVENT_DRAW_MAIN, NULL);
+    lv_obj_add_flag(strip_shape, LV_OBJ_FLAG_HIDDEN);
+    // Centred on the text's middle, not on the strip (Ryan, 22 Oct: they sat high).
+    lv_obj_align(strip_icon, LV_ALIGN_LEFT_MID, 12, 0);
+    lv_obj_align(strip_shape, LV_ALIGN_LEFT_MID, 12, 0);
     strip_text = ui_label(strip, 28, 0, 303, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(strip_text, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(strip_text, 4, 0);
@@ -554,12 +608,37 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         dot = dis_tx;
     if (kind == UI_STRIP_INFO && !is_mode && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
         lv_obj_set_style_bg_color(strip_dot, dot, 0);
-    show(strip_icon, kind >= UI_STRIP_WARN);
-    ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    // The status line's icon (Ryan, 22 Oct), grey as the text: the loop
+    // while AUTO regulates, a target once Stable, an arrow while the valve
+    // moves, the valve symbol when it is held in MANUAL.
+    const char *glyph = LV_SYMBOL_WARNING;
+    int sh = -1;
+    if (is_mode && kind < UI_STRIP_WARN) {
+        if (valve_auto() && valve_regulation() == CTRL_REG_STABLE)
+            sh = SHAPE_TARGET;
+        else if (valve_auto())
+            glyph = LV_SYMBOL_LOOP;
+        else if (stepper3_busy())
+            glyph = stepper3_target() > stepper3_position() ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
+        else
+            sh = SHAPE_VALVE;
+    }
+    lv_color_t ic = dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT
+                  : kind >= UI_STRIP_WARN ? lv_color_white() : UI_MUTED;
+    show(strip_icon, (kind >= UI_STRIP_WARN || is_mode) && sh < 0);
+    show(strip_shape, sh >= 0);
+    if (sh >= 0 && (sh != (int)shape || !lv_color_eq(ic, shape_col))) {
+        shape = (shape_t)sh;
+        shape_col = ic;
+        lv_obj_invalidate(strip_shape);
+    }
+    ui_set_text(strip_icon, glyph);
+    ui_set_color(strip_icon, ic);
+
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
-    int32_t x = kind == UI_STRIP_PROMPT || is_mode ? 12 : kind >= UI_STRIP_WARN ? 36 : 28;
+    int32_t x = kind == UI_STRIP_PROMPT ? 12 : kind >= UI_STRIP_WARN || is_mode ? 36 : 28;
     int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
