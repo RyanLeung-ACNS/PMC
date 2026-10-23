@@ -1129,6 +1129,15 @@ void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), cons
     ui_ask4(text, cancel, on_cancel, mid, on_mid, NULL, NULL, ok, on_ok);
 }
 
+// A dialog's other buttons: filled with the page grey, so they read as
+// buttons on the white box (Ryan, 23 Oct: white on white was easy to miss).
+static void dialog_btn(lv_obj_t *box, int32_t x, int32_t y, int32_t w, int32_t h, const char *text,
+                       lv_event_cb_t cb, void *user)
+{
+    lv_obj_t *b = ui_btn(box, x, y, w, h, UI_SECONDARY, text, cb, user);
+    lv_obj_set_style_bg_color(b, UI_BG, 0);
+}
+
 void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
              void (*on_mid)(void), const char *mid2, void (*on_mid2)(void), const char *ok, void (*on_ok)(void))
 {
@@ -1153,16 +1162,16 @@ void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), cons
     lv_obj_set_size(box, bw, h);
     lv_obj_set_y(box, (168 - h) / 2);
     if (mid2) {
-        ui_btn(box, 16, by, 91, 48, UI_SECONDARY, cancel, confirm_event, NULL);
-        ui_btn(box, 115, by, 91, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
-        ui_btn(box, 214, by, 91, 48, UI_SECONDARY, mid2, confirm_event, (void *)3);
+        dialog_btn(box, 16, by, 91, 48, cancel, confirm_event, NULL);
+        dialog_btn(box, 115, by, 91, 48, mid, confirm_event, (void *)2);
+        dialog_btn(box, 214, by, 91, 48, mid2, confirm_event, (void *)3);
         ui_btn(box, 313, by, 91, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     } else if (mid) {
-        ui_btn(box, 16, by, 96, 48, UI_SECONDARY, cancel, confirm_event, NULL);
-        ui_btn(box, 122, by, 96, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
+        dialog_btn(box, 16, by, 96, 48, cancel, confirm_event, NULL);
+        dialog_btn(box, 122, by, 96, 48, mid, confirm_event, (void *)2);
         ui_btn(box, 228, by, 96, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     } else {
-        ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+        dialog_btn(box, 16, by, 150, 48, cancel, confirm_event, NULL);
         ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     }
     frame_refresh();

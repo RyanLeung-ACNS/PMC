@@ -42,6 +42,18 @@ static const setting_t settings[] = {
 #define N_SETTINGS (sizeof settings / sizeof settings[0])
 _Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
 
+/* The settings above are in full steps (steps/s for the speeds), whatever
+ * the step mode; the motor counts half steps in HALF (stepper3_scale()).
+ * These give them in motor counts, so a mode change keeps the homing
+ * (Ryan, 23 Oct: "just recalculate"). */
+static int32_t sc(int32_t full) { return full * stepper3_scale(); }
+static int32_t pm(void) { return sc(pos_max); }
+static int32_t f_rate(int32_t full)
+{
+    int32_t r = sc(full);
+    return r > STEPPER3_RATE_MAX ? STEPPER3_RATE_MAX : r;
+}
+
 #define SETTLE_MS     150     // after a move, before the switch is read
 #define CREEP_EXTRA   200     // creep goes this far past the back-off
 #define EXC_MIN_MV    9500    // F-02 window
@@ -137,7 +149,8 @@ static float pv_mbar;
 
 static int32_t pct10_of(int32_t pos)
 {
-    return (int32_t)(((int64_t)pos * 1000 + (pos >= 0 ? pos_max / 2 : -pos_max / 2)) / pos_max);
+    const int32_t m = pm();
+    return (int32_t)(((int64_t)pos * 1000 + (pos >= 0 ? m / 2 : -m / 2)) / m);
 }
 
 static int32_t milli_of(int32_t pos);
@@ -234,9 +247,9 @@ static bool cal_move(int32_t to, int32_t rate)
 
 static void cal_fast(void)
 {
-    int32_t n = (int32_t)(((int64_t)pos_max * 11 + 5) / 10);
+    int32_t n = (int32_t)(((int64_t)pm() * 11 + 5) / 10);
     cal_stage = CAL_FAST;
-    if (!cal_move(stepper3_position() - n, f_home))
+    if (!cal_move(stepper3_position() - n, f_rate(f_home)))
         raise(F03, true, "Homing: closing move refused at count %ld (%s)", (long)stepper3_position(),
               stepper3_refusal());
 }
@@ -244,7 +257,7 @@ static void cal_fast(void)
 static void cal_creep(void)
 {
     cal_stage = CAL_CREEP;
-    if (!cal_move(stepper3_position() - (n_backoff + CREEP_EXTRA), f_creep))
+    if (!cal_move(stepper3_position() - sc(n_backoff + CREEP_EXTRA), f_rate(f_creep)))
         raise(F03, true, "Homing: creep move refused at count %ld", (long)stepper3_position());
 }
 
@@ -264,7 +277,7 @@ static bool cal_start(const char **err)
     ev("REF", "Homing started at count %ld", (long)stepper3_position());
     if (limit_open_now()) {
         cal_stage = CAL_CLEAR;
-        cal_move(stepper3_position() + n_clear, f_home);
+        cal_move(stepper3_position() + sc(n_clear), f_rate(f_home));
     } else {
         cal_fast();
     }
@@ -287,17 +300,17 @@ static void cal_move_ended(stepper3_stop_t why)
     case CAL_FAST:
         if (why == STEPPER3_STOP_LIMIT) {
             cal_stage = CAL_BACK;
-            cal_move(stepper3_position() + n_backoff, f_home);
+            cal_move(stepper3_position() + sc(n_backoff), f_rate(f_home));
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found within %ld steps",
-                  (long)(((int64_t)pos_max * 11 + 5) / 10));
+                  (long)(((int64_t)pm() * 11 + 5) / 10));
         } else {
             cal_abort(stepper3_stop_name(why));
         }
         break;
     case CAL_CREEP:
         if (why == STEPPER3_STOP_LIMIT) {
-            if (!stepper3_set_position(n_offset)) {
+            if (!stepper3_set_position(sc(n_offset))) {
                 cal_abort("count not set");
                 break;
             }
@@ -306,7 +319,7 @@ static void cal_move_ended(stepper3_stop_t why)
             cal_done = true;
             cal_took_s = lv_tick_elaps(cal_t0) / 1000;
             lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
-            ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)n_offset);
+            ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)sc(n_offset));
             cal_end(VALVE_MANUAL);
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
@@ -322,7 +335,7 @@ static void cal_move_ended(stepper3_stop_t why)
 static void cal_settled(void)
 {
     cal_settling = false;
-    int32_t moved = cal_stage == CAL_CLEAR ? n_clear : n_backoff;
+    int32_t moved = sc(cal_stage == CAL_CLEAR ? n_clear : n_backoff);
     if (limit_open_now()) {
         raise(F04, true, "Switch still active after %ld-step %s", (long)moved,
               cal_stage == CAL_CLEAR ? "clearance move" : "back-off");
@@ -392,7 +405,7 @@ static ctrl_tune_t tune_now(void)
     k.db = cfg_tune(CFG_DB);
     k.kdir = (int)cfg_tune(CFG_KDIR);
     k.band = (float)cfg_tune(CFG_BAND) / 100.0f;
-    k.pos_max = pos_max;
+    k.pos_max = pm();
     return k;
 }
 
@@ -598,7 +611,7 @@ bool valve_set_position(int32_t pct100, const char **why)
     if (mode == VALVE_CALIBRATING) { *why = "homing, STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
-    int32_t c = (int32_t)(((int64_t)pct100 * pos_max + 5000) / 10000);
+    int32_t c = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (stepper3_busy() || !stepper3_set_position(c)) { *why = "moving, wait for it to stop"; return false; }
     calibrated = true;
     mode = VALVE_MANUAL;
@@ -613,7 +626,7 @@ bool valve_set_position(int32_t pct100, const char **why)
 
 valve_mode_t valve_mode(void)   { return mode; }
 bool valve_calibrated(void)     { return calibrated; }
-int32_t valve_pos_max(void)     { return pos_max; }
+int32_t valve_pos_max(void)     { return pm(); }   // in motor counts
 int32_t valve_pct10(void)       { return pct10_of(stepper3_position()); }
 bool valve_fault_latched(void)  { return any_latched(); }
 bool valve_motion_blocked(void) { return any_latched(); }
@@ -659,7 +672,7 @@ const char *valve_status(void)
     } else if (calibrated)
         lv_snprintf(status_text, sizeof status_text, "Valve: %s, calibrated, %s %% (count %ld of %ld)%s%s%s",
                     valve_mode_name(), pct_text(p, sizeof p, stepper3_position()),
-                    (long)stepper3_position(), (long)pos_max, f[0] ? ", faults " : "", f,
+                    (long)stepper3_position(), (long)pm(), f[0] ? ", faults " : "", f,
                     question ? ", switch question waiting" : "");
     else
         lv_snprintf(status_text, sizeof status_text, "Valve: %s%s%s, count %ld%s%s",
@@ -926,9 +939,9 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (!calibrated)                { *why = "valve not calibrated, VALVE CAL first"; return false; }
-    int32_t to = (int32_t)(((int64_t)pct100 * pos_max + 5000) / 10000);
+    int32_t to = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (to < 0) to = 0;
-    if (to > pos_max) to = pos_max;
+    if (to > pm()) to = pm();
     if (!stepper3_goto(to))         { *why = stepper3_refusal(); return false; }
     return true;
 }
@@ -949,8 +962,8 @@ uint32_t valve_cal_elapsed_s(void) { return mode == VALVE_CALIBRATING ? lv_tick_
 
 uint32_t valve_cal_budget_s(void)
 {
-    return (uint32_t)(((int64_t)pos_max * 11 / 10 + n_clear + 2 * n_backoff) / f_home
-                      + (n_backoff + CREEP_EXTRA) / f_creep + 1);
+    return (uint32_t)(((int64_t)pm() * 11 / 10 + sc(n_clear + 2 * n_backoff)) / f_rate(f_home)
+                      + sc(n_backoff + CREEP_EXTRA) / f_rate(f_creep) + 1);
 }
 
 int valve_cal_step(void)
@@ -968,7 +981,8 @@ int32_t valve_target_pct10(void) { return pct10_of(stepper3_target()); }
 
 static int32_t milli_of(int32_t pos)
 {
-    return (int32_t)(((int64_t)pos * 100000 + (pos >= 0 ? pos_max / 2 : -pos_max / 2)) / pos_max);
+    const int32_t m = pm();
+    return (int32_t)(((int64_t)pos * 100000 + (pos >= 0 ? m / 2 : -m / 2)) / m);
 }
 int32_t valve_pct_milli(void)        { return milli_of(stepper3_position()); }
 int32_t valve_target_pct_milli(void) { return milli_of(stepper3_target()); }
@@ -1015,9 +1029,9 @@ bool valve_answer(bool set_zero, const char **why)
     question = false;
     if (set_zero) {
         int32_t d = stepper3_position() - question_at;
-        stepper3_set_position(n_offset + d);
-        switch_at += n_offset - question_at;
-        ev("W-01", "Point set as 0 %%, count %ld", (long)n_offset);
+        stepper3_set_position(sc(n_offset) + d);
+        switch_at += sc(n_offset) - question_at;
+        ev("W-01", "Point set as 0 %%, count %ld", (long)sc(n_offset));
     } else {
         ev("W-01", "Zero skipped, count kept at %ld", (long)question_at);
     }

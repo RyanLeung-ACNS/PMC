@@ -2,7 +2,7 @@
  * line (model.c). Runs the porting plan's cases and checks them:
  *   closed to 5 mB, 4.5 to 10 mB, targets 5, 7, 3, 5 with no false trip,
  *   helium off -> F-06, pump off -> W-02 to MANUAL (no wrong-way fault since 0.11.20),
- *   slipping drive -> F-06, and the
+ *   slipping drive -> F-06, AUTO min 0 closing to the seat without a fault, and the
  *   entry refusals. -v prints a line a second. */
 #include <math.h>
 #include <stdio.h>
@@ -218,6 +218,23 @@ int main(int argc, char **argv)
     t0 = M.t;
     run(400, 1030);
     CHECK(fault == CTRL_F06, "room air, target above: F-06 after %.0f s", fault_t - t0);
+
+    // AUTO min 0 (the factory value since 0.11.33; the cases above keep the
+    // simulator's 14 to match its references): a target the closed valve
+    // cannot reach drives it to closed (within 1 %), with no false fault.
+    const float outmin = K.outmin;
+    K.outmin = 0;
+    fresh();
+    set_sp(5);
+    to_auto();
+    met_t z = run(1500, 5);
+    CHECK(z.t_band > 0 && fabs(z.end - 5) <= K.band && fault == CTRL_RUN && mode == AUTO,
+          "AUTO min 0: settles at 5 mB (end %.3f)", z.end);
+    set_sp(0);
+    run(1200, 0);
+    CHECK(fault == CTRL_RUN && mode == AUTO && M.pos <= K.pos_max / 100,
+          "AUTO min 0, target 0: closes to %ld steps (%.2f mB), no fault", (long)M.pos, M.pv);
+    K.outmin = outmin;
 
     printf(fails ? "%d failed\n" : "all passed\n", fails);
     return fails ? 1 : 0;

@@ -165,6 +165,7 @@ uint32_t stepper3_rate(void) { return m_rate; }
 uint32_t stepper3_start_rate(void) { return m_start; }
 uint32_t stepper3_accel(void) { return m_accel; }
 stepper3_mode_t stepper3_mode(void) { return m_mode; }
+int32_t stepper3_scale(void) { return m_mode == STEPPER3_HALF ? 2 : 1; }
 bool stepper3_hold(void) { return m_hold; }
 bool stepper3_reverse(void) { return m_rev; }
 bool stepper3_energised(void) { return m_hold; }

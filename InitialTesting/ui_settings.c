@@ -321,7 +321,7 @@ static void ed_turns_keypad(void)
 
 static void ed_turns_present(void)
 {
-    set_draft(CFG_POSMAX, stepper3_position());
+    set_draft(CFG_POSMAX, stepper3_position() / stepper3_scale());   // full steps
 }
 
 static void ed_toggle_ok(void)
@@ -337,7 +337,7 @@ static void edit(cfg_key_t k)
     char a[16], b[16];
     ed_key = k;
     if (F[k].kind == K_TURNS) {
-        int32_t lo, hi, pos = stepper3_position();
+        int32_t lo, hi, pos = stepper3_position() / stepper3_scale();
         cfg_range(CFG_POSMAX, &lo, &hi);
         if (!valve_calibrated() || stepper3_busy() || pos < lo || pos > hi) {
             ed_turns_keypad();
@@ -528,30 +528,12 @@ static void side_refresh(void)
 extern const ui_screen_t ui_scr_name, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review;
 
 static struct {
-    lv_obj_t *tile[5], *over;
+    lv_obj_t *tile[5];
 } st;
 
 static void tile_cb(lv_event_t *e)
 {
     ui_open(lv_event_get_user_data(e));
-}
-
-static void override_on(void)
-{
-    stepper3_override_arm();
-    valve_event("LIM", "Limit override on for the next move (screen)");
-}
-
-static void override_cb(lv_event_t *e)
-{
-    (void)e;
-    if (stepper3_override()) {
-        bool stopped = stepper3_override_cancel();
-        valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
-        ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
-        return;
-    }
-    ui_confirm("Let the next move close past the switch? Only for a stuck switch.", "Override", override_on);
 }
 
 static void motor_go(void) { ui_service(); }
@@ -574,16 +556,12 @@ static void settings_build(lv_obj_t *scr)
                                        &ui_scr_review };
     for (int i = 0; i < 5; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
-    // The overrides look apart from the pages: a dark outline, and Limit
-    // override filled dark while it is armed.
-    st.over = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Limit\noverride", override_cb, NULL);
-    lv_obj_t *m = ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Motor\noverride", motor_cb, NULL);
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t *b = i ? m : st.over;
-        lv_obj_set_style_border_side(b, LV_BORDER_SIDE_FULL, 0);
-        lv_obj_set_style_border_width(b, 2, 0);
-        lv_obj_set_style_border_color(b, UI_WARN, 0);
-    }
+    // Motor override looks apart from the pages: a dark outline. Limit
+    // override is on it since 0.11.33 (Ryan, 23 Oct).
+    lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
+    lv_obj_set_style_border_side(m, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_width(m, 2, 0);
+    lv_obj_set_style_border_color(m, UI_WARN, 0);
     side.save = side.discard = NULL;
 }
 
@@ -601,17 +579,6 @@ static void settings_refresh(void)
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
     ui_btn_text(st.tile[3], "Control tuning", t);
-    bool ov = stepper3_override();
-    // Armed shows as the dark fill and the strip; the state line would not fit.
-    ui_btn_text(st.over, ov ? "Cancel\noverride" : "Limit\noverride", NULL);
-    lv_color_t ob = ov ? UI_WARN : UI_CARD;
-    if (!lv_color_eq(lv_obj_get_style_bg_color(st.over, 0), ob)) {
-        lv_obj_set_style_bg_color(st.over, ob, 0);
-        // Its two labels: name and state line, white on the dark fill.
-        for (uint32_t i = 0; i < lv_obj_get_child_count(st.over); i++)
-            lv_obj_set_style_text_color(lv_obj_get_child(st.over, (int32_t)i),
-                                        ov ? lv_color_white() : i ? UI_MUTED : UI_TEXT, 0);
-    }
     // Without side buttons: the strip only.
     char c[32], w[24];
     uint32_t rev;
@@ -625,8 +592,8 @@ static void settings_refresh(void)
         lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
-    ui_strip_set(ov ? UI_STRIP_WARN : UI_STRIP_INFO, save_icon(n),
-                 ov ? "Limit override on for the next move" : t);
+    // An armed limit override shows over this, as on every screen.
+    ui_strip_set(UI_STRIP_INFO, save_icon(n), t);
 }
 
 const ui_screen_t ui_scr_settings = { "Settings", settings_build, settings_refresh, NULL };

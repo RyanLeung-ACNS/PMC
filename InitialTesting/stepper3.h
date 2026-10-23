@@ -63,7 +63,7 @@ void stepper3_init(void);
 // turns. Returns false for a rate out of range, a target more than
 // STEPPER3_MAX_MOVE from here, or (from rest) a closing move with the limit
 // open. A target equal to the position returns true without moving.
-#define STEPPER3_MAX_MOVE 400000   // > 1.1 x the largest POS_MAX (300000)
+#define STEPPER3_MAX_MOVE 700000   // > 1.1 x the largest POS_MAX (300000 full steps) in half steps
 #define STEPPER3_TIMEOUT_MARGIN_MS 2000
 bool stepper3_goto_rate(int32_t target, uint32_t sps);
 bool stepper3_goto(int32_t target);
@@ -96,8 +96,10 @@ void stepper3_off(void);
 bool stepper3_busy(void);
 int32_t stepper3_position(void);
 void stepper3_zero(void);
+// Motor counts per full step: 2 in HALF, else 1.
+int32_t stepper3_scale(void);
 // Called when the step count stops matching the valve's homing: MOT ZERO,
-// a change of step mode, direction or coil order (from the link, the motor
+// a change of direction or coil order (from the link, the motor
 // screen or a loaded record). The valve layer clears its homing.
 void stepper3_on_reference_change(void (*cb)(const char *why));
 // Called just before a move starts from rest, before the coils are

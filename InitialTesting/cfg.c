@@ -37,10 +37,10 @@ static const char *const mot_name[M_N] = { "RATE", "START", "ACCEL", "MODE", "HO
 // Control tuning, used from stage 8 (AUTO). Fixed point as noted.
 enum { T_KP, T_TI, T_OUTMIN, T_DB, T_KDIR, T_BAND, T_N };
 static const char *const tune_name[T_N] = { "KP", "TI", "OUTMIN", "DB", "KDIR", "BAND" };
-static const int32_t tune_def[T_N] = { 400, 25, 140, 8, 1, 10 };
+static const int32_t tune_def[T_N] = { 400, 25, 0, 8, 1, 10 };
 static const int32_t tune_lo[T_N]  = { 1,     0,     0,   0,    -1, 10 };
 static const int32_t tune_hi[T_N]  = { 10000, 10000, 500, 2000,  1, 1000 };
-static int32_t tune[T_N] = { 400, 25, 140, 8, 1, 10 };
+static int32_t tune[T_N] = { 400, 25, 0, 8, 1, 10 };
 
 typedef struct {
     uint32_t serial;

@@ -132,7 +132,7 @@ static bool before_move(const char **why)
         return true;
     offer = false;
     still = false;
-    int32_t pos = stepper3_position();
+    int32_t pos = stepper3_position() / stepper3_scale();   // saved in full steps
     if (valve_calibrated() ? put2(pos, VP_MOVING) : withdraw(pos)) {
         warned = false;
         return true;
@@ -197,7 +197,7 @@ void valvepos_init(void)
         char p[16];
         valve_event("REF", "Saved position on offer: count %ld (%s %%)%s, use it or calibrate",
                     (long)boot_count, fixed_fmt(p, sizeof p,
-                    fixed_round((int64_t)boot_count * 10000 / valve_pos_max(), 1), 1),
+                    fixed_round((int64_t)boot_count * stepper3_scale() * 10000 / valve_pos_max(), 1), 1),
                     boot_moving ? ", saved while moving" : "");
     }
 }
@@ -208,7 +208,7 @@ void valvepos_task(void)
         return;
     bool moving = stepper3_busy() || valve_mode() == VALVE_CALIBRATING;
     bool cal = valve_calibrated();
-    int32_t pos = stepper3_position();
+    int32_t pos = stepper3_position() / stepper3_scale();   // saved in full steps
     if (moving) {
         still = false;
     } else if (!still) {
@@ -238,7 +238,7 @@ void valvepos_task(void)
 bool valvepos_offer(int32_t *count)
 {
     if (offer)
-        *count = boot_count;
+        *count = boot_count * stepper3_scale();
     return offer;
 }
 
@@ -251,7 +251,7 @@ bool valvepos_offer_moving(int32_t *steps)
 bool valvepos_use(const char **why)
 {
     if (!offer) { *why = "no saved position on offer"; return false; }
-    if (!valve_restore(boot_count, why))
+    if (!valve_restore(boot_count * stepper3_scale(), why))
         return false;
     offer = false;
     return true;

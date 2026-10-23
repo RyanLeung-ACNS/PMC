@@ -582,13 +582,16 @@ bool stepper3_set_accel(uint32_t sps2)
     return true;
 }
 
+int32_t stepper3_scale(void) { return mode == STEPPER3_HALF ? 2 : 1; }
+
 bool stepper3_set_mode(stepper3_mode_t nm)
 {
     if (run_state != ST_IDLE || nm > STEPPER3_HALF)
         return false;
-    if (nm != mode)
-        ref_changed("step mode changed");
-    // Keep the position in the new step size.
+    // Keep the position in the new step size; the homing stays (since
+    // 0.11.33, Ryan 23 Oct), the valve settings being in full steps. HALF to
+    // FULL or WAVE drops an odd half step, and WAVE and FULL rest half a
+    // step apart: at most one half step, against 16512 full steps a turn.
     if (mode == STEPPER3_HALF && nm != STEPPER3_HALF)
         position /= 2;
     else if (mode != STEPPER3_HALF && nm == STEPPER3_HALF)

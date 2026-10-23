@@ -373,7 +373,11 @@ int main(int argc, char **argv)
     }
 
     if (!strcmp(st, "stop")) tap(415, 240);
-    if (!strcmp(st, "motor")) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
+    if (!strncmp(st, "motor", 5)) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
+    if (!strcmp(st, "motor-held")) fake_override = true;   // Limit override held
+    if (!strcmp(st, "motor-speed")) tap(122, 72);
+    if (!strcmp(st, "motor-coils") || !strcmp(st, "motor-ask")) tap(194, 72);
+    if (!strcmp(st, "motor-ask")) { v_cal = true; tap(120, 184); }   // Coil order while homed: asks
     if (!strcmp(st, "overon")) { fake_override = true; tap(415, 184); }   // Menu, override armed
     if (!strcmp(st, "menu")) tap(415, 184);
     if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); tap(111, 184); }
@@ -426,7 +430,6 @@ int main(int argc, char **argv)
     if (!strcmp(st, "set-saved")) tap(249, 136 + 40);
     if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(120, 184);
     if (!strcmp(st, "set-load")) tap(120, 184);
-    if (!strcmp(st, "set-override")) tap(298, 184);
     if (strstr(st, "trend")) { tap(415, 184); tap(210, 72); }   // Menu, Trend
     if (!strcmp(st, "trend1h")) { tap(415, 72); tap(415, 72); }
     if (!strcmp(st, "trend1m")) { tap(415, 184); tap(415, 184); tap(415, 184); }
