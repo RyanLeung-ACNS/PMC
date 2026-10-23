@@ -26,7 +26,7 @@
 #define PMC_PM_MAINS_AVG  1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.11.34"
+#define PMC_FW_VERSION    "0.11.35"
 
 // 1 shows the +/- mbar uncertainty under the unit; UNC? works either way.
 #define PMC_SHOW_UNCERTAINTY 0
@@ -46,6 +46,11 @@
 // 1: the limit switch is the closing stop: closing moves are refused, and
 // stopped mid-move, while it reads open. 0: its state is only displayed.
 #define PMC_LIMIT_STOP    1
+
+// Motor 12 V sense (0.11.35): a 0-25 V divider module (30k / 7.5k, x5) from
+// the motor supply to S2 RX, PA3 (Adapter Click IDC10 pad 8). 1: read, and
+// moves are refused while it reads off (supply.h); 0: not fitted.
+#define PMC_MOTOR_SENSE   1
 
 // Serial number of the Druck in use, shown on the Calibration tab.
 #define PMC_DRUCK_SERIAL  "5880156"

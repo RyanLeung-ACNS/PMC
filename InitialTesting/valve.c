@@ -8,6 +8,7 @@
 #include "rtclock.h"
 #include "limit.h"
 #include "stepper3.h"
+#include "supply.h"
 #include "fixed.h"
 #include "cfg.h"
 #include "ctrl.h"
@@ -371,6 +372,31 @@ void valve_init(void)
     update_lock();
 }
 
+/* Motor supply (supply.h). Lost during a move: the count ran on without
+ * the valve, so the move stops and the homing is cleared. Off in AUTO,
+ * idle: MANUAL (AUTO could not move it); the homing stays. */
+static void supply_check(void)
+{
+    static bool was_off;
+    bool off = supply_off();
+    if (off && !was_off) {
+        bool moving = stepper3_busy() || mode == VALVE_CALIBRATING;
+        if (stepper3_busy())
+            stepper3_stop();
+        ev("SUP", "Motor supply off (%ld mV)%s", (long)supply_mv(), moving ? " during a move" : "");
+        if (moving && (calibrated || mode == VALVE_CALIBRATING))
+            valve_uncalibrate("motor supply lost during a move");
+        if (is_auto()) {
+            mode = VALVE_MANUAL;
+            update_lock();
+            ev("MODE", "Manual: motor supply off");
+        }
+    } else if (!off && was_off) {
+        ev("SUP", "Motor supply on (%ld mV)", (long)supply_mv());
+    }
+    was_off = off;
+}
+
 void valve_task(void)
 {
     evt_dump_task();
@@ -387,6 +413,7 @@ void valve_task(void)
     }
     if (mode == VALVE_CALIBRATING && cal_settling && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
+    supply_check();
     bool open = limit_open_now();
     if (open && !switch_was_open)
         switch_at = stepper3_position();
@@ -484,6 +511,8 @@ bool valve_start_auto(const char **why)
     if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
     ctrl_tune_t k = tune_now();
     *why = ctrl_check(&ctl, &k, calibrated, valve_fault_count() > 0, pv_ok, pv_mbar, range_mbar());
+    if (!*why && supply_off())
+        *why = "Motor supply off";
     if (*why)
         return false;
     // Bumpless from where the valve is going (a manual move still running

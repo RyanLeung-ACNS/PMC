@@ -31,6 +31,7 @@
 #include "cfg.h"
 #include "ui.h"
 #include "limit.h"
+#include "supply.h"
 #include "sense.h"
 #include "valvepos.h"
 #include "trend.h"
@@ -150,6 +151,7 @@ static const char *const help_mot[] = {
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
     "  LIM?                       limit switch state",
+    "  SUP?                       motor 12 V supply",
     "Motor settings (refused during a move; CFG SAVE keeps):",
     "  MOT RATE <16-1000>         run rate, steps/s",
     "  MOT START <16-1000>        start rate, steps/s",
@@ -231,6 +233,7 @@ void application_init()
     // on a MOT MOVE command.
     clicks_init();
     limit_init();
+    supply_init();   // motor 12 V on PA3
     valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
@@ -297,6 +300,7 @@ int main(void)
         touch_poll();
         rtclock_poll();
         limit_poll();
+        supply_poll();
         stepper3_poll();
         valve_task();
         valvepos_task();
@@ -311,7 +315,7 @@ int main(void)
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
         if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

@@ -96,6 +96,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 ## Operation
 
+- **Motor supply** (`PMC_MOTOR_SENSE`, 0.11.35): a 0-25 V divider module from the motor 12 V to S2 RX (PA3) is read every 5 ms. Below 6.0 V moves are refused and the strip says "Motor supply off: moves blocked" on every screen; lost during a move, the move stops and the homing is cleared (the count ran on without the valve); off in AUTO, the valve drops to MANUAL. Below 10.5 V or above 14.0 V is a warning only. Diagnostics shows it on the valve motor row.
 - **Nothing moves at power-up.** The valve is NOT HOMED until it is homed, or until the operator sets the position: Home and Set position are kept apart on every screen. Home finds 0 % on the switch; Set position takes it from the operator (closed, a typed %, or the position saved before the restart), not checked against the switch. At start-up with a saved position the screen asks "Home / Set position / Use X %"; it is never used on its own. Menu > Valve homing has a Home tab and a Set position tab, and a position set rather than homed shows on the status line ("34.20 %, set by hand").
 - **Homing** (Home valve, or `VALVE CAL`): if the switch is pressed, move off it first (F-04 if it stays pressed); 1 fast close to the switch (F-03 if not found within 1.1 x full travel); 2 back off; 3 slow close onto the switch. The switch point is 0 %. STOP cancels it and keeps the earlier homing.
 - **MANUAL**: on the Valve page, tap the Go to box (white, blue underline and chevron when it takes a tap) to type a %; hold Close or Open; 1 % and 5 % steps; Fully close and Fully open. In AUTO the Go to box shows, greyed, the position AUTO is sending the valve to, and a tap asks to switch to MANUAL. Position is in % of POS_MAX steps (66048, 4 turns, by default).
@@ -161,6 +162,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
 | `LIM?` | Valve limit switch: state, raw pin level, change count |
+| `SUP?` | Motor 12 V supply (PA3, x5 divider module): volts, state (ok, LOW below 10.5 V, HIGH above 14.0 V, OFF below 6.0 V), raw ADC and VREFINT counts |
 | `UNC?` | Pressure uncertainty budget, term by term |
 | `TOUCH?` | Touch controller read and error counters |
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |

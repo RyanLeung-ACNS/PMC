@@ -7,6 +7,7 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
+#include "supply.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -895,7 +896,7 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9];
+    lv_obj_t *v[9], *sup;
 } dp;
 
 // Valve motor row: position, limit switch and steps past it, at 50 Hz so
@@ -930,6 +931,15 @@ static void diag_build(lv_obj_t *scr)
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_update_layout(l);
         lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
+        // The valve motor row has four: its supply first (0.11.35).
+        if (r == 1) {
+            static const char *const mcap[4] = { "Supply, V", "Steps", "Limit switch", "Past limit" };
+            lv_obj_t **to[4] = { &dp.sup, &dp.v[3], &dp.v[4], &dp.v[5] };
+            static const int32_t mx[4] = { 98, 182, 272, 380 }, mw[4] = { 80, 86, 104, 90 };
+            for (int c = 0; c < 4; c++)
+                *to[c] = ui_info(scr, mx[c], 104, mw[c], 48, mcap[c]);
+            continue;
+        }
         for (int c = 0; c < 3; c++)
             dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
@@ -967,6 +977,14 @@ static void diag_refresh(void)
     lv_snprintf(buf, sizeof buf, "%ld", (long)(stepper3_position() - from));
     ui_set_text(dp.v[7], any ? buf : "--");
     ui_set_text(dp.v[8], any ? ui_fmt1(buf, sizeof buf, ms) : "--");
+    // Motor supply (supply.h): coloured only when abnormal.
+    supply_state_t sup = supply_state();
+    if (!supply_fitted())
+        lv_strlcpy(buf, "Not fitted", sizeof buf);
+    else
+        ui_fmt1(buf, sizeof buf, supply_mv() < 0 ? 0 : supply_mv());
+    ui_set_text(dp.sup, buf);
+    ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
     char t[16];
     lv_snprintf(buf, sizeof buf, "Firmware %s. Board %s \xC2\xB0" "C. Link %s.", PMC_FW_VERSION,
