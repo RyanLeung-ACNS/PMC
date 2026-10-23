@@ -151,7 +151,13 @@ void ui_overlay_close(void);
 // Home and Menu (ui_home.c).
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
 void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
-void ui_calibrate_ask(void);   // the Calibrate valve confirm
+// Home and Set position (ui_home.c): ui_home_ask the Home confirm,
+// ui_set_position_ask the Set position list, ui_position_ask both (Home's
+// mode button while not homed).
+void ui_home_ask(void);
+void ui_set_position_ask(void);
+void ui_set_position_pick(int i);   // 0 closed, 1 enter %, 2 saved
+void ui_position_ask(void);
 void ui_manual_ask(void);      // the Switch to MANUAL confirm (AUTO)
 int32_t ui_log_px(int32_t p_mmbar, int32_t w);   // 0.1-1000 mbar on a log scale, 0 to w px
 int32_t ui_pct_shown(int32_t milli);   // valve % as shown (2 dp), in 0.01 %, 0 to 10000

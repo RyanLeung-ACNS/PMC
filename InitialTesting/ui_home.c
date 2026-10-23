@@ -4,6 +4,7 @@
 #include "clicks.h"
 #include "stepper3.h"
 #include "valve.h"
+#include "valvepos.h"
 #include "trend.h"
 #include "ui.h"
 
@@ -375,7 +376,10 @@ static bool set_position(int32_t v100, const char **why)
     return true;
 }
 
-// Set position: the operator knows where the valve is (Ryan, 22 Oct).
+/* Home and Set position are two jobs, kept apart on every screen (Ryan,
+ * 23 Oct): Home finds 0 % on the limit switch; Set position takes the
+ * position from the operator (closed, a typed %, or the saved position),
+ * not checked against the switch. */
 static void set_position_ask(void)
 {
     ui_keypad("Set position, %", "0 closed, 100 open", 0, 10000, NULL, NULL, set_position);
@@ -383,18 +387,68 @@ static void set_position_ask(void)
 
 static void set_closed_ask(void)
 {
-    ui_confirm("Set as 0 % without homing? Only if the valve is seated.", "Set as closed", set_closed);
+    ui_confirm("Set as closed, 0 %? Only if the valve is seated. Not checked against the switch.",
+               "Set as closed", set_closed);
 }
 
-void ui_calibrate_ask(void)
+static void use_saved(void)
 {
-    static char q[96];
+    const char *why;
+    if (!valvepos_use(&why))
+        ui_msg(why);
+}
+
+void ui_set_position_pick(int i)
+{
+    if (i == 0)
+        set_closed_ask();
+    else if (i == 1)
+        set_position_ask();
+    else
+        use_saved();
+}
+
+// The ways to set it: closed, a typed %, the saved position when offered.
+void ui_set_position_ask(void)
+{
+    static char saved[32];
+    static const char *items[3] = { "Closed, 0 %", "Enter %", saved };
+    int32_t q;
+    int n = 2;
+    if (valvepos_offer(&q)) {
+        char v[16];
+        int32_t pm = valve_pos_max();
+        ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
+        lv_snprintf(saved, sizeof saved, "Saved, %s %%", v);
+        n = 3;
+    }
+    ui_pick("Set position (not checked against the switch)", items, n, -1, ui_set_position_pick);
+}
+
+static char home_q[96];
+
+static const char *home_minutes(void)
+{
+    static char t[24];
     uint32_t s = valve_cal_budget_s();
-    lv_snprintf(q, sizeof q, "Home the valve? Up to %lu min.",
-                (unsigned long)((s + 59) / 60));
-    // Set as closed: the valve is known to be seated already (Ryan, 16 Oct).
-    ui_ask4(q, "Cancel", NULL, "Set as\nclosed", set_closed_ask, "Set\nposition", set_position_ask,
-            "Start\nhoming", calibrate);
+    lv_snprintf(t, sizeof t, "up to %lu min", (unsigned long)((s + 59) / 60));
+    return t;
+}
+
+// Home only (Valve homing's Home tab, the start-up question).
+void ui_home_ask(void)
+{
+    lv_snprintf(home_q, sizeof home_q, "Home the valve? It closes onto the limit switch to find 0 %%, %s.",
+                home_minutes());
+    ui_confirm(home_q, "Home", calibrate);
+}
+
+// Home's mode button while not homed: the two jobs side by side.
+void ui_position_ask(void)
+{
+    lv_snprintf(home_q, sizeof home_q, "Valve position not known. Home it on the switch (%s), or set it?",
+                home_minutes());
+    ui_ask3(home_q, "Cancel", NULL, "Set\nposition", ui_set_position_ask, "Home", calibrate);
 }
 
 static void mode_event(lv_event_t *e)
@@ -419,7 +473,7 @@ static void mode_event(lv_event_t *e)
     } else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
-        ui_calibrate_ask();
+        ui_position_ask();
 }
 
 static void valve_event_cb(lv_event_t *e)
@@ -558,9 +612,15 @@ void ui_status_line(void)
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
-        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct).
-        char t[32], v[16];
-        lv_snprintf(t, sizeof t, "Valve at %s %%", ui_fmt2(v, sizeof v, valve_pct_milli()));
+        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct); a
+        // position set rather than homed says so (Ryan, 23 Oct).
+        char t[48], v[16];
+        valve_ref_t how = valve_reference();
+        ui_fmt2(v, sizeof v, valve_pct_milli());
+        if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED)
+            lv_snprintf(t, sizeof t, "%s %%, %s", v, how == VALVE_REF_HAND ? "set by hand" : "from saved");
+        else
+            lv_snprintf(t, sizeof t, "Valve at %s %%", v);
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     }
 }

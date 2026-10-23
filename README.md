@@ -96,7 +96,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 ## Operation
 
-- **Nothing moves at power-up.** The valve is NOT HOMED until it is homed, or until the operator accepts the position saved before the restart ("Use saved X % / Home"). The saved position is never used on its own.
+- **Nothing moves at power-up.** The valve is NOT HOMED until it is homed, or until the operator sets the position: Home and Set position are kept apart on every screen. Home finds 0 % on the switch; Set position takes it from the operator (closed, a typed %, or the position saved before the restart), not checked against the switch. At start-up with a saved position the screen asks "Home / Set position / Use X %"; it is never used on its own. Menu > Valve homing has a Home tab and a Set position tab, and a position set rather than homed shows on the status line ("34.20 %, set by hand").
 - **Homing** (Home valve, or `VALVE CAL`): if the switch is pressed, move off it first (F-04 if it stays pressed); 1 fast close to the switch (F-03 if not found within 1.1 x full travel); 2 back off; 3 slow close onto the switch. The switch point is 0 %. STOP cancels it and keeps the earlier homing.
 - **MANUAL**: on the Valve page, tap the Go to box (white, blue underline and chevron when it takes a tap) to type a %; hold Close or Open; 1 % and 5 % steps; Fully close and Fully open. In AUTO the Go to box shows, greyed, the position AUTO is sending the valve to, and a tap asks to switch to MANUAL. Position is in % of POS_MAX steps (66048, 4 turns, by default).
 - **Limit switch** is the closing stop, read in firmware before every closing step; there is no hardware interlock (decided). A trip during a normal move stops it and asks "Set as 0 % / Skip" (W-01); the count is never zeroed on its own. Limit override lets one move close past an open switch.
@@ -198,10 +198,10 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `VALVE?` | Mode, count and % open, settings, latched faults, any waiting switch question |
 | `VALVE CAL` | Home: off the switch if pressed, fast close to the switch, back off, slow close; the switch point is 0 % |
 | `VALVE GOTO <0-100>` | Go to % open (one decimal), once homed |
-| `VALVE CLOSED` | Take the valve as fully closed (0 %, homed) where it stands, without the switch: only when you know it is seated (Home valve > Set as closed on the screen; Home valve > Set position takes a typed % the same way) |
+| `VALVE CLOSED` | Take the valve as fully closed (0 %, homed) where it stands, without the switch: only when you know it is seated (Home valve > Set position > Closed on the screen; Enter % takes a typed % the same way) |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-01) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The last saved valve position, whether it was saved at standstill or while moving, and whether it is on offer |
-| `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Use saved X % / Home". It is never used without the operator |
+| `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Home / Set position / Use X %". It is never used without the operator |
 | `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400), clearance (800), switch count (0). `CFG SAVE` keeps them |
 | `CTRL SP <mbar>` | Target, kept to 0.1 mbar, 0 to the sensor range (not saved: none at start-up) |
 | `CTRL AUTO` | Start AUTO after the entry checks. While in AUTO one line a second reads `AUTO 4.62 mB, target 4.8, valve 14.20 % to 14.35 %, In band`, in place of the motor status line |

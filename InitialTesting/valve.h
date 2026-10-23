@@ -74,6 +74,11 @@ bool valve_command(const char *line);
 valve_mode_t valve_mode(void);
 const char *valve_mode_name(void);
 bool valve_calibrated(void);
+// How the position was last set: homed on the switch, or set by the
+// operator (closed or a typed %) or from the saved position, neither
+// checked against the switch. NONE when not homed.
+typedef enum { VALVE_REF_NONE, VALVE_REF_HOMED, VALVE_REF_HAND, VALVE_REF_SAVED } valve_ref_t;
+valve_ref_t valve_reference(void);
 int32_t valve_pos_max(void);
 int32_t valve_pct10(void);       // position in 0.1 % of POS_MAX
 bool valve_fault_latched(void);

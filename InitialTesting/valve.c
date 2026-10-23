@@ -30,6 +30,7 @@ static int32_t f_creep  = 25;      // steps/s, slow final close
 static int32_t n_backoff = 400;    // steps off the switch before the creep
 static int32_t n_clear  = 800;     // steps off the switch if pressed at the start
 static int32_t n_offset = 0;       // count given to the switch point
+static valve_ref_t ref_how;        // how the position was last set (valve_reference)
 
 static const setting_t settings[] = {
     { "POSMAX",  &pos_max,   1000, 300000 },
@@ -315,6 +316,7 @@ static void cal_move_ended(stepper3_stop_t why)
                 break;
             }
             calibrated = true;
+            ref_how = VALVE_REF_HOMED;
             cal_done_ms = lv_tick_get();
             cal_done = true;
             cal_took_s = lv_tick_elaps(cal_t0) / 1000;
@@ -592,6 +594,7 @@ bool valve_restore(int32_t count, const char **why)
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (stepper3_busy() || !stepper3_set_position(count)) { *why = "motor busy"; return false; }
     calibrated = true;
+    ref_how = VALVE_REF_SAVED;
     mode = VALVE_MANUAL;
     char p[16];
     ev("REF", "Saved position used: count %ld (%s %%), not checked against the switch",
@@ -614,6 +617,7 @@ bool valve_set_position(int32_t pct100, const char **why)
     int32_t c = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (stepper3_busy() || !stepper3_set_position(c)) { *why = "moving, wait for it to stop"; return false; }
     calibrated = true;
+    ref_how = VALVE_REF_HAND;
     mode = VALVE_MANUAL;
     if (c == 0)
         ev("REF", "Set as closed by the operator: count 0 (0 %%), not checked against the switch");
@@ -626,6 +630,7 @@ bool valve_set_position(int32_t pct100, const char **why)
 
 valve_mode_t valve_mode(void)   { return mode; }
 bool valve_calibrated(void)     { return calibrated; }
+valve_ref_t valve_reference(void) { return calibrated ? ref_how : VALVE_REF_NONE; }
 int32_t valve_pos_max(void)     { return pm(); }   // in motor counts
 int32_t valve_pct10(void)       { return pct10_of(stepper3_position()); }
 bool valve_fault_latched(void)  { return any_latched(); }

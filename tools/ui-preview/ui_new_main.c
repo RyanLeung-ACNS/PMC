@@ -74,6 +74,8 @@ int32_t valve_range_mmbar(void) { return 1034214; }
 int32_t valve_band_mmbar(void) { return 100; }
 ctrl_reg_t valve_regulation(void) { return v_mode == VALVE_AUTO ? v_reg : CTRL_REG_NONE; }
 bool valve_calibrated(void) { return v_cal; }
+static valve_ref_t v_ref = VALVE_REF_HOMED;
+valve_ref_t valve_reference(void) { return v_cal ? v_ref : VALVE_REF_NONE; }
 int32_t valve_pct10(void) { return v_pct10; }
 int32_t valve_target_pct10(void) { return moving ? v_target10 : v_pct10; }
 int32_t valve_pct_milli(void) { return v_pct10 * 100 + 37; }
@@ -81,8 +83,8 @@ int32_t valve_target_pct_milli(void) { return valve_target_pct10() * 100; }
 int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 uint32_t valve_cal_elapsed_s(void) { return v_mode == VALVE_CALIBRATING ? 42 : 0; }
-bool valve_set_closed(const char **why) { (void)why; v_cal = true; v_mode = VALVE_MANUAL; v_pct10 = 0; return true; }
-bool valve_set_position(int32_t p, const char **why) { (void)why; v_cal = true; v_mode = VALVE_MANUAL; v_pct10 = p / 10; return true; }
+bool valve_set_closed(const char **why) { (void)why; v_cal = true; v_ref = VALVE_REF_HAND; v_mode = VALVE_MANUAL; v_pct10 = 0; return true; }
+bool valve_set_position(int32_t p, const char **why) { (void)why; v_cal = true; v_ref = VALVE_REF_HAND; v_mode = VALVE_MANUAL; v_pct10 = p / 10; return true; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
 bool valve_goto_pct100(int32_t p, const char **why) { return valve_goto_pct10(p / 10, why); }
@@ -165,7 +167,7 @@ void valve_uncalibrate(const char *why) { (void)why; v_cal = false; v_mode = VAL
 void valve_event(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; }
 static bool vp_offer, vp_moving;
 bool valvepos_offer(int32_t *c) { if (vp_offer) *c = 33880; return vp_offer; }
-bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_mode = VALVE_MANUAL; return true; }
+bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_ref = VALVE_REF_SAVED; v_mode = VALVE_MANUAL; return true; }
 void valvepos_decline(void) { vp_offer = false; }
 bool valvepos_offer_moving(int32_t *s) { *s = 400; return vp_offer && vp_moving; }
 
@@ -382,7 +384,6 @@ int main(int argc, char **argv)
     if (!strcmp(st, "menu")) tap(415, 184);
     if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); tap(111, 184); }
     if (!strcmp(st, "confirm")) tap(415, 72);
-    if (!strcmp(st, "setpos")) { tap(415, 72); tap(289, 138); }
     if (!strcmp(st, "autofirst") || !strcmp(st, "autoask") || !strcmp(st, "automan") || !strcmp(st, "paused2")) tap(415, 72);
     if (!strcmp(st, "autosp")) { tap(115, 184); tap(41, 240); tap(111, 240); tap(321, 184); }   // Target 12: asks
     if (!strcmp(st, "autovalve")) tap(415, 128);
@@ -403,6 +404,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "svc: home %zu, on service %zu, back home %zu, valve %zu, keypad %zu, peak %zu, total %zu\n",
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
+    if (!strcmp(st, "calset")) v_ref = VALVE_REF_HAND;   // opens on Set position
+    if (!strcmp(st, "handset")) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_ref = VALVE_REF_HAND; }
+    if (!strcmp(st, "setpos")) { v_mode = VALVE_NOT_CAL; v_cal = false; tap(415, 72); tap(240, 146); }   // Home valve, Set position
+    if (!strcmp(st, "bootpick")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
     if (!strcmp(st, "bootask")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
     if (!strcmp(st, "bootmove")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; vp_moving = true; }
     // Settings (stage 6).
@@ -441,7 +446,8 @@ int main(int argc, char **argv)
     if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
-    if (!strcmp(st, "calpage") || !strcmp(st, "calpage2")) { tap(415, 184); tap(210, 128); }
+    if (!strcmp(st, "calpage") || !strcmp(st, "calpage2") || !strncmp(st, "calset", 6)) { tap(415, 184); tap(210, 128); }
+    if (!strcmp(st, "bootpick")) { run(600); tap(240, 146); }   // start-up question, Set position
     if (!strcmp(st, "diag")) { tap(415, 184); tap(200, 184); }
     run(1200);
 

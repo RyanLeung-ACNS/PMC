@@ -1282,7 +1282,7 @@ static void sp_use(void)
 static void sp_calibrate(void)
 {
     valvepos_decline();
-    ui_calibrate_ask();
+    ui_home_ask();
 }
 
 static void question_check(void)
@@ -1314,12 +1314,14 @@ static void question_check(void)
             char e[16];
             int64_t m = ((int64_t)off * 100000 + pm - 1) / pm;   // 0.001 %, rounded up to 0.1
             ui_fmt1(e, sizeof e, (m + 99) / 100 * 100);
-            lv_snprintf(t, sizeof t, "Saved position %s %%, may be out by %s %%. Use it, or home the valve?", v, e);
+            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved %s %%, may be out by %s %%.", v, e);
         } else {
-            lv_snprintf(t, sizeof t, "Saved position %s %%. Use it, or home the valve?", v);
+            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved position %s %%.", v);
         }
-        lv_snprintf(ok, sizeof ok, "Use %s %%", v);
-        ui_ask(t, "Home", sp_calibrate, ok, sp_use);
+        // Home, Set position (the list, the saved one in it), or the saved
+        // position at once (Ryan, 23 Oct: the two jobs apart).
+        lv_snprintf(ok, sizeof ok, "Use\n%s %%", v);
+        ui_ask3(t, "Home", sp_calibrate, "Set\nposition", ui_set_position_ask, ok, sp_use);
     }
     asking = false;
     overlay_q = want;
