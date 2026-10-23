@@ -8,6 +8,7 @@
 #include "valve.h"
 #include "valvepos.h"
 #include "supply.h"
+#include "sense.h"
 #include "motor_screen.h"
 #include "fixed.h"
 #include "cfg.h"
@@ -758,7 +759,9 @@ static void frame_refresh(void)
     nf_seen = nf;
     // The keypad uses the strip's row; an empty line (Home, idle) hides it.
     supply_state_t sup = supply_state();
-    bool quiet = !msg_until && !nf && !stepper3_override() && sup == SUPPLY_OK && !line_text[0];
+    int32_t die_mc;
+    bool hot = sense_hot(&die_mc);
+    bool quiet = !msg_until && !nf && !stepper3_override() && sup == SUPPLY_OK && !hot && !line_text[0];
     show(strip, (!overlay || !kp_open) && !quiet);
     char buf[96];
     if (msg_until) {
@@ -782,6 +785,10 @@ static void frame_refresh(void)
             lv_snprintf(buf, sizeof buf, "Motor supply off (%s V): moves blocked", v);
         else
             lv_snprintf(buf, sizeof buf, "Motor supply %s, %s V", sup == SUPPLY_LOW ? "low" : "high", v);
+        strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
+    } else if (hot) {
+        char v[16];
+        lv_snprintf(buf, sizeof buf, "W-03 Controller hot, %s \xC2\xB0" "C", ui_fmt1(v, sizeof v, die_mc));
         strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
     } else {
         strip_draw(line_kind, line_icon, line_text, false, act_cb != NULL);

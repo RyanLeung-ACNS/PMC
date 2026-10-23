@@ -26,7 +26,7 @@ gcc $CFLAGS -DREAL_CAL -o "$OUT/ui_new" "$HERE/ui_new_main.c" "$HERE/fake_hw.c" 
   "$PROJ/cfg.c" "$PROJ/cal.c" "$PROJ/ui_font_12.c" "$PROJ/ui_font_16.c" "$PROJ/ui_font_26.c" "$PROJ/ui_font_40.c" \
   "$PROJ/fixed.c" "$OUT/liblvgl.a" -lm
 for s in notcal manual calib moving nodruck stop neg menu keypad confirm setpos \
-         valve valvenc limithit calpage calpage2 calset handset bootpick supoff suplow supdiag faults detail diag help help3 back bootask bootmove \
+         valve valvenc limithit calpage calpage2 calset handset bootpick supoff suplow supdiag hot faults detail diag help help3 back bootask bootmove \
          set-main set-sensor set-pick set-add set-addask set-addcal set-caldetail set-valve set-valve2 set-valve3 set-valvepos \
          set-tune set-tunekp set-tunedraft set-saveask set-saved set-review set-load motor motor-speed motor-coils motor-ask motor-held set-name set-named \
          overon calsensor calvac trend trend1h trend1m notrend \

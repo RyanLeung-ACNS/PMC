@@ -217,3 +217,7 @@ supply_state_t supply_state(void)
 }
 bool supply_off(void) { return supply_state() == SUPPLY_OFF; }
 bool supply_fitted(void) { return true; }
+
+// W-03 (sense.h): set by the "hot" scenario.
+bool fake_hot;
+bool sense_hot(int32_t *die_mc) { *die_mc = 57300; return fake_hot; }

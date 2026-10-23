@@ -275,7 +275,7 @@ int main(int argc, char **argv)
     const char *st = argv[1];
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
-                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") || !strcmp(st, "supdiag") || !strcmp(st, "supoff") || !strcmp(st, "suplow") ||
+                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") || !strcmp(st, "supdiag") || !strcmp(st, "supoff") || !strcmp(st, "suplow") || !strcmp(st, "hot") ||
                 !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc") ||
                 !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3) || strstr(st, "trend");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
@@ -406,6 +406,7 @@ int main(int argc, char **argv)
     }
     if (!strcmp(st, "calset")) v_ref = VALVE_REF_HAND;   // opens on Set position
     if (!strcmp(st, "supoff") || !strcmp(st, "supdiag")) { extern int32_t fake_sup_mv; fake_sup_mv = 400; }
+    if (!strcmp(st, "hot")) { extern bool fake_hot; fake_hot = true; }
     if (!strcmp(st, "suplow")) { extern int32_t fake_sup_mv; fake_sup_mv = 9800; }
     if (!strcmp(st, "handset")) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_ref = VALVE_REF_HAND; }
     if (!strcmp(st, "setpos")) { v_mode = VALVE_NOT_CAL; v_cal = false; tap(415, 72); tap(240, 146); }   // Home valve, Set position
