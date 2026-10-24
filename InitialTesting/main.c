@@ -23,7 +23,6 @@
 #include "link.h"
 #include "sysinfo.h"
 #include "rtclock.h"
-#include "uncert.h"
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
@@ -31,6 +30,7 @@
 #include "cfg.h"
 #include "ui.h"
 #include "limit.h"
+#include "supply.h"
 #include "sense.h"
 #include "valvepos.h"
 #include "trend.h"
@@ -84,6 +84,7 @@ static const char *const help_top[] = {
     "  HELP CFG     save and load settings",
     "  HELP CAL     pressure calibration",
     "  HELP VALVE   valve calibration, % position, STOP, faults, events",
+    "  HELP AUTO    AUTO, target and PID tuning",
     "  HELP MOT     valve motor and limit switch (engineering)",
 };
 static const char *const help_valve[] = {
@@ -95,22 +96,28 @@ static const char *const help_valve[] = {
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
-    "  CTRL STOP                  stop now, latch F-12",
+    "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
-    "  EVT? [1-200]               last events (default 20)",
+    "  EVT? [1-100]               last events (default 20)",
+};
+static const char *const help_auto[] = {
+    "AUTO (pressure control; the valve homed, no fault, a target set):",
+    "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
+    "  CTRL AUTO                  start AUTO, bumpless",
+    "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
+    "  PID?                       all control parameters",
+    "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
+    "  PID KDIR +1|-1             +1 opening raises the pressure",
+    "In AUTO: F-06 no response, W-02 to MANUAL after 1800 s",
 };
 static const char *const help_sys[] = {
     "System:",
     "  VER?                       firmware version and build time",
     "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-    "  UNC?                       pressure uncertainty budget",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
     "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
-#if PMC_PM_DIAG
-    "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
-#endif
 };
 static const char *const help_cfg[] = {
     "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
@@ -124,8 +131,8 @@ static const char *const help_cfg[] = {
 static const char *const help_cal[] = {
     "Calibration:",
     "  CAL?                       active cal and bench points",
-    "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
-    "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+    "  CAL VAC [mbar]             capture the vacuum point (default 0 mbar, 0-50)",
+    "  CAL AIR <mbar>             capture the air point (500-1100 mbar)",
     "  CAL SAVE                   save all settings, cal included (= CFG SAVE)",
     "  CAL ERASE                  use nominal and save (old cal record erased)",
     "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
@@ -139,6 +146,7 @@ static const char *const help_mot[] = {
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
     "  LIM?                       limit switch state",
+    "  SUP?                       motor 12 V supply",
     "Motor settings (refused during a move; CFG SAVE keeps):",
     "  MOT RATE <16-1000>         run rate, steps/s",
     "  MOT START <16-1000>        start rate, steps/s",
@@ -166,10 +174,12 @@ static bool help_command(const char *line)
         HELP_PRINT(help_cal);
     else if (strcmp(line, "HELP VALVE") == 0 || strcmp(line, "HELP CTRL") == 0)
         HELP_PRINT(help_valve);
+    else if (strcmp(line, "HELP AUTO") == 0 || strcmp(line, "HELP PID") == 0)
+        HELP_PRINT(help_auto);
     else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
         HELP_PRINT(help_mot);
     else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR expected: HELP, HELP SYS, HELP CFG, HELP CAL, HELP VALVE or HELP MOT\r\n");
+        link_printf("ERR expected: HELP, HELP SYS, HELP CFG, HELP CAL, HELP VALVE, HELP AUTO or HELP MOT\r\n");
     else
         return false;
     return true;
@@ -183,15 +193,15 @@ void board_init()
     lv_init();
     // A second LVGL heap pool in main SRAM: the 64 KB in CCM ran out with the
     // 0.6.0 Service screens built and the Valve page keypad open (0.8.1).
-#if PMC_LINK_ETHERNET
-    // 16 KB in the Ethernet build, whose network buffers need the SRAM: 80 KB
-    // of LVGL heap in all, and the host previews peak at about 56 KB of it
-    // (with 64-bit pointers; less on the board).
-    static uint8_t lv_pool2[16 * 1024] __attribute__((aligned(8)));
-#else
+#if !PMC_LINK_ETHERNET
+    // Not in the Ethernet build (0.11.30): with it, .bss ran to within about
+    // 3 KB of the top of SRAM, which left no room for the stack and the
+    // network buffers (malloc'd), and the screen stayed blank at boot. That
+    // build has the 64 KB in CCM only; the host previews peak at about 55 KB
+    // with 64-bit pointers, and the board read 33 KB on 14 Oct.
     static uint8_t lv_pool2[24 * 1024] __attribute__((aligned(8)));
-#endif
     lv_mem_add_pool(lv_pool2, sizeof lv_pool2);
+#endif
     lv_port_disp_init();
     lv_port_indev_init();
 
@@ -218,6 +228,7 @@ void application_init()
     // on a MOT MOVE command.
     clicks_init();
     limit_init();
+    supply_init();   // motor 12 V on PA3
     valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
@@ -284,6 +295,7 @@ int main(void)
         touch_poll();
         rtclock_poll();
         limit_poll();
+        supply_poll();
         stepper3_poll();
         valve_task();
         valvepos_task();
@@ -297,8 +309,8 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
+            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

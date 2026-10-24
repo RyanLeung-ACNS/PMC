@@ -81,6 +81,7 @@ uint32_t stepper3_rate(void) { return m_rate; }
 uint32_t stepper3_start_rate(void) { return m_start; }
 uint32_t stepper3_accel(void) { return m_accel; }
 stepper3_mode_t stepper3_mode(void) { return m_mode; }
+int32_t stepper3_scale(void) { return m_mode == STEPPER3_HALF ? 2 : 1; }
 bool stepper3_hold(void) { return m_hold; }
 bool stepper3_reverse(void) { return m_rev; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
@@ -119,6 +120,10 @@ const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS])
 }
 bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]) { memcpy(v_set, v, sizeof v_set); return true; }
 valve_mode_t valve_mode(void) { return v_mode; }
+static bool v_auto;            // test_auto(): AUTO on
+static int32_t v_sp = 5000;
+bool valve_auto(void) { return v_auto; }
+bool valve_target(int32_t *mmbar) { *mmbar = v_sp; return true; }
 int32_t valve_pct_milli(void) { return 34240; }
 size_t link_tx_room(void) { return 4096; }
 bool valve_calibrated(void) { return v_cal; }
@@ -175,8 +180,6 @@ static cal_rec_t bench_cal(const char *id, int32_t r_vac, int32_t r_air, int32_t
     c.r_ppb[0] = r_vac; c.p_mmbar[0] = 0;
     c.r_ppb[1] = r_air; c.p_mmbar[1] = p_air;
     c.kind = CAL_KIND_BENCH;
-    c.vac_unc_mmbar = 10;
-    c.air_unc_mmbar = 1000;
     c.crc = crc32(&c, offsetof(cal_rec_t, crc));
     return c;
 }
@@ -341,10 +344,10 @@ static void test_capture(void)
     int32_t v[CFG_N] = { 0 };
     bool set[CFG_N] = { 0 };
     cs.r_ppb = 9300000;
-    CHECK(!cal_capture(1, 0, 0, &why));            // not a vacuum
+    CHECK(!cal_capture(1, 0, &why));            // not a vacuum
     cs.r_ppb = 51000;
-    CHECK(cal_capture(1, 0, 0, &why) && cal_capturing() == 1);
-    CHECK(!cal_capture(2, 1013000, 0, &why));      // one at a time
+    CHECK(cal_capture(1, 0, &why) && cal_capturing() == 1);
+    CHECK(!cal_capture(2, 1013000, &why));      // one at a time
     for (int i = 0; i < 10; i++)
         cal_update(&cs);
     CHECK(cal_capturing() == 0);
@@ -352,7 +355,7 @@ static void test_capture(void)
     CHECK(vac.have && vac.r_ppb == 51000 && air.have);   // air kept from the table
     CHECK(!cal_saved() && cfg_unsaved() == 1);
     cs.r_ppb = 9310000;
-    CHECK(cal_capture(2, 1012000, 0, &why));
+    CHECK(cal_capture(2, 1012000, &why));
     for (int i = 0; i < 10; i++)
         cal_update(&cs);
     CHECK(cal_pressure_mmbar(9310000) == 1012000 && cal_pressure_mmbar(51000) == 0);
@@ -439,40 +442,71 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && !v_cal);   // still waiting for the operator
     CHECK(valvepos_use(&why) && v_cal && m_pos == 33880 && !valvepos_offer(&c));
 
-    // A move: the entry is withdrawn before the motor turns, so a reset
-    // straight after the start (no valvepos_task yet) offers nothing.
+    // A move: a moving entry at the start goes before the motor turns, so
+    // a reset straight after the start (no valvepos_task yet) offers the
+    // start count, marked as saved while moving.
+    int32_t off;
     start_move(34000);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));   // as if the power went mid-move
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate * 2);
+    valvepos_decline();
 
-    // Still for less than 2 s: nothing saved, whatever the tick's parity.
+    // While it moves: the count every 2 s, no more often (Ryan, 22 Oct).
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 10000;
+    tick(2500);                                   // safe at 10000
+    CHECK(start_move(10100));                     // moving entry at 10000
+    tick(2100);                                   // 2 s on: 10100
+    m_pos = 10300;
+    tick(1500);                                   // under 2 s since: not yet
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 10100 && valvepos_offer_moving(&off));
+    valvepos_decline();
+    v_cal = true; v_mode = VALVE_MANUAL; m_busy = true; m_pos = 10300;
+    tick(2100);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 10300 && valvepos_offer_moving(&off));
+    valvepos_decline();
+
+    // Calibrated at a new count without a move (VALVE CLOSED): the old
+    // entry is replaced at once, as moving; safe after 2 s still.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
     lv_tick_inc(1);               // odd/even tick no longer matters
     tick(1500);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 20000 && valvepos_offer_moving(&off));
+    valvepos_decline();
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
     tick(2500);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 20000);
+    CHECK(valvepos_offer(&c) && c == 20000 && !valvepos_offer_moving(&off));
     valvepos_decline();
 
-    // The withdrawal write fails once: the second try takes it, in the
+    // Calibration lost: withdrawn, nothing on offer.
+    v_cal = false; v_mode = VALVE_NOT_CAL;
+    tick(100);
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
+
+    // The move-start write fails once: the second try takes it, in the
     // next slot, after a blank one. valvepos_init() clears the module's RAM
     // as a reset does, so only the flash tells it what happened.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 20000;
+    tick(2500);
     write_fails = 1;
     CHECK(start_move(21000));
     m_busy = false;
     v_cal = false; v_mode = VALVE_NOT_CAL;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 20000 && valvepos_offer_moving(&off));
+    valvepos_decline();
 
-    // The same with a save first, as the review's case: 33880 saved, first
-    // withdrawal fails, retry works, move to 34000, cold restart.
+    // The same as the review's case: 33880 saved, first write fails, retry
+    // works, move to 34000, cold restart: the start, as moving, not safe.
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 33880;
     tick(2500);
     write_fails = 1;
@@ -480,7 +514,8 @@ static void test_valvepos(void)
     m_busy = false;
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(!valvepos_offer(&c));
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off));
+    valvepos_decline();
 
     // Both tries fail: the move is refused, so the saved count still
     // matches the valve and is still offered after a restart.
@@ -490,7 +525,7 @@ static void test_valvepos(void)
     CHECK(!start_move(31000) && m_pos == 30000 && !m_busy);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 30000);
+    CHECK(valvepos_offer(&c) && c == 30000 && !valvepos_offer_moving(&off));
     valvepos_decline();
     v_cal = true; v_mode = VALVE_MANUAL; m_pos = 30000;
     CHECK(start_move(31000));   // flash good again: the move goes
@@ -513,7 +548,7 @@ static void test_valvepos(void)
     // Declined: Calibrate instead. The next move withdraws the entry.
     valvepos_decline();
     CHECK(!valvepos_offer(&c));
-    v_mode = VALVE_CALIBRATING; m_busy = true;
+    v_cal = false; v_mode = VALVE_CALIBRATING; m_busy = true;   // valve.c uncalibrates while homing
     tick(100);
     valvepos_init();
     CHECK(!valvepos_offer(&c));
@@ -540,6 +575,46 @@ static void test_trend(void)
     CHECK(trend_fine(4, &o) && o.p == 5000);
 }
 
+// Stage 8: in AUTO only the tuning changes (screens and PID); the trend
+// carries the target.
+static void test_auto(void)
+{
+    int32_t v[CFG_N] = { 0 };
+    bool set[CFG_N] = { false };
+    const char *why;
+    uint32_t rev0, rev;
+    const char *at;
+    cfg_rev(CFG_FROM_SAVED, &rev0, &at);
+    uint32_t rate = m_rate;
+    v_auto = true;
+    v[CFG_KP] = 300; set[CFG_KP] = true;
+    v[CFG_RATE] = (int32_t)rate; set[CFG_RATE] = true;          // unchanged: allowed
+    CHECK(cfg_save_with(v, set, &why));
+    CHECK(cfg_tune(CFG_KP) == 300 && m_rate == rate && cfg_unsaved() == 0);
+    CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == rev0 + 1);
+    v[CFG_RATE] = (int32_t)rate + 50;                             // changed: refused
+    v[CFG_KP] = 320;
+    CHECK(!cfg_save_with(v, set, &why) && strstr(why, "MANUAL"));
+    CHECK(cfg_tune(CFG_KP) == 300 && m_rate == rate);
+    CHECK(!cfg_load_live(CFG_FROM_DEFAULTS, &why) && strstr(why, "MANUAL"));
+    CHECK(cfg_command("PID KP 3.5") && cfg_tune(CFG_KP) == 350 && cfg_unsaved() == 1);
+    CHECK(cfg_command("PID TI 0.4") && cfg_tune(CFG_TI) == 40);
+    CHECK(cfg_command("PID OUTMIN 0") && cfg_tune(CFG_OUTMIN) == 0);
+    CHECK(cfg_command("PID BAND 0.05") && cfg_tune(CFG_BAND) == 10);   // below 0.10: refused, kept
+    CHECK(cfg_command("PID KDIR 0") && cfg_tune(CFG_KDIR) == 1);
+    CHECK(cfg_command("PID KDIR -1") && cfg_tune(CFG_KDIR) == -1);
+    CHECK(cfg_command("PID KDIR +1") && cfg_tune(CFG_KDIR) == 1);
+    CHECK(cfg_command("PID TS 2") && cfg_command("PID?"));
+    CHECK(cfg_command("PID DB 8x") && cfg_tune(CFG_DB) == 8);
+    clicks_state_t q = { .pm_found = true, .reading_ok = true, .p_mmbar = 5100 };
+    trend_pt_t o;
+    lv_tick_inc(1000); trend_second(&q);
+    CHECK(trend_fine(0, &o) && o.sp == 5000);
+    v_auto = false;
+    lv_tick_inc(1000); trend_second(&q);
+    CHECK(trend_fine(0, &o) && o.sp == TREND_NONE);
+}
+
 int main(int argc, char **argv)
 {
     quiet = !(argc > 1 && strcmp(argv[1], "-v") == 0);
@@ -551,6 +626,7 @@ int main(int argc, char **argv)
     test_name();
     test_valvepos();
     test_trend();
+    test_auto();
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails != 0;
 }

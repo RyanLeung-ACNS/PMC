@@ -24,7 +24,7 @@
 
 #define COL_DRAFT  lv_color_hex(0x6A4C93)
 #define COL_GREY   lv_color_hex(0x5B6B7B)
-#define STEPS_PER_TURN 16512   // 48 steps x 344:1 gearbox
+#define STEPS_PER_TURN 16512   // full steps per output turn: 48 x 344
 
 static const int32_t RY[4] = { 48, 104, 160, 216 };
 #define RH 48
@@ -83,6 +83,13 @@ static int unsaved(void)
     return n + (other > 0 ? other : 0);
 }
 
+// The settings line's icon: a pencil for unsaved drafts, the save symbol
+// for changes in use but not saved, a tick when all is saved.
+static const char *save_icon(int n)
+{
+    return drafts() ? LV_SYMBOL_EDIT : n ? LV_SYMBOL_SAVE : LV_SYMBOL_OK;
+}
+
 // A save is named by when it was made: "16/10/26 14:32", or "no date"
 // when the clock was not set at the time.
 static const char *save_when(char *buf, size_t n, const char *at)
@@ -121,7 +128,7 @@ static const field_t F[CFG_N] = {
     [CFG_ACCEL]   = { "Acceleration", "steps/s/s", 0, K_NUM, "Ramp between start and run" },
     [CFG_KP]      = { "Gain", "%/mB", 2, K_NUM, "% open per mB of error" },
     [CFG_TI]      = { "Integral time", "min", 2, K_NUM, "Integral time, 0 is off" },
-    [CFG_OUTMIN]  = { "Auto min", "% open", 1, K_NUM, "AUTO never closes the valve below this" },
+    [CFG_OUTMIN]  = { "AUTO min", "% open", 1, K_NUM, "AUTO never closes the valve below this" },
     [CFG_DB]      = { "Deadband", "steps", 0, K_NUM, "AUTO skips moves smaller than this" },
     [CFG_KDIR]    = { "Pressure response", NULL, 0, K_TOGGLE, "How the pressure moves when the valve opens; a needle valve feeding the pot normally raises it" },
     [CFG_BAND]    = { "Target band", "mB", 2, K_NUM, "Within this of the target reads Within target band" },
@@ -314,7 +321,7 @@ static void ed_turns_keypad(void)
 
 static void ed_turns_present(void)
 {
-    set_draft(CFG_POSMAX, stepper3_position());
+    set_draft(CFG_POSMAX, stepper3_position() / stepper3_scale());   // full steps
 }
 
 static void ed_toggle_ok(void)
@@ -330,23 +337,21 @@ static void edit(cfg_key_t k)
     char a[16], b[16];
     ed_key = k;
     if (F[k].kind == K_TURNS) {
-        int32_t lo, hi, pos = stepper3_position();
+        int32_t lo, hi, pos = stepper3_position() / stepper3_scale();
         cfg_range(CFG_POSMAX, &lo, &hi);
         if (!valve_calibrated() || stepper3_busy() || pos < lo || pos > hi) {
             ed_turns_keypad();
             return;
         }
-        lv_snprintf(t, sizeof t, "100 %% travel is %s turns (%ld steps). Type a value, or use the present "
-                    "position (%s turns)?", value_text(a, sizeof a, k, shown(k)), (long)shown(k),
+        lv_snprintf(t, sizeof t, "Use the present position (%s turns) as 100 %%, or type turns?",
                     value_text(b, sizeof b, k, pos));
         ui_ask(t, "Present", ed_turns_present, "Type turns", ed_turns_keypad);
     } else if (F[k].kind == K_TOGGLE) {
         if (k == CFG_REVERSE)
-            lv_snprintf(t, sizeof t, "Set motor direction to %s? Use Reversed if Open drives the valve closed. "
-                        "Saving it clears the zero.", shown(k) ? "Normal" : "Reversed");
+            lv_snprintf(t, sizeof t, "Set motor direction to %s? Saving clears the zero.",
+                        shown(k) ? "Normal" : "Reversed");
         else
-            lv_snprintf(t, sizeof t, "Set pressure response to %s? A needle valve feeding the pot normally "
-                        "raises it.", shown(k) > 0 ? "Opening lowers pressure" : "Opening raises pressure");
+            lv_snprintf(t, sizeof t, "Set to %s?", shown(k) > 0 ? "Opening lowers pressure" : "Opening raises pressure");
         ui_confirm(t, "Change", ed_toggle_ok);
     } else if (F[k].kind == K_CHOICE) {
         static char names[CFG_SENS_MAX][40];
@@ -420,12 +425,14 @@ static void save_ask(void)
         ui_msg("Nothing to save");
         return;
     }
-    if (stepper3_busy() || valve_mode() == VALVE_CALIBRATING) {
+    // In AUTO the valve moves all the time; tuning saves there (cfg.c
+    // refuses anything else with "Switch to MANUAL first").
+    if (!valve_auto() && (stepper3_busy() || valve_mode() == VALVE_CALIBRATING)) {
         ui_msg("Wait for the valve to stop");
         return;
     }
     (void)rev; (void)at; (void)w;
-    lv_snprintf(t, sizeof t, "Save %s? They are used now and after restart.", plural(c, sizeof c, n, "change"));
+    lv_snprintf(t, sizeof t, "Save %s?", plural(c, sizeof c, n, "change"));
     ui_confirm(t, "Save settings", save_now);
 }
 
@@ -457,13 +464,12 @@ static void discard_ask(void)
     const char *at;
     int n = drafts();
     if (n) {
-        lv_snprintf(t, sizeof t, "Discard %s? Settings in use are not affected.",
+        lv_snprintf(t, sizeof t, "Discard %s?",
                     plural(c, sizeof c, n, "unsaved change"));
         ui_confirm(t, "Discard changes", discard_drafts);
     } else if (cfg_unsaved() && cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
         char w[24];
-        lv_snprintf(t, sizeof t, "Put the last save%s%s back in use? The %s in use since then %s lost.",
-                    at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "", plural(c, sizeof c, cfg_unsaved(), "change"),
+        lv_snprintf(t, sizeof t, "Put the last save back? %s %s lost.", plural(c, sizeof c, cfg_unsaved(), "change"),
                     cfg_unsaved() == 1 ? "is" : "are");
         ui_confirm(t, "Put back", discard_live);
     } else {
@@ -513,7 +519,7 @@ static void side_refresh(void)
         lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
-    ui_strip_set(UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED, t);
+    ui_strip_set(UI_STRIP_INFO, save_icon(n), t);
 }
 
 /* --------------------------------------------------------------------------
@@ -522,31 +528,12 @@ static void side_refresh(void)
 extern const ui_screen_t ui_scr_name, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review;
 
 static struct {
-    lv_obj_t *tile[5], *over;
+    lv_obj_t *tile[5];
 } st;
 
 static void tile_cb(lv_event_t *e)
 {
     ui_open(lv_event_get_user_data(e));
-}
-
-static void override_on(void)
-{
-    stepper3_override_arm();
-    valve_event("LIM", "Limit override on for the next move (screen)");
-}
-
-static void override_cb(lv_event_t *e)
-{
-    (void)e;
-    if (stepper3_override()) {
-        bool stopped = stepper3_override_cancel();
-        valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
-        ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
-        return;
-    }
-    ui_confirm("Let the next move close past the closed switch? Only for a stuck switch: the valve can be "
-               "driven into the seat. Ends when that move stops.", "Override", override_on);
 }
 
 static void motor_go(void) { ui_service(); }
@@ -558,7 +545,7 @@ static void motor_cb(lv_event_t *e)
         ui_msg("Wait for the valve to stop");
         return;
     }
-    ui_confirm("Open Motor override? It drives the motor directly by steps.", "Open", motor_go);
+    ui_confirm("Open Motor override? Drives the motor by steps.", "Open", motor_go);
 }
 
 static void settings_build(lv_obj_t *scr)
@@ -569,16 +556,12 @@ static void settings_build(lv_obj_t *scr)
                                        &ui_scr_review };
     for (int i = 0; i < 5; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
-    // The overrides look apart from the pages: a dark outline, and Limit
-    // override filled dark while it is armed.
-    st.over = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Limit\noverride", override_cb, NULL);
-    lv_obj_t *m = ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Motor\noverride", motor_cb, NULL);
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t *b = i ? m : st.over;
-        lv_obj_set_style_border_side(b, LV_BORDER_SIDE_FULL, 0);
-        lv_obj_set_style_border_width(b, 2, 0);
-        lv_obj_set_style_border_color(b, UI_WARN, 0);
-    }
+    // Motor override looks apart from the pages: a dark outline. Limit
+    // override is on it since 0.11.33 (Ryan, 23 Oct).
+    lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
+    lv_obj_set_style_border_side(m, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_width(m, 2, 0);
+    lv_obj_set_style_border_color(m, UI_WARN, 0);
     side.save = side.discard = NULL;
 }
 
@@ -596,17 +579,6 @@ static void settings_refresh(void)
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
     ui_btn_text(st.tile[3], "Control tuning", t);
-    bool ov = stepper3_override();
-    // Armed shows as the dark fill and the strip; the state line would not fit.
-    ui_btn_text(st.over, ov ? "Cancel\noverride" : "Limit\noverride", NULL);
-    lv_color_t ob = ov ? UI_WARN : UI_CARD;
-    if (!lv_color_eq(lv_obj_get_style_bg_color(st.over, 0), ob)) {
-        lv_obj_set_style_bg_color(st.over, ob, 0);
-        // Its two labels: name and state line, white on the dark fill.
-        for (uint32_t i = 0; i < lv_obj_get_child_count(st.over); i++)
-            lv_obj_set_style_text_color(lv_obj_get_child(st.over, (int32_t)i),
-                                        ov ? lv_color_white() : i ? UI_MUTED : UI_TEXT, 0);
-    }
     // Without side buttons: the strip only.
     char c[32], w[24];
     uint32_t rev;
@@ -620,8 +592,8 @@ static void settings_refresh(void)
         lv_snprintf(t, sizeof t, "All settings saved%s%s.", at[0] ? ", " : "", at[0] ? save_when(w, sizeof w, at) : "");
     else
         lv_snprintf(t, sizeof t, "Factory settings, nothing saved yet.");
-    ui_strip_set(ov ? UI_STRIP_WARN : UI_STRIP_INFO, drafts() ? COL_DRAFT : n ? COL_GREY : UI_MUTED,
-                 ov ? "Limit override on for the next move" : t);
+    // An armed limit override shows over this, as on every screen.
+    ui_strip_set(UI_STRIP_INFO, save_icon(n), t);
 }
 
 const ui_screen_t ui_scr_settings = { "Settings", settings_build, settings_refresh, NULL };
@@ -743,7 +715,7 @@ static void nm_build(lv_obj_t *scr)
 
 static void nm_refresh(void)
 {
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, "Shown on Home. Save settings to keep it.");
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_HOME, "Shown on Home. Save settings to keep it.");
 }
 
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
@@ -792,7 +764,7 @@ static const char *pt_text(char *buf, size_t n, bool have, int32_t p, int32_t r)
     char a[16], b[16];
     if (!have)
         return "Not held";
-    lv_snprintf(buf, n, "%s @ %s", fixed_fmt(a, sizeof a, fixed_round(p, 2), 1), fixed_fmt(b, sizeof b, fixed_round(r, 2), 4));
+    lv_snprintf(buf, n, "%s at %s", fixed_fmt(a, sizeof a, fixed_round(p, 2), 1), fixed_fmt(b, sizeof b, fixed_round(r, 2), 4));
     return buf;
 }
 
@@ -817,7 +789,7 @@ static void cal_detail_cb(lv_event_t *e)
                     cal_date(d, sizeof d, c) ? d : "None recorded", k);
         if (bench) {
             size_t u = strlen(t);
-            lv_snprintf(t + u, sizeof t - u, "\nVacuum point, mB @ mV/V: %s\nAir point, mB @ mV/V: %s",
+            lv_snprintf(t + u, sizeof t - u, "\nVacuum point, mB at mV/V: %s\nAir point, mB at mV/V: %s",
                         pt_text(v, sizeof v, true, c->p_mmbar[0], c->r_ppb[0]),
                         pt_text(a, sizeof a, true, c->p_mmbar[1], c->r_ppb[1]));
         }
@@ -845,7 +817,7 @@ static void add_cal(void)
 
 static void add_range(int i)
 {
-    static const int32_t psi10[6] = { 50, 100, 150, 300, 500, 1000 };
+    static const int32_t psi10[2] = { 150, 300 };   // 15 and 30 psi only (Ryan, 22 Oct)
     const char *why;
     char t[80], n[40];
     if (!cfg_sensor_add(add_serial, psi10[i], &why)) {
@@ -854,20 +826,19 @@ static void add_range(int i)
         return;
     }
     static char q[140];
-    lv_snprintf(q, sizeof q, "%s added. Calibrate it now? It goes in use straight away, not saved; "
-                "Discard changes puts the last save back.", sensor_name(n, sizeof n, add_serial));
+    lv_snprintf(q, sizeof q, "%s added. Calibrate it now?", sensor_name(n, sizeof n, add_serial));
     ui_ask(q, "Later", NULL, "Calibrate", add_cal);
 }
 
 static bool add_serial_set(int32_t v, const char **why)
 {
-    static const char *const ranges[6] = { "5 psi", "10 psi", "15 psi", "30 psi", "50 psi", "100 psi" };
+    static const char *const ranges[2] = { "15 psi", "30 psi" };
     static char title[40];
     if (sensor_index((uint32_t)v) >= 0) { *why = "That serial number is already on the board"; return false; }
     if (cfg_sensor_count() >= CFG_SENS_MAX) { *why = "Four sensors already on the board"; return false; }
     add_serial = (uint32_t)v;
     lv_snprintf(title, sizeof title, "Range of s/n %lu", (unsigned long)add_serial);
-    ui_pick(title, ranges, 6, -1, add_range);
+    ui_pick(title, ranges, 2, -1, add_range);
     return true;
 }
 
@@ -904,8 +875,7 @@ static void rm_pick(int i)
     static char t[140];
     char n[40];
     rm_serial = rm_list[i];
-    lv_snprintf(t, sizeof t, "Remove %s and its calibration from the board? The last save keeps it until "
-                "Save settings.", sensor_name(n, sizeof n, rm_serial));
+    lv_snprintf(t, sizeof t, "Remove %s and its calibration?", sensor_name(n, sizeof n, rm_serial));
     ui_confirm(t, "Remove", rm_do);
 }
 
@@ -969,7 +939,7 @@ static const tab_t valve_tabs[3] = {
 };
 static const tab_t tune_tab[1] = {
     { "Control", { CFG_KP, CFG_TI, CFG_OUTMIN, CFG_DB, CFG_KDIR, CFG_BAND }, 6,
-      "AUTO uses these from a later firmware; they can be set and saved now." },
+      "Used by AUTO from the next control step. Save to keep them." },
 };
 
 static struct {
@@ -1178,8 +1148,7 @@ static void load_pick(int i)
     }
     char w[24];
     cfg_rev(load_sel, &rev, &at);
-    lv_snprintf(t, sizeof t, "Put the %s save%s%s in use now, sensors and calibrations included? Drafts are "
-                "dropped. Save settings keeps it; Discard changes puts the last save back.",
+    lv_snprintf(t, sizeof t, "Load the %s save%s%s? Drafts are dropped.",
                 load_sel == CFG_FROM_SAVED ? "last" : "previous", at[0] ? ", " : "",
                 at[0] ? save_when(w, sizeof w, at) : "");
     ui_confirm(t, "Load", load_do);
@@ -1194,6 +1163,10 @@ static void load_cb(lv_event_t *e)
     uint32_t rev;
     const char *at;
     load_n = 0;
+    if (valve_auto()) {
+        ui_msg("Switch to MANUAL first");
+        return;
+    }
     if (stepper3_busy() || valve_mode() == VALVE_CALIBRATING) {
         ui_msg("Wait for the valve to stop");
         return;
@@ -1292,7 +1265,7 @@ static const char *cs_help(void)
            "if a gauge reads more).\n"
            "Capture air: vent the sensor to the room, then type the lab barometer reading in mB, for example "
            "1013.2.\n"
-           "Each capture averages 10 readings. Either point can be redone on its own; the other is kept.\n"
+           "Each capture averages 5 readings. Either point can be redone on its own; the other is kept.\n"
            "Signal: the Druck output over its excitation, in mV/V.\n"
            "Saved cal: the pressure from the saved calibration. Captured: the pressure from the points "
            "captured here, once both are held (None yet until then).\n"
@@ -1310,7 +1283,7 @@ static void cs_start(int what, int32_t p_mmbar)
 {
     const char *why;
     char t[80];
-    if (!cal_capture(what, p_mmbar, 0, &why)) {
+    if (!cal_capture(what, p_mmbar, &why)) {
         lv_snprintf(t, sizeof t, "Not started: %s", why);
         ui_msg(t);
     }
@@ -1345,7 +1318,7 @@ static void vac_cb(lv_event_t *e)
         ui_msg(cal_capturing() ? "A capture is running" : "No Druck signal");
         return;
     }
-    ui_ask("Pump the sensor down to vacuum first. Capture takes 10 readings and calls them 0 mB.",
+    ui_ask("Sensor at vacuum? Capture sets 0 mB.",
            "Not 0 mB", cs_vac_typed, "Capture", cs_vac0);
 }
 
@@ -1373,8 +1346,8 @@ static void cs_build(lv_obj_t *scr)
     cs.sig = ui_info(scr, 10, RY[0], 109, RH, "Signal, mV/V");
     cs.now = ui_info(scr, 127, RY[0], 109, RH, "Saved cal, mB");
     cs.nw = ui_info(scr, 244, RY[0], 109, RH, "Captured, mB");
-    cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB @ mV/V");
-    cs.air = ui_info(scr, 10, RY[2], 226, RH, "Air point, mB @ mV/V");
+    cs.vac = ui_info(scr, 10, RY[1], 226, RH, "Vacuum point, mB at mV/V");
+    cs.air = ui_info(scr, 10, RY[2], 226, RH, "Air point, mB at mV/V");
     cs.bv = ui_btn(scr, 244, RY[1], 109, RH, UI_SECONDARY, "Capture\nvacuum", vac_cb, NULL);
     cs.ba = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Capture\nair", air_cb, NULL);   // both on two lines
     side_make(scr, "Calibrate sensor", cs_help);
@@ -1400,11 +1373,11 @@ static void cs_refresh(void)
     ui_set_text(cs.nw, !ok ? "----" : v.have && a.have && !q.saved ? ui_fmt1(t, sizeof t, s->p_mmbar) : "None yet");
     int cap = cal_capturing(), left = cal_capture_left();
     if (cap == 1)
-        lv_snprintf(t, sizeof t, "Capturing %d of 10", 10 - left);
+        lv_snprintf(t, sizeof t, "Capturing %d of %d", CAL_CAPTURE_N - left, CAL_CAPTURE_N);
     ui_set_text(cs.vac, cap == 1 ? t : pt_text(t, sizeof t, v.have, v.p_mmbar, v.r_ppb));
     char u[40];
     if (cap == 2)
-        lv_snprintf(u, sizeof u, "Capturing %d of 10", 10 - left);
+        lv_snprintf(u, sizeof u, "Capturing %d of %d", CAL_CAPTURE_N - left, CAL_CAPTURE_N);
     ui_set_text(cs.air, cap == 2 ? u : pt_text(u, sizeof u, a.have, a.p_mmbar, a.r_ppb));
     ui_btn_enable(cs.bv, ok && !cap);
     ui_btn_enable(cs.ba, ok && !cap);

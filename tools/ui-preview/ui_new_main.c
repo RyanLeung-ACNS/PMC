@@ -41,7 +41,7 @@ static uint8_t draw_buf[W * H * 2] __attribute__((aligned(4)));
 
 /* Fake valve layer ------------------------------------------------------- */
 static valve_mode_t v_mode = VALVE_NOT_CAL;
-static bool v_cal, v_f01, v_f12;
+static bool v_cal, v_f01, v_f12, v_f16;
 static int v_step = -1;
 static int32_t v_pct10, v_target10;
 static bool moving;
@@ -49,9 +49,33 @@ static bool moving;
 valve_mode_t valve_mode(void) { return v_mode; }
 const char *valve_mode_name(void)
 {
-    return v_mode == VALVE_CALIBRATING ? "HOMING" : v_mode == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
+    return v_mode == VALVE_CALIBRATING ? "HOMING" : v_mode == VALVE_MANUAL ? "MANUAL"
+         : v_mode == VALVE_AUTO ? "AUTO" : "NOT HOMED";
 }
+// AUTO (stage 8).
+static bool v_sp_set;
+static int32_t v_sp = 5000;
+static ctrl_reg_t v_reg = CTRL_REG_BAND;
+bool valve_auto(void) { return v_mode == VALVE_AUTO; }
+static bool v_w02;
+bool valve_w02(void) { return v_w02; }
+void valve_w02_clear(void) { v_w02 = false; }
+int valve_fault_count(void);
+bool valve_start_auto(const char **why)
+{
+    if (valve_fault_count()) { *why = "Reset the fault first"; return false; }
+    v_mode = VALVE_AUTO;
+    return true;
+}
+bool valve_to_manual(const char **why) { (void)why; v_mode = VALVE_MANUAL; return true; }
+bool valve_set_target(int32_t m, const char **why) { (void)why; v_sp = m / 100 * 100; v_sp_set = true; return true; }
+bool valve_target(int32_t *m) { if (m) *m = v_sp; return v_sp_set; }
+int32_t valve_range_mmbar(void) { return 1034214; }
+int32_t valve_band_mmbar(void) { return 100; }
+ctrl_reg_t valve_regulation(void) { return v_mode == VALVE_AUTO ? v_reg : CTRL_REG_NONE; }
 bool valve_calibrated(void) { return v_cal; }
+static valve_ref_t v_ref = VALVE_REF_HOMED;
+valve_ref_t valve_reference(void) { return v_cal ? v_ref : VALVE_REF_NONE; }
 int32_t valve_pct10(void) { return v_pct10; }
 int32_t valve_target_pct10(void) { return moving ? v_target10 : v_pct10; }
 int32_t valve_pct_milli(void) { return v_pct10 * 100 + 37; }
@@ -59,43 +83,47 @@ int32_t valve_target_pct_milli(void) { return valve_target_pct10() * 100; }
 int valve_cal_step(void) { return v_step; }
 uint32_t valve_cal_budget_s(void) { return 300; }
 uint32_t valve_cal_elapsed_s(void) { return v_mode == VALVE_CALIBRATING ? 42 : 0; }
-bool valve_set_closed(const char **why) { (void)why; v_cal = true; v_mode = VALVE_MANUAL; v_pct10 = 0; return true; }
+bool valve_set_closed(const char **why) { (void)why; v_cal = true; v_ref = VALVE_REF_HAND; v_mode = VALVE_MANUAL; v_pct10 = 0; return true; }
+bool valve_set_position(int32_t p, const char **why) { (void)why; v_cal = true; v_ref = VALVE_REF_HAND; v_mode = VALVE_MANUAL; v_pct10 = p / 10; return true; }
 bool valve_calibrate(const char **why) { (void)why; v_mode = VALVE_CALIBRATING; v_step = 1; return true; }
 bool valve_goto_pct10(int32_t p, const char **why) { (void)why; v_target10 = p; moving = true; return true; }
 bool valve_goto_pct100(int32_t p, const char **why) { return valve_goto_pct10(p / 10, why); }
 bool valve_move_steps(int32_t steps, const char **why) { (void)steps; (void)why; return true; }
 void valve_stop(void) { moving = false; }
-bool valve_stop_latches(void) { return false; }
-int valve_fault_count(void) { return v_f01 + v_f12; }
-bool valve_motion_blocked(void) { return v_f12; }
+bool valve_stop_latches(void) { return valve_auto(); }
+int valve_fault_count(void) { return v_f01 + v_f16 + v_f12; }
+bool valve_motion_blocked(void) { return v_f12 || v_f16; }
 bool valve_fault_first(const char **tag, const char **text)
 {
     if (v_f01) { *tag = "F-01"; *text = "No Druck signal"; return true; }
-    if (v_f12) { *tag = "F-12"; *text = "Operator STOP"; return true; }
+    if (v_f12) { *tag = "F-05"; *text = "Motion timeout"; return true; }
+    if (v_f16) { *tag = "F-06"; *text = "No pressure response"; return true; }
     return false;
 }
 bool valve_fault_is(const char *tag)
 {
-    return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-12"));
+    return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-05")) || (v_f16 && !strcmp(tag, "F-06"));
 }
-int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
+int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = v_f16 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
 static bool v_q;
 bool valve_question(int32_t *p) { if (v_q && p) *p = 187; return v_q; }
 bool valve_answer(bool z, const char **why) { (void)z; (void)why; v_q = false; return true; }
 bool valve_fault_get(int i, valve_fault_t *f)
 {
-    const char *tags[2] = { "F-01", "F-12" }, *texts[2] = { "No Druck signal", "Operator STOP" };
+    const char *tags[3] = { "F-01", "F-05", "F-06" },
+               *texts[3] = { "No Druck signal", "Motion timeout", "No pressure response" };
+    bool on[3] = { v_f01, v_f12, v_f16 };
     int k = 0;
-    for (int j = 0; j < 2; j++) {
-        if (!(j ? v_f12 : v_f01)) continue;
+    for (int j = 0; j < 3; j++) {
+        if (!on[j]) continue;
         if (k++ != i) continue;
         f->tag = tags[j]; f->text = texts[j]; f->age_ms = j ? 64000 : 312000;
-        f->mode = VALVE_MANUAL; f->can_reset = j == 1;
+        f->mode = j == 2 ? VALVE_AUTO : VALVE_MANUAL; f->can_reset = j != 0;
         return true;
     }
     return false;
 }
-static const char *const ev_tag[] = { "F-12", "W-01", "REF", "REF", "F-14" };
+static const char *const ev_tag[] = { "STOP", "W-01", "REF", "REF", "BOOT" };
 static const char *const ev_text[] = { "Operator stop at count 33880", "Point set as 0 %, count 0",
     "Homed in 15 s, position 0", "Homing started at count 1203", "Power-up (event only), valve not homed" };
 int valve_event_count(void) { return 5; }
@@ -137,10 +165,11 @@ bool valve_set_settings(const int32_t v[VALVE_N_SETTINGS]) { memcpy(v_set, v, si
 int32_t valve_pos_max(void) { return v_set[0]; }
 void valve_uncalibrate(const char *why) { (void)why; v_cal = false; v_mode = VALVE_NOT_CAL; }
 void valve_event(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; }
-static bool vp_offer;
+static bool vp_offer, vp_moving;
 bool valvepos_offer(int32_t *c) { if (vp_offer) *c = 33880; return vp_offer; }
-bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_mode = VALVE_MANUAL; return true; }
+bool valvepos_use(const char **why) { (void)why; vp_offer = false; v_cal = true; v_ref = VALVE_REF_SAVED; v_mode = VALVE_MANUAL; return true; }
 void valvepos_decline(void) { vp_offer = false; }
+bool valvepos_offer_moving(int32_t *s) { *s = 400; return vp_offer && vp_moving; }
 
 static uint32_t crc32(const void *data, size_t len)
 {
@@ -176,7 +205,7 @@ static void seed_flash(void)
     strcpy(c->id, "5880156 bench 26-10-05");
     c->r_ppb[0] = 127900; c->p_mmbar[0] = 0;
     c->r_ppb[1] = 9798300; c->p_mmbar[1] = 1013250;
-    c->kind = CAL_KIND_BENCH; c->vac_unc_mmbar = 10; c->air_unc_mmbar = 1000;
+    c->kind = CAL_KIND_BENCH;
     c->crc = crc32(c, offsetof(cal_rec_t, crc));
     r.crc = crc32(&r, offsetof(__typeof__(r), crc));
     extflash_write(0x7FD000, &r, sizeof r);
@@ -246,7 +275,7 @@ int main(int argc, char **argv)
     const char *st = argv[1];
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
-                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") ||
+                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") || !strcmp(st, "supdiag") || !strcmp(st, "supoff") || !strcmp(st, "suplow") || !strcmp(st, "hot") ||
                 !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc") ||
                 !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3) || strstr(st, "trend");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
@@ -256,6 +285,15 @@ int main(int argc, char **argv)
     if (!strcmp(st, "moving")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 500; }
     if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
+    // AUTO (stage 8).
+    bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strcmp(st, "f08") || !strcmp(st, "trendauto");
+    if (aut) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_sp_set = strcmp(st, "autofirst") != 0; }
+    if (!strcmp(st, "auto") || !strcmp(st, "autostable") || !strcmp(st, "autoreg") || !strcmp(st, "autosp") ||
+        !strcmp(st, "automan") || !strcmp(st, "autovalve")) v_mode = VALVE_AUTO;
+    if (!strcmp(st, "autostable")) v_reg = CTRL_REG_STABLE;
+    if (!strcmp(st, "autoreg")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 356; v_reg = CTRL_REG_REGULATING; }
+    if (!strcmp(st, "paused")) v_w02 = true;   // W-02: MANUAL, shown until OK
+    if (!strcmp(st, "f08")) v_f16 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 
     lv_init();
@@ -271,6 +309,8 @@ int main(int argc, char **argv)
             p += 0.15 * sin(tt / 23.0) + 0.05 * sin(tt / 3.1);
             s.p_mmbar = (int32_t)(p * 1000);
             v_pct10 = i < 900 ? 342 : i > 3300 ? 300 : i > 2700 ? 380 : 342;
+            if (!strcmp(st, "trendauto"))   // AUTO at 5.0 then 5.8 mB for the middle of the hour
+                v_mode = i >= 1500 && i < 3300 ? VALVE_AUTO : VALVE_MANUAL, v_sp = i < 2700 ? 5000 : 5800;
             trend_second(&s);
             lv_tick_inc(1000);   // one sample per second of real time (trend.c slots, 0.10.10)
         }
@@ -335,11 +375,18 @@ int main(int argc, char **argv)
     }
 
     if (!strcmp(st, "stop")) tap(415, 240);
-    if (!strcmp(st, "motor")) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
+    if (!strncmp(st, "motor", 5)) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
+    if (!strcmp(st, "motor-held")) fake_override = true;   // Limit override held
+    if (!strcmp(st, "motor-speed")) tap(122, 72);
+    if (!strcmp(st, "motor-coils") || !strcmp(st, "motor-ask")) tap(194, 72);
+    if (!strcmp(st, "motor-ask")) { v_cal = true; tap(120, 184); }   // Coil order while homed: asks
     if (!strcmp(st, "overon")) { fake_override = true; tap(415, 184); }   // Menu, override armed
     if (!strcmp(st, "menu")) tap(415, 184);
     if (!strcmp(st, "keypad")) { tap(300, 184); tap(41, 184); tap(111, 240); tap(251, 240); tap(111, 184); tap(111, 184); }
     if (!strcmp(st, "confirm")) tap(415, 72);
+    if (!strcmp(st, "autofirst") || !strcmp(st, "autoask") || !strcmp(st, "automan") || !strcmp(st, "paused2")) tap(415, 72);
+    if (!strcmp(st, "autosp")) { tap(115, 184); tap(41, 240); tap(111, 240); tap(321, 184); }   // Target 12: asks
+    if (!strcmp(st, "autovalve")) tap(415, 128);
     if (!strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit")) tap(415, 128);
     if (!strcmp(st, "limithit")) v_q = true;
     if (!strcmp(st, "svc")) {
@@ -357,7 +404,15 @@ int main(int argc, char **argv)
         fprintf(stderr, "svc: home %zu, on service %zu, back home %zu, valve %zu, keypad %zu, peak %zu, total %zu\n",
                 a, b, c, d, f, (size_t)m.max_used, (size_t)m.total_size);
     }
+    if (!strcmp(st, "calset")) v_ref = VALVE_REF_HAND;   // opens on Set position
+    if (!strcmp(st, "supoff") || !strcmp(st, "supdiag")) { extern int32_t fake_sup_mv; fake_sup_mv = 400; }
+    if (!strcmp(st, "hot")) { extern bool fake_hot; fake_hot = true; }
+    if (!strcmp(st, "suplow")) { extern int32_t fake_sup_mv; fake_sup_mv = 9800; }
+    if (!strcmp(st, "handset")) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_ref = VALVE_REF_HAND; }
+    if (!strcmp(st, "setpos")) { v_mode = VALVE_NOT_CAL; v_cal = false; tap(415, 72); tap(240, 146); }   // Home valve, Set position
+    if (!strcmp(st, "bootpick")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
     if (!strcmp(st, "bootask")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; }
+    if (!strcmp(st, "bootmove")) { v_mode = VALVE_NOT_CAL; v_cal = false; vp_offer = true; vp_moving = true; }
     // Settings (stage 6).
     bool set = !strncmp(st, "set-", 4);
     if (set) { tap(415, 184); tap(379, 184); }
@@ -383,7 +438,6 @@ int main(int argc, char **argv)
     if (!strcmp(st, "set-saved")) tap(249, 136 + 40);
     if (!strncmp(st, "set-review", 10) || !strcmp(st, "set-load")) tap(120, 184);
     if (!strcmp(st, "set-load")) tap(120, 184);
-    if (!strcmp(st, "set-override")) tap(298, 184);
     if (strstr(st, "trend")) { tap(415, 184); tap(210, 72); }   // Menu, Trend
     if (!strcmp(st, "trend1h")) { tap(415, 72); tap(415, 72); }
     if (!strcmp(st, "trend1m")) { tap(415, 184); tap(415, 184); tap(415, 184); }
@@ -395,8 +449,9 @@ int main(int argc, char **argv)
     if (!strcmp(st, "help3")) { tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); tap(TVX, 172); }
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
-    if (!strcmp(st, "calpage") || !strcmp(st, "calpage2")) { tap(415, 184); tap(210, 128); }
-    if (!strcmp(st, "diag")) { tap(415, 184); tap(120, 184); }
+    if (!strcmp(st, "calpage") || !strcmp(st, "calpage2") || !strncmp(st, "calset", 6)) { tap(415, 184); tap(210, 128); }
+    if (!strcmp(st, "bootpick")) { run(600); tap(240, 146); }   // start-up question, Set position
+    if (!strcmp(st, "diag") || !strcmp(st, "supdiag")) { tap(415, 184); tap(200, 184); }
     run(1200);
 
     FILE *f = fopen(argv[2], "wb");

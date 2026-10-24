@@ -13,12 +13,11 @@
  * Built once on lv_layer_top(), over every screen:
  *   header  0,0 480x40    Back (one screen back; not on Home), title, mode word and dot
  *   strip   10,216 343x48 status: fault, message (with OK), prompt or info
- *   STOP    361,216 109x48 latches F-12 (CTRL STOP), on every screen
+ *   STOP    361,216 109x48 CTRL STOP (in AUTO: MANUAL), on every screen
  * Home is kept; other screens are created on open and deleted on leave.
  * A keypad or confirm dialog covers 0,40 480x232 except the STOP slot.
  *
- * The 0.6.0 motor screen opens from Menu > Motor service; the frame is
- * hidden there and its own buttons apply.
+ * Settings > Motor override (motor_screen.c) is a framework screen too.
  */
 
 LV_FONT_DECLARE(ui_font_12)
@@ -41,6 +40,7 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_TRACK   lv_color_hex(0xE8EEF4)
 #define UI_FILL    lv_color_hex(0x7B8794)
 #define UI_TICK    lv_color_hex(0xA3AFBB)
+#define UI_OK      lv_color_hex(0x2EA043)   // AUTO status dot (simulator COL.ok)
 
 typedef enum { UI_SECONDARY, UI_PRIMARY, UI_NAV, UI_RED, UI_DARK } ui_btn_kind_t;
 
@@ -85,14 +85,20 @@ void ui_open(const ui_screen_t *s);
 bool ui_showing(const ui_screen_t *s);   // that screen is up
 void ui_home(void);            // back to Home (deletes the screen left)
 void ui_back(void);            // as the header Back
-void ui_service(void);         // the 0.6.0 motor screen (Settings > Motor override), frame hidden
-bool ui_on_service(void);
+void ui_service(void);         // Settings > Motor override (motor_screen.c)
 
 // Status strip. A message shows for 5 s with an OK, over the screen's own
 // line; refusals use it. The strip's action button is Home's.
 void ui_msg(const char *text);
 typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } ui_strip_kind_t;
-void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text);
+// icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
+// NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
+// and fault lines take the triangle. UI_ICON_MODE: the status line's icon,
+// picked from the valve state.
+#define UI_ICON_MODE   "\x01m"
+#define UI_ICON_VALVE  "\x01v"
+#define UI_ICON_TARGET "\x01t"
+void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);
 // Strip width for this screen (343 unless a screen sets it in build()).
 void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none
@@ -125,6 +131,9 @@ void ui_confirm(const char *text, const char *ok, void (*on_ok)(void));
 // Same with a named cancel button and its own action.
 void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const char *ok, void (*on_ok)(void));
 // With a third button between them (NULL mid: as ui_ask).
+// Four buttons: Cancel, two middle ones, OK (Home valve).
+void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *mid2, void (*on_mid2)(void), const char *ok, void (*on_ok)(void));
 void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
              void (*on_mid)(void), const char *ok, void (*on_ok)(void));
 // A list to pick one of (Sensor in use, Load settings); sel -1 for none.
@@ -142,7 +151,14 @@ void ui_overlay_close(void);
 // Home and Menu (ui_home.c).
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
 void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
-void ui_calibrate_ask(void);   // the Calibrate valve confirm
+// Home and Set position (ui_home.c): ui_home_ask the Home confirm,
+// ui_set_position_ask the Set position list, ui_position_ask both (Home's
+// mode button while not homed).
+void ui_home_ask(void);
+void ui_set_position_ask(void);
+void ui_set_position_pick(int i);   // 0 closed, 1 enter %, 2 saved
+void ui_position_ask(void);
+void ui_manual_ask(void);      // the Switch to MANUAL confirm (AUTO)
 int32_t ui_log_px(int32_t p_mmbar, int32_t w);   // 0.1-1000 mbar on a log scale, 0 to w px
 int32_t ui_pct_shown(int32_t milli);   // valve % as shown (2 dp), in 0.01 %, 0 to 10000
 // Trend and the Home sparklines (ui_trend.c). A sparkline redraws when

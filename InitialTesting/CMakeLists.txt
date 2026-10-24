@@ -40,6 +40,8 @@ add_executable(InitialTesting
     motor_screen.h
     limit.c
     limit.h
+    supply.c
+    supply.h
     usb_serial.h
     usb_serial.c
     tinyusb_cdc_device.c
@@ -53,6 +55,8 @@ add_executable(InitialTesting
     valvepos.c
     trend.h
     trend.c
+    ctrl.h
+    ctrl.c
     sense.h
     sense.c
     extflash.h
@@ -74,7 +78,6 @@ add_executable(InitialTesting
     sysinfo.h
     sysinfo.c
     rtclock.c
-    uncert.c
     fixed.h
     fixed.c
     pmc_config.h

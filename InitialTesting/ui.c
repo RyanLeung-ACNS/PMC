@@ -7,9 +7,12 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
+#include "supply.h"
+#include "sense.h"
 #include "motor_screen.h"
 #include "fixed.h"
 #include "cfg.h"
+#include "trend.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -338,8 +341,8 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *mode_dot, *fault_rule;
-static lv_obj_t *strip, *strip_dot, *strip_icon, *strip_text, *strip_ok, *strip_act;
+static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl;
+static lv_obj_t *strip, *strip_icon, *strip_shape, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
 static lv_obj_t *home_scr, *cur_scr, *overlay;
@@ -353,13 +356,12 @@ static void kp_side(void);
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
 static const ui_screen_t *cur = &ui_scr_home;
-static bool service;
 
 static char msg_text[96];
 static uint32_t msg_until;
 
 static ui_strip_kind_t line_kind;
-static lv_color_t line_dot;
+static const char *line_icon;
 static char line_text[96];
 static lv_event_cb_t act_cb;
 static int32_t strip_w = 343;
@@ -411,6 +413,52 @@ static void act_event(lv_event_t *e)
         act_cb(e);
 }
 
+// The status line's drawn icons, 16 x 16, in the label colour.
+typedef enum { SHAPE_VALVE, SHAPE_TARGET } shape_t;
+static shape_t shape;
+static lv_color_t shape_col;
+
+static void shape_draw(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target_obj(e), &a);
+    int32_t x = a.x1, y = a.y1;
+    lv_draw_rect_dsc_t r;
+    lv_draw_rect_dsc_init(&r);
+    r.bg_color = shape_col;
+    if (shape == SHAPE_VALVE) {
+        // P&ID hand valve: two triangles tip to tip, stem and handle.
+        lv_draw_triangle_dsc_t t;
+        lv_draw_triangle_dsc_init(&t);
+        t.color = shape_col;
+        t.p[0].x = x + 1;  t.p[0].y = y + 5;  t.p[1].x = x + 1;  t.p[1].y = y + 15; t.p[2].x = x + 8; t.p[2].y = y + 10;
+        lv_draw_triangle(layer, &t);
+        t.p[0].x = x + 15; t.p[0].y = y + 5;  t.p[1].x = x + 15; t.p[1].y = y + 15; t.p[2].x = x + 8; t.p[2].y = y + 10;
+        lv_draw_triangle(layer, &t);
+        lv_area_t q = { x + 7, y + 2, x + 8, y + 10 };
+        lv_draw_rect(layer, &r, &q);
+        lv_area_t h = { x + 4, y + 1, x + 11, y + 2 };
+        lv_draw_rect(layer, &r, &h);
+    } else {
+        // Target: two rings and a centre dot.
+        r.radius = LV_RADIUS_CIRCLE;
+        r.bg_opa = LV_OPA_TRANSP;
+        r.border_color = shape_col;
+        r.border_width = 2;
+        lv_area_t o = { x, y, x + 15, y + 15 };
+        lv_draw_rect(layer, &r, &o);
+        lv_area_t i = { x + 4, y + 4, x + 11, y + 11 };
+        lv_draw_rect(layer, &r, &i);
+        r.bg_opa = LV_OPA_COVER;
+        r.border_width = 0;
+        lv_area_t d = { x + 7, y + 7, x + 8, y + 8 };
+        lv_draw_rect(layer, &r, &d);
+    }
+}
+
+
+
 static void build_frame(void)
 {
     frame = plain(lv_layer_top());
@@ -422,12 +470,6 @@ static void build_frame(void)
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(hdr, UI_TEXT, 0);
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);    // touches on the header stop here
-    fault_rule = plain(hdr);
-    lv_obj_set_pos(fault_rule, 0, 36);
-    lv_obj_set_size(fault_rule, 480, 4);
-    lv_obj_set_style_bg_opa(fault_rule, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(fault_rule, UI_FAULT, 0);
-    lv_obj_add_flag(fault_rule, LV_OBJ_FLAG_HIDDEN);
     // Back and Home, icons only, 48 px each; the title is centred (Ryan,
     // 16 Oct). Home is hidden on Home and under popups, where Back closes
     // the popup.
@@ -439,7 +481,6 @@ static void build_frame(void)
     lv_obj_set_ext_click_area(home_btn, 8);
     // The fault rule runs the full width, over Back and Home (not clickable,
     // so their touches still reach them).
-    lv_obj_move_foreground(fault_rule);
     for (int i = 0; i < 2; i++) {
         lv_obj_t *l = lv_obj_get_child(i ? home_btn : back_btn, 0);
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -450,29 +491,36 @@ static void build_frame(void)
     lv_label_set_long_mode(pmc_lbl, LV_LABEL_LONG_DOT);
     title_lbl = ui_label(hdr, 100, 11, 280, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
-    mode_lbl = ui_label(hdr, 296, 11, 158, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_RIGHT, "");
-    mode_dot = plain(hdr);
-    lv_obj_set_pos(mode_dot, 460, 15);
-    lv_obj_set_size(mode_dot, 10, 10);
-    lv_obj_set_style_radius(mode_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_color(mode_dot, lv_color_hex(0xC3CDD7), 0);
-    lv_obj_set_style_bg_color(mode_dot, UI_FAULT, 0);
+    // Mode badge, as wide as the button column under it (x 361, 109 px;
+    // Ryan, 22 Oct): filled white in AUTO, outlined otherwise, red with a fault.
+    mode_lbl = ui_label(hdr, 361, 5, 109, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_CENTER, "");
+    lv_obj_set_style_pad_ver(mode_lbl, 4, 0);
+    lv_obj_set_style_radius(mode_lbl, 4, 0);
+    lv_obj_set_style_border_width(mode_lbl, 2, 0);
+    lv_obj_set_style_border_color(mode_lbl, lv_color_white(), 0);
 
     strip = plain(frame);
     lv_obj_set_pos(strip, 10, 216);
     lv_obj_set_size(strip, 343, 48);
     lv_obj_add_style(strip, &st_card, 0);
     lv_obj_add_flag(strip, LV_OBJ_FLAG_CLICKABLE);
-    strip_dot = plain(strip);
-    lv_obj_set_pos(strip_dot, 12, 20);
-    lv_obj_set_size(strip_dot, 8, 8);
-    lv_obj_set_style_radius(strip_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_opa(strip_dot, LV_OPA_COVER, 0);
-    strip_icon = ui_label(strip, 6, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
+    strip_icon = ui_label(strip, 12, 15, 0, &lv_font_montserrat_14, lv_color_white(), LV_TEXT_ALIGN_LEFT,
                           LV_SYMBOL_WARNING);
+    // Drawn icons with no font glyph: the valve symbol and the target.
+    strip_shape = plain(strip);
+    lv_obj_set_size(strip_shape, 16, 16);
+    lv_obj_add_event_cb(strip_shape, shape_draw, LV_EVENT_DRAW_MAIN, NULL);
+    lv_obj_add_flag(strip_shape, LV_OBJ_FLAG_HIDDEN);
+    // Centred on the text's middle, not on the strip (Ryan, 22 Oct: they sat high).
+    lv_obj_align(strip_icon, LV_ALIGN_LEFT_MID, 12, 0);
+    lv_obj_align(strip_shape, LV_ALIGN_LEFT_MID, 12, 0);
     strip_text = ui_label(strip, 28, 0, 303, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(strip_text, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(strip_text, 4, 0);
+    // The pressure sparkline on the right whenever the strip shows the
+    // status line (Home and the operator screens; Ryan, 21 Oct).
+    strip_spark = ui_spark(strip, 192, 6, 139, 36, false);
+    lv_obj_add_flag(strip_spark, LV_OBJ_FLAG_HIDDEN);
     strip_ok = ui_btn(strip, 279, 4, 60, 40, UI_SECONDARY, "OK", ok_event, NULL);
     strip_act = ui_btn(strip, 239, 4, 100, 40, UI_PRIMARY, "", act_event, NULL);
 
@@ -500,10 +548,10 @@ void ui_msg(const char *text)
         msg_until = 1;
 }
 
-void ui_strip_set(ui_strip_kind_t kind, lv_color_t dot, const char *text)
+void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text)
 {
     line_kind = kind;
-    line_dot = dot;
+    line_icon = icon;
     lv_strlcpy(line_text, text, sizeof line_text);
 }
 
@@ -516,7 +564,7 @@ void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb)
         ui_btn_text(strip_act, text, small);
 }
 
-static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, bool ok, bool act)
+static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text, bool ok, bool act)
 {
     static const uint32_t bg[] = { 0xFFFFFF, 0xE0E0E0, 0x3F3F3F, 0x000000 };
     // Under a popup: one fixed grey whatever the kind or what is behind it
@@ -541,21 +589,60 @@ static void strip_draw(ui_strip_kind_t kind, lv_color_t dot, const char *text, b
         lv_obj_set_style_pad_all(strip, -bw, 0);    // children keep their place
         lv_obj_set_style_border_color(strip, bc, 0);
     }
-    show(strip_dot, kind == UI_STRIP_INFO);
-    if (dim)
-        dot = dis_tx;
-    if (kind == UI_STRIP_INFO && !lv_color_eq(lv_obj_get_style_bg_color(strip_dot, 0), dot))
-        lv_obj_set_style_bg_color(strip_dot, dot, 0);
-    show(strip_icon, kind >= UI_STRIP_WARN);
-    ui_set_color(strip_icon, dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT : lv_color_white());
+    bool is_mode = icon == UI_ICON_MODE;
+    // The status line's icon (Ryan, 22 Oct), grey as the text: the loop
+    // while AUTO regulates, a target once Stable, an arrow while the valve
+    // moves, the valve symbol when it is idle in MANUAL.
+    if (kind >= UI_STRIP_WARN)
+        icon = LV_SYMBOL_WARNING;
+    else if (is_mode) {
+        if (valve_auto() && valve_regulation() == CTRL_REG_STABLE)
+            icon = UI_ICON_TARGET;
+        else if (valve_auto())
+            icon = LV_SYMBOL_LOOP;
+        else if (stepper3_busy())
+            icon = stepper3_target() > stepper3_position() ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
+        else
+            icon = UI_ICON_VALVE;
+    }
+    int sh = icon == UI_ICON_VALVE ? SHAPE_VALVE : icon == UI_ICON_TARGET ? SHAPE_TARGET : -1;
+    const char *glyph = icon && sh < 0 ? icon : LV_SYMBOL_WARNING;
+    lv_color_t ic = dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT
+                  : kind >= UI_STRIP_WARN ? lv_color_white() : UI_MUTED;
+    show(strip_icon, icon && sh < 0);
+    show(strip_shape, sh >= 0);
+    if (sh >= 0 && (sh != (int)shape || !lv_color_eq(ic, shape_col))) {
+        shape = (shape_t)sh;
+        shape_col = ic;
+        lv_obj_invalidate(strip_shape);
+    }
+    ui_set_text(strip_icon, glyph);
+    ui_set_color(strip_icon, ic);
+    // The font's symbols sit 1 px above the text's middle; the triangle
+    // (beside two lines) and the drawn icons do not (Ryan, 22 Oct).
+    int32_t dy = glyph != LV_SYMBOL_WARNING ? 1 : 0;
+    static int32_t dy_set;
+    if (dy != dy_set) {
+        dy_set = dy;
+        lv_obj_align(strip_icon, LV_ALIGN_LEFT_MID, 12, dy);
+    }
+
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
-    int32_t x = kind == UI_STRIP_PROMPT ? 12 : 28;
-    int32_t w = (act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
+    bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
+    int32_t x = icon ? 36 : 12;
+    int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
         lv_obj_set_x(strip_ok, strip_w - 64);
         lv_obj_set_x(strip_act, strip_w - 104);
+        lv_obj_set_x(strip_spark, strip_w - 151);
+    }
+    show(strip_spark, spark);
+    static uint32_t seen = UINT32_MAX;
+    if (spark && trend_seconds() != seen) {   // a new sample: redraw it
+        seen = trend_seconds();
+        lv_obj_invalidate(strip_spark);
     }
     if (lv_obj_get_x(strip_text) != x || lv_obj_get_width(strip_text) != w) {
         lv_obj_set_x(strip_text, x);
@@ -579,9 +666,9 @@ static int32_t text_w(const char *t)
 // Centre the title on the screen; when the mode word leaves no room for
 // that, centre it in the gap between Back and Home (or the edge, on Home)
 // and the mode word, and cut it with dots only if it is wider than the gap.
-static void title_fit(lv_obj_t *l, const char *text, const char *mode_txt, int32_t left)
+static void title_fit(lv_obj_t *l, const char *text, int32_t left)
 {
-    int32_t right = 454 - text_w(mode_txt) - 8;
+    int32_t right = 353;   // the mode badge starts at 361
     int32_t w = text_w(text);
     int32_t x = 240 - w / 2;
     if (w > right - left)
@@ -598,7 +685,6 @@ static void frame_refresh(void)
 {
     const char *tag, *text;
     int nf = valve_fault_count();
-    bool f12 = valve_fault_is("F-12");
     valve_mode_t m = valve_mode();
 
     // Header.
@@ -607,7 +693,7 @@ static void frame_refresh(void)
     show(home_btn, !home && !overlay);
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
-    const char *mode_txt = f12 ? "STOPPED" : nf ? "FAULT" : valve_mode_name();
+    const char *mode_txt = nf ? "FAULT" : valve_mode_name();
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -626,33 +712,33 @@ static void frame_refresh(void)
         if (!home) {
             fit_title = cur->title;
             ui_set_text(title_lbl, cur->title);
-            title_fit(title_lbl, cur->title, mode_txt, 2 * HDR_BTN_W + 4);
+            title_fit(title_lbl, cur->title, 2 * HDR_BTN_W + 4);
         }
         // Home's title sits on the left (Ryan, 16 Oct: centred left the
         // top left empty); it is centred in the gap only if it is too long.
-        title_fit(pmc_lbl, home_title, mode_txt, 10);
-        if (text_w(home_title) < 454 - text_w(mode_txt) - 8 - 12)
+        title_fit(pmc_lbl, home_title, 10);
+        if (text_w(home_title) < 353 - 12)
             lv_obj_set_x(pmc_lbl, 12);
     }
-    show(fault_rule, nf > 0);
     bool op = !valve_stop_latches();
     if (op != lv_obj_has_state(stop_btn, LV_STATE_USER_2)) {
         if (op) lv_obj_add_state(stop_btn, LV_STATE_USER_2);
         else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
     }
-    // Mode dot (simulator WP023 S4): red and filled with a latched fault,
-    // filled grey in AUTO, a grey ring in every other mode; shape, not
-    // colour, tells AUTO apart. (Before 0.10.5 the ring never drew: its
-    // border was only set on a change of fill, and the first was none.)
-    static int dot_kind = -1;
-    bool in_auto = false;      // AUTO comes in stage 8
-    int kind = nf ? 2 : in_auto ? 1 : 0;
-    if (kind != dot_kind) {
-        dot_kind = kind;
-        lv_obj_set_style_bg_opa(mode_dot, kind ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_bg_color(mode_dot, kind == 2 ? UI_FAULT : lv_color_hex(0xC3CDD7), 0);
-        lv_obj_set_style_border_width(mode_dot, kind ? 0 : 2, 0);
+    // Mode badge: red and filled with a latched fault, filled white in
+    // AUTO (dark lettering), outlined white in every other mode.
+    static int badge_kind = -1;
+    // NOT HOMED (kind 3): white text, no outline (Ryan, 22 Oct).
+    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : m == VALVE_NOT_CAL ? 3 : 0;
+    if (kind != badge_kind) {
+        badge_kind = kind;
+        lv_obj_set_style_bg_opa(mode_lbl, kind == 1 || kind == 2 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
+        lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
+        lv_obj_set_style_border_opa(mode_lbl, kind == 3 ? LV_OPA_TRANSP : LV_OPA_COVER, 0);   // width kept: text stays put
+        ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
     }
+
 
     question_check();
 
@@ -672,25 +758,40 @@ static void frame_refresh(void)
     }
     nf_seen = nf;
     // The keypad uses the strip's row; an empty line (Home, idle) hides it.
-    bool quiet = !msg_until && !nf && !stepper3_override() && !line_text[0];
+    supply_state_t sup = supply_state();
+    int32_t die_mc;
+    bool hot = sense_hot(&die_mc);
+    bool quiet = !msg_until && !nf && !stepper3_override() && sup == SUPPLY_OK && !hot && !line_text[0];
     show(strip, (!overlay || !kp_open) && !quiet);
     char buf[96];
     if (msg_until) {
-        strip_draw(UI_STRIP_WARN, UI_IDLE, msg_text, true, false);
+        strip_draw(UI_STRIP_WARN, NULL, msg_text, true, false);
     } else if (valve_fault_first(&tag, &text)) {
-        if (f12)
-            lv_strlcpy(buf, "Stopped where it was, not closed.", sizeof buf);
-        else if (nf > 1)
+        if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
         else
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
-        strip_draw(UI_STRIP_FAULT, UI_IDLE, buf, false, act_cb != NULL);
+        strip_draw(UI_STRIP_FAULT, NULL, buf, false, act_cb != NULL);
     } else if (stepper3_override()) {
         // Cancel on every screen while it is armed (Ryan, 16 Oct).
         ui_strip_action("Cancel", NULL, override_cancel_event);
-        strip_draw(UI_STRIP_WARN, UI_IDLE, "Limit override on", false, true);
+        strip_draw(UI_STRIP_WARN, NULL, "Limit override on", false, true);
+    } else if (sup != SUPPLY_OK) {
+        // On every screen while it lasts (supply.h); OFF blocks moves.
+        char v[16];
+        int32_t mv = supply_mv();
+        ui_fmt1(v, sizeof v, mv < 0 ? 0 : mv);
+        if (sup == SUPPLY_OFF)
+            lv_snprintf(buf, sizeof buf, "Motor supply off (%s V): moves blocked", v);
+        else
+            lv_snprintf(buf, sizeof buf, "Motor supply %s, %s V", sup == SUPPLY_LOW ? "low" : "high", v);
+        strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
+    } else if (hot) {
+        char v[16];
+        lv_snprintf(buf, sizeof buf, "W-03 Controller hot, %s \xC2\xB0" "C", ui_fmt1(v, sizeof v, die_mc));
+        strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
     } else {
-        strip_draw(line_kind, line_dot, line_text, false, act_cb != NULL);
+        strip_draw(line_kind, line_icon, line_text, false, act_cb != NULL);
     }
 }
 
@@ -705,8 +806,6 @@ static void override_cancel_event(lv_event_t *e)
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service)
-        return;
     if (cur->fast)
         cur->fast();
     if (kp_open)
@@ -716,10 +815,6 @@ static void fast_timer(lv_timer_t *t)
 static void refresh_timer(lv_timer_t *t)
 {
     (void)t;
-    if (service) {
-        // Back on Home once the motor screen is left (its Back calls ui_home()).
-        return;
-    }
     frame_refresh();
 }
 
@@ -740,7 +835,9 @@ static lv_obj_t *new_screen(void)
 
 void ui_open(const ui_screen_t *s)
 {
-    if (cur != &ui_scr_home && cur != s && !service && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
+    if (cur == s)   // e.g. the strip's sparkline tapped on Trend
+        return;
+    if (cur != &ui_scr_home && cur != s && back_n < (int)(sizeof back_stack / sizeof back_stack[0]))
         back_stack[back_n++] = cur;
     open_screen(s);
 }
@@ -770,54 +867,19 @@ void ui_home(void)
     cur_scr = home_scr;
     strip_w = 343;
     lv_screen_load(home_scr);
-    if (service) {
-        service = false;
-        show(frame, true);
-        motor_screen_close();   // its LVGL heap back
-    } else if (old != home_scr) {
+    if (old != home_scr) {
         lv_obj_delete(old);
     }
     frame_refresh();
 }
 
-// Back from the motor screen: Settings, with Menu and Home behind it. Run
-// after the Back event, so the motor screen can be freed before Menu and
-// Settings are built (both at once ran a host test's heap out).
-static void service_back_now(void *p)
-{
-    (void)p;
-    if (!service)
-        return;
-    ui_home();
-    ui_open(&ui_scr_menu);
-    ui_open(&ui_scr_settings);
-}
-
-static void service_back(void)
-{
-    lv_async_call(service_back_now, NULL);
-}
-
+// Settings > Motor override, a framework screen since 0.11.32.
 void ui_service(void)
 {
-    ui_overlay_close();
-    show(frame, false);
-    service = true;
-    // The screen left (Settings) goes first, so the two are never built
-    // at once; the motor screen is built on open and freed on leave.
-    if (cur_scr != home_scr) {
-        lv_screen_load(home_scr);
-        lv_obj_delete(cur_scr);
-    }
-    cur = &ui_scr_home;
-    cur_scr = home_scr;
-    motor_screen_init(service_back);
-    motor_screen_show();
+    ui_open(&ui_scr_motor);
 }
 
-bool ui_on_service(void) { return service; }
-
-bool ui_showing(const ui_screen_t *s) { return cur == s && !service; }
+bool ui_showing(const ui_screen_t *s) { return cur == s; }
 
 /* --------------------------------------------------------------------------
  * Overlays: keypad and confirm, over 0,40 480x232 (STOP stays on top)
@@ -1063,12 +1125,12 @@ void ui_pick(const char *title, const char *const *items, int n, int sel, void (
 }
 
 // Confirm and question dialogs.
-static void (*confirm_ok)(void), (*confirm_cancel)(void), (*confirm_mid)(void);
+static void (*confirm_ok)(void), (*confirm_cancel)(void), (*confirm_mid)(void), (*confirm_mid2)(void);
 
 static void confirm_event(lv_event_t *e)
 {
-    intptr_t k = (intptr_t)lv_event_get_user_data(e);   // 0 cancel, 1 OK, 2 middle
-    void (*f)(void) = k == 1 ? confirm_ok : k == 2 ? confirm_mid : confirm_cancel;
+    intptr_t k = (intptr_t)lv_event_get_user_data(e);   // 0 cancel, 1 OK, 2 middle, 3 second middle
+    void (*f)(void) = k == 1 ? confirm_ok : k == 2 ? confirm_mid : k == 3 ? confirm_mid2 : confirm_cancel;
     ui_overlay_close();
     if (f)
         f();
@@ -1083,29 +1145,52 @@ void ui_ask(const char *text, const char *cancel, void (*on_cancel)(void), const
 void ui_ask3(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
              void (*on_mid)(void), const char *ok, void (*on_ok)(void))
 {
+    ui_ask4(text, cancel, on_cancel, mid, on_mid, NULL, NULL, ok, on_ok);
+}
+
+// A dialog's other buttons: filled with the page grey, so they read as
+// buttons on the white box (Ryan, 23 Oct: white on white was easy to miss).
+static void dialog_btn(lv_obj_t *box, int32_t x, int32_t y, int32_t w, int32_t h, const char *text,
+                       lv_event_cb_t cb, void *user)
+{
+    lv_obj_t *b = ui_btn(box, x, y, w, h, UI_SECONDARY, text, cb, user);
+    lv_obj_set_style_bg_color(b, UI_BG, 0);
+}
+
+void ui_ask4(const char *text, const char *cancel, void (*on_cancel)(void), const char *mid,
+             void (*on_mid)(void), const char *mid2, void (*on_mid2)(void), const char *ok, void (*on_ok)(void))
+{
     lv_obj_t *o = overlay_new();
     lv_obj_set_style_bg_color(o, lv_color_make(40, 50, 60), 0);
     lv_obj_set_style_bg_opa(o, 140, 0);
     confirm_ok = on_ok;
     confirm_cancel = on_cancel;
     confirm_mid = on_mid;
-    lv_obj_t *box = ui_card(o, 70, 0, 340, 100);
+    confirm_mid2 = on_mid2;
+    // Four buttons need a wider box: 420 px, four of 91.
+    int32_t bw = mid2 ? 420 : 340;
+    lv_obj_t *box = ui_card(o, (480 - bw) / 2, 0, bw, 100);
     lv_obj_set_style_radius(box, 8, 0);
-    lv_obj_t *t = ui_label(box, 16, 14, 308, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
+    lv_obj_t *t = ui_label(box, 16, 14, bw - 32, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, text);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_obj_update_layout(t);
     int32_t th = lv_obj_get_height(t);
     if (th > 84) th = 84;
     int32_t by = 14 + th + 10, h = by + 60;
     lv_obj_set_height(t, th);
-    lv_obj_set_size(box, 340, h);
+    lv_obj_set_size(box, bw, h);
     lv_obj_set_y(box, (168 - h) / 2);
-    if (mid) {
-        ui_btn(box, 16, by, 96, 48, UI_SECONDARY, cancel, confirm_event, NULL);
-        ui_btn(box, 122, by, 96, 48, UI_SECONDARY, mid, confirm_event, (void *)2);
+    if (mid2) {
+        dialog_btn(box, 16, by, 91, 48, cancel, confirm_event, NULL);
+        dialog_btn(box, 115, by, 91, 48, mid, confirm_event, (void *)2);
+        dialog_btn(box, 214, by, 91, 48, mid2, confirm_event, (void *)3);
+        ui_btn(box, 313, by, 91, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
+    } else if (mid) {
+        dialog_btn(box, 16, by, 96, 48, cancel, confirm_event, NULL);
+        dialog_btn(box, 122, by, 96, 48, mid, confirm_event, (void *)2);
         ui_btn(box, 228, by, 96, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     } else {
-        ui_btn(box, 16, by, 150, 48, UI_SECONDARY, cancel, confirm_event, NULL);
+        dialog_btn(box, 16, by, 150, 48, cancel, confirm_event, NULL);
         ui_btn(box, 174, by, 150, 48, UI_PRIMARY, ok, confirm_event, (void *)1);
     }
     frame_refresh();
@@ -1216,7 +1301,7 @@ static void sp_use(void)
 static void sp_calibrate(void)
 {
     valvepos_decline();
-    ui_calibrate_ask();
+    ui_home_ask();
 }
 
 static void question_check(void)
@@ -1232,20 +1317,30 @@ static void question_check(void)
     // A keypad or confirm the operator opened stays; the question waits.
     if (!want || overlay_q || asking || (want == 2 && overlay))
         return;
-    static char t[128], ok[32];
+    static char t[160], ok[32];
     char v[16];
     asking = true;
     if (want == 1) {
-        lv_snprintf(t, sizeof t, "Limit switch pressed at %s %%. Set this point as 0 %%?",
+        lv_snprintf(t, sizeof t, "Limit switch at %s %%. Set as 0 %%?",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_ask(t, "Skip", q_skip, "Set as 0 %", q_zero);
     } else {
         int32_t pm = valve_pos_max();
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
-        lv_snprintf(t, sizeof t, "Valve position saved at %s %% before the restart. Not checked: "
-                    "if it was moved while off, home it. Use it, or home the valve?", v);
-        lv_snprintf(ok, sizeof ok, "Use %s %%", v);
-        ui_ask(t, "Home", sp_calibrate, ok, sp_use);
+        int32_t off;
+        if (valvepos_offer_moving(&off)) {
+            // Saved during a move: up to 2 s of travel short (valvepos.c).
+            char e[16];
+            int64_t m = ((int64_t)off * 100000 + pm - 1) / pm;   // 0.001 %, rounded up to 0.1
+            ui_fmt1(e, sizeof e, (m + 99) / 100 * 100);
+            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved %s %%, may be out by %s %%.", v, e);
+        } else {
+            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved position %s %%.", v);
+        }
+        // Home, Set position (the list, the saved one in it), or the saved
+        // position at once (Ryan, 23 Oct: the two jobs apart).
+        lv_snprintf(ok, sizeof ok, "Use\n%s %%", v);
+        ui_ask3(t, "Home", sp_calibrate, "Set\nposition", ui_set_position_ask, ok, sp_use);
     }
     asking = false;
     overlay_q = want;

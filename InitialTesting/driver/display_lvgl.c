@@ -5,6 +5,7 @@
 #include "lvgl_common.h"
 #include "mcu.h"
 #include "display_px.h"
+#include "lv_port_indev.h"
 
 static void disp_init(void);
 static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t * px_map);
@@ -32,8 +33,10 @@ void lv_port_disp_init(void)
     /*-----------------------------
      * Create a buffer for drawing.
      *----------------------------*/
-    /* Your old code used "10 rows" -> PARTIAL render mode is the right match. */
-    static lv_color_t buf_1[_TFT_WIDTH_ * 10];
+    /* PARTIAL render mode, 25 rows of RGB565 (2 bytes a pixel): 11 strips a
+     * full screen, against 19 with the 15 rows before 0.11.18, so a screen
+     * change has less per-strip work (about a fifth faster on the PC). */
+    static uint8_t buf_1[_TFT_WIDTH_ * 25 * 2] __attribute__((aligned(4)));
 
     /* buf_size is in BYTES in v9 */
     lv_display_set_buffers(g_disp,
@@ -91,6 +94,12 @@ static void disp_flush(lv_display_t * display, const lv_area_t * area, uint8_t *
 
     /* Deselect display. */
     display_deselect();
+
+    /* A full redraw is many strips and can take longer than a tap, and touch
+     * is otherwise read only between LVGL passes: read it here too, so a
+     * press made during the redraw is latched, not lost (touch_poll limits
+     * itself to once per 5 ms). */
+    touch_poll();
 
     /* IMPORTANT: tell LVGL flushing is finished. */
     lv_display_flush_ready(display);

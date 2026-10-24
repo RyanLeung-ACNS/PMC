@@ -13,14 +13,16 @@
 #define VP_SECTORS   16
 #define VP_SECTOR    4096UL
 #define VP_PER       (VP_SECTOR / sizeof(vp_entry_t))
-#define VP_SAFE      0x45464153UL   // "SAFE"
-#define VP_UNSAFE    0UL
+#define VP_SAFE      0x45464153UL   // "SAFE": at standstill
+#define VP_MOVING    0x45564F4DUL   // "MOVE": during a move, within MOVE_MS of travel
+#define VP_UNSAFE    0UL            // not calibrated: nothing to offer
 #define STILL_MS     2000
+#define MOVE_MS      2000           // a moving entry at most this often (Ryan, 22 Oct)
 
 typedef struct {
     uint32_t seq;        // +1 each entry, never 0xFFFFFFFF
     int32_t count;
-    uint32_t state;      // VP_SAFE or VP_UNSAFE
+    uint32_t state;      // VP_SAFE, VP_MOVING or VP_UNSAFE
     uint32_t crc;
 } vp_entry_t;
 _Static_assert(sizeof(vp_entry_t) == 16, "16-byte entries");
@@ -30,6 +32,8 @@ static uint32_t sector, at;  // where the next entry goes
 static vp_entry_t last;         // newest good entry (seq 0: none)
 static bool offer;
 static int32_t boot_count;
+static bool boot_moving;        // the offer was saved during a move
+static uint32_t put_at;         // tick of the last entry written
 static uint32_t still_since;
 static bool still;             // standing since still_since
 static uint32_t writes;
@@ -59,7 +63,7 @@ static uint32_t addr(uint32_t s, uint32_t i)
 
 // Writes one entry and reads it back. False if it did not take: last is
 // then unchanged, so the next call tries again in the next slot.
-static bool put(int32_t count, bool safe)
+static bool put(int32_t count, uint32_t state)
 {
     if (at >= VP_PER) {
         sector = (sector + 1) % VP_SECTORS;
@@ -67,13 +71,14 @@ static bool put(int32_t count, bool safe)
     }
     if (at == 0 && !extflash_erase_4k(addr(sector, 0)))
         return false;
-    vp_entry_t e = { last.seq + 1, count, safe ? VP_SAFE : VP_UNSAFE, 0 }, back;
+    vp_entry_t e = { last.seq + 1, count, state, 0 }, back;
     if (e.seq == 0xFFFFFFFFUL)
         e.seq = 1;
     e.crc = crc32(&e, offsetof(vp_entry_t, crc));
     uint32_t a = addr(sector, at);
     at++;                       // the slot is used whatever happens
     writes++;
+    put_at = lv_tick_get();
     extflash_write(a, &e, sizeof e);
     extflash_read(a, &back, sizeof back);
     if (memcmp(&e, &back, sizeof e) != 0)
@@ -87,13 +92,24 @@ static bool safe_on_flash(void)
     return last.seq && last.state == VP_SAFE;
 }
 
-// Withdraws a safe entry, two tries. False if both failed: the flash may
-// still hold it.
+static bool offerable(const vp_entry_t *e)
+{
+    return e->seq && (e->state == VP_SAFE || e->state == VP_MOVING);
+}
+
+// Writes state at pos, two tries. False if both failed.
+static bool put2(int32_t pos, uint32_t state)
+{
+    return put(pos, state) || put(pos, state);
+}
+
+// Withdraws a safe or moving entry (calibration lost), two tries. False if
+// both failed: the flash may still hold it.
 static bool withdraw(int32_t pos)
 {
-    if (!safe_on_flash())
+    if (!offerable(&last))
         return true;
-    if (put(pos, false) || put(pos, false)) {
+    if (put2(pos, VP_UNSAFE)) {
         warned = false;
         return true;
     }
@@ -104,19 +120,24 @@ static bool withdraw(int32_t pos)
     return false;
 }
 
-// stepper3.c, just before a move starts from rest: the entry goes before
-// the motor moves, so a reset mid-move cannot leave a safe one behind. If
-// it cannot be withdrawn the move is refused; the entry then still matches
-// the valve, which has not moved.
+// stepper3.c, just before a move starts from rest: a moving entry at the
+// start goes before the motor turns, so a reset mid-move never leaves the
+// standstill one behind; valvepos_task() then adds one every MOVE_MS while
+// it moves. Not calibrated: the entry is withdrawn instead. If neither can
+// be written the move is refused; the entry then still matches the valve,
+// which has not moved.
 static bool before_move(const char **why)
 {
     if (!ok)
         return true;
     offer = false;
     still = false;
-    if (withdraw(stepper3_position()))
+    int32_t pos = stepper3_position() / stepper3_scale();   // saved in full steps
+    if (valve_calibrated() ? put2(pos, VP_MOVING) : withdraw(pos)) {
+        warned = false;
         return true;
-    *why = "saved position could not be withdrawn (flash write failed)";
+    }
+    *why = "saved position could not be written (flash write failed)";
     return false;
 }
 
@@ -169,13 +190,15 @@ void valvepos_init(void)
             at = used;
         }
     }
-    if (last.seq && last.state == VP_SAFE) {
+    if (offerable(&last)) {
         offer = true;
         boot_count = last.count;
+        boot_moving = last.state == VP_MOVING;
         char p[16];
-        valve_event("REF", "Saved position on offer: count %ld (%s %%), use it or calibrate",
+        valve_event("REF", "Saved position on offer: count %ld (%s %%)%s, use it or calibrate",
                     (long)boot_count, fixed_fmt(p, sizeof p,
-                    fixed_round((int64_t)boot_count * 10000 / valve_pos_max(), 1), 1));
+                    fixed_round((int64_t)boot_count * stepper3_scale() * 10000 / valve_pos_max(), 1), 1),
+                    boot_moving ? ", saved while moving" : "");
     }
 }
 
@@ -185,7 +208,7 @@ void valvepos_task(void)
         return;
     bool moving = stepper3_busy() || valve_mode() == VALVE_CALIBRATING;
     bool cal = valve_calibrated();
-    int32_t pos = stepper3_position();
+    int32_t pos = stepper3_position() / stepper3_scale();   // saved in full steps
     if (moving) {
         still = false;
     } else if (!still) {
@@ -198,24 +221,37 @@ void valvepos_task(void)
             return;
         offer = false;
     }
-    bool safe = safe_on_flash();
-    if (safe && (moving || !cal || pos != last.count))
+    if (!cal) {
         (void)withdraw(pos);
-    else if (!safe && cal && !moving && still && lv_tick_elaps(still_since) >= STILL_MS)
-        put(pos, true);
+    } else if (moving) {
+        // The count every MOVE_MS while it moves (a write each time, so
+        // no more often: a 4 KB sector takes 256, each erase 100,000 times).
+        if (pos != last.count && lv_tick_elaps(put_at) >= MOVE_MS)
+            (void)put(pos, VP_MOVING);
+    } else if (offerable(&last) && pos != last.count) {
+        (void)put(pos, VP_MOVING);   // set without a move (VALVE CLOSED, restore): a new count
+    } else if (!safe_on_flash() && still && lv_tick_elaps(still_since) >= STILL_MS) {
+        put(pos, VP_SAFE);
+    }
 }
 
 bool valvepos_offer(int32_t *count)
 {
     if (offer)
-        *count = boot_count;
+        *count = boot_count * stepper3_scale();
     return offer;
+}
+
+bool valvepos_offer_moving(int32_t *steps)
+{
+    *steps = (int32_t)((uint64_t)stepper3_rate() * MOVE_MS / 1000);
+    return offer && boot_moving;
 }
 
 bool valvepos_use(const char **why)
 {
     if (!offer) { *why = "no saved position on offer"; return false; }
-    if (!valve_restore(boot_count, why))
+    if (!valve_restore(boot_count * stepper3_scale(), why))
         return false;
     offer = false;
     return true;
@@ -236,7 +272,8 @@ bool valvepos_command(const char *line)
             link_printf("VALVE SAVED none\r\n");
         else
             link_printf("VALVE SAVED count %ld, %s, entry %lu of sector %lu, %lu writes since boot%s\r\n",
-                        (long)last.count, last.state == VP_SAFE ? "safe (at standstill)" : "unsafe (moved since)",
+                        (long)last.count, last.state == VP_SAFE ? "safe (at standstill)" :
+                        last.state == VP_MOVING ? "saved while moving" : "unsafe (not calibrated)",
                         (unsigned long)at, (unsigned long)sector, (unsigned long)writes,
                         offer ? ", on offer: VALVE RESTORE to use" : "");
         link_printf("OK\r\n");

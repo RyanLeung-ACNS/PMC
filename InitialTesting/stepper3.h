@@ -17,8 +17,8 @@
  *
  * Direction convention: positive steps open the valve, negative close it.
  * MOT DIR flips the sequence if the wiring turns the other way. Before every
- * closing step the limit input is read (NC contact, open = stop). The input
- * (DIGI IN, IN1) is not fitted yet, so closing moves are not stopped by it.
+ * closing step the limit input is read (NC contact on PD13, open = stop):
+ * it is the closing stop (limit.c, PMC_LIMIT_STOP).
  *
  * Commands over the link, one per line, replies end with OK or ERR:
  *   MOT?                  state, position and settings
@@ -51,7 +51,7 @@ typedef enum {
     STEPPER3_STOP_DONE,     // reached the target
     STEPPER3_STOP_CMD,      // MOT STOP / MOT OFF / stepper3_stop()
     STEPPER3_STOP_LIMIT,    // limit input open during a closing move
-    STEPPER3_STOP_TIMEOUT   // F-13: still moving after |distance| / rate + 2 s
+    STEPPER3_STOP_TIMEOUT   // F-05: still moving after |distance| / rate + 2 s
 } stepper3_stop_t;
 
 // Pins low (coils off). Does not move the motor.
@@ -63,7 +63,7 @@ void stepper3_init(void);
 // turns. Returns false for a rate out of range, a target more than
 // STEPPER3_MAX_MOVE from here, or (from rest) a closing move with the limit
 // open. A target equal to the position returns true without moving.
-#define STEPPER3_MAX_MOVE 400000   // > 1.1 x the largest POS_MAX (300000)
+#define STEPPER3_MAX_MOVE 700000   // > 1.1 x the largest POS_MAX (300000 full steps) in half steps
 #define STEPPER3_TIMEOUT_MARGIN_MS 2000
 bool stepper3_goto_rate(int32_t target, uint32_t sps);
 bool stepper3_goto(int32_t target);
@@ -76,7 +76,7 @@ int32_t stepper3_target(void);
 void stepper3_stop(void);
 // Ramps down at the normal deceleration, then stops (last stop "stopped").
 void stepper3_stop_ramped(void);
-// From the main loop: F-13 motion timeout, stops at once.
+// From the main loop: F-05 motion timeout, stops at once.
 void stepper3_poll(void);
 // Goes up by one each time a move ends (done, stopped, limit, timeout);
 // stepper3_last_stop() then says why.
@@ -96,8 +96,10 @@ void stepper3_off(void);
 bool stepper3_busy(void);
 int32_t stepper3_position(void);
 void stepper3_zero(void);
+// Motor counts per full step: 2 in HALF, else 1.
+int32_t stepper3_scale(void);
 // Called when the step count stops matching the valve's homing: MOT ZERO,
-// a change of step mode, direction or coil order (from the link, the motor
+// a change of direction or coil order (from the link, the motor
 // screen or a loaded record). The valve layer clears its homing.
 void stepper3_on_reference_change(void (*cb)(const char *why));
 // Called just before a move starts from rest, before the coils are

@@ -9,7 +9,6 @@
 #include "sysinfo.h"
 #include "cal.h"
 #include "rtclock.h"
-#include "uncert.h"
 #include "fixed.h"
 
 static clicks_state_t st;
@@ -88,8 +87,6 @@ bool cal_saved(void) { return fake_saved; }
 void cal_update(const clicks_state_t *s) { (void)s; }
 uint32_t cal_old_version(void) { return 0; }
 int cal_capture_left(void) { return 0; }
-int32_t cal_vac_unc_mmbar(void) { return 10; }
-int32_t cal_air_unc_mmbar(void) { return 1000; }
 bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
 {
     if (!fake_bench) return false;
@@ -98,7 +95,6 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
     return true;
 }
 #endif
-int32_t clicks_boost10_set_mv(int32_t mv) { return st.boost_tripped ? -1 : mv; }
 
 void link_init(void) {}
 void link_task(void) {}
@@ -121,13 +117,6 @@ void link_printf(const char *fmt, ...)
 }
 bool rtclock_valid(void) { return !st.cal_nominal; }
 const char *rtclock_screen_text(void) { return st.cal_nominal ? "time not set" : "08 Oct  12:34"; }
-void uncert_update(const clicks_state_t *s) { (void)s; }
-const char *uncert_screen_text(bool *warn)
-{
-    *warn = st.cal_nominal;
-    if (!st.reading_ok) return "";
-    return st.cal_nominal ? "+/- ? (not calibrated)" : "+/- 1.08 mbar";
-}
 
 /* Stepper 3: settings only, a move completes at once. */
 #include "stepper3.h"
@@ -145,6 +134,7 @@ void stepper3_off(void) {}
 bool fake_busy;   // set by the "moving" scenario
 bool stepper3_busy(void) { return fake_busy; }
 int32_t stepper3_position(void) { return m_pos; }
+int32_t stepper3_target(void) { return m_pos + (fake_busy ? 1000 : 0); }   // "moving" opens
 void stepper3_zero(void) { m_pos = 0; }
 stepper3_stop_t stepper3_last_stop(void) { return m_stop; }
 bool stepper3_limit_open(void) { return limit_state() != LIMIT_CLOSED; }
@@ -164,6 +154,7 @@ uint32_t stepper3_rate(void) { return m_rate; }
 uint32_t stepper3_start_rate(void) { return m_start; }
 uint32_t stepper3_accel(void) { return m_accel; }
 stepper3_mode_t stepper3_mode(void) { return m_mode; }
+int32_t stepper3_scale(void) { return m_mode == STEPPER3_HALF ? 2 : 1; }
 bool stepper3_hold(void) { return m_hold; }
 bool stepper3_reverse(void) { return m_rev; }
 bool stepper3_energised(void) { return m_hold; }
@@ -203,3 +194,19 @@ void fake_hw_rise(int t)
     st.p_mmbar = t < 40 ? (t % 2 ? -400 : 0) : (t - 39) * (t - 39) * 2400;
     fixed_fmt(value, sizeof value, fixed_round(st.p_mmbar, 1), 2);
 }
+
+// Motor supply (supply.h): 12.1 V unless a scenario sets it.
+#include "supply.h"
+int32_t fake_sup_mv = 12100;
+int32_t supply_mv(void) { return fake_sup_mv; }
+supply_state_t supply_state(void)
+{
+    return fake_sup_mv < SUPPLY_OFF_MV ? SUPPLY_OFF : fake_sup_mv < SUPPLY_LOW_MV ? SUPPLY_LOW
+         : fake_sup_mv > SUPPLY_HIGH_MV ? SUPPLY_HIGH : SUPPLY_OK;
+}
+bool supply_off(void) { return supply_state() == SUPPLY_OFF; }
+bool supply_fitted(void) { return true; }
+
+// W-03 (sense.h): set by the "hot" scenario.
+bool fake_hot;
+bool sense_hot(int32_t *die_mc) { *die_mc = 57300; return fake_hot; }

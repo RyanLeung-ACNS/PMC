@@ -42,15 +42,15 @@ static bool from_old;              // active came from the old record at start-u
  * (one a second) of the live ratio, taken through the INA228 as it is
  * wired, so the input loading and INA228 gain and offset are in the table.
  */
-#define CAPTURE_N   10
+#define CAPTURE_N   CAL_CAPTURE_N
 static struct {
     bool have_vac, have_air;
-    int32_t r_vac, p_vac, u_vac;      // ppb, 0.001 mbar
-    int32_t r_air, p_air, u_air;
+    int32_t r_vac, p_vac;             // ppb, 0.001 mbar
+    int32_t r_air, p_air;
 } bench;
 static struct {
     int what;                          // 0 idle, 1 vacuum, 2 air
-    int32_t p, u;
+    int32_t p;
     int n;
     int64_t sum, sq;                   // ppb, ppb^2 about the first reading
     int32_t first;
@@ -135,8 +135,8 @@ bool cal_set_record(const cal_rec_t *r, bool saved)
     memset(&bench, 0, sizeof bench);
     if (r->kind == CAL_KIND_BENCH) {
         bench.have_vac = bench.have_air = true;
-        bench.r_vac = r->r_ppb[0]; bench.p_vac = r->p_mmbar[0]; bench.u_vac = r->vac_unc_mmbar;
-        bench.r_air = r->r_ppb[1]; bench.p_air = r->p_mmbar[1]; bench.u_air = r->air_unc_mmbar;
+        bench.r_vac = r->r_ppb[0]; bench.p_vac = r->p_mmbar[0];
+        bench.r_air = r->r_ppb[1]; bench.p_air = r->p_mmbar[1];
     }
     return true;
 }
@@ -210,42 +210,11 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
     return true;
 }
 
-int32_t cal_vac_unc_mmbar(void) { return active.vac_unc_mmbar; }
-int32_t cal_air_unc_mmbar(void) { return active.air_unc_mmbar; }
 int cal_capture_left(void) { return cap.what ? CAPTURE_N - cap.n : 0; }
 
 /* --------------------------------------------------------------------------
  * Commands
  * ------------------------------------------------------------------------ */
-
-// Parses a plain decimal ("-12.345") into an integer scaled by 10^dec.
-// Extra decimals are truncated. Advances *s past the number.
-static bool parse_fixed(const char **s, int dec, int64_t *out)
-{
-    const char *p = *s;
-    int64_t v = 0;
-    int neg = 0, digits = 0, frac = -1;
-
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p == '-' || *p == '+') neg = (*p++ == '-');
-    for (; *p; p++) {
-        if (*p == '.' && frac < 0) { frac = 0; continue; }
-        if (*p < '0' || *p > '9') break;
-        if (frac >= 0) {
-            if (frac >= dec) { digits++; continue; }
-            frac++;
-        }
-        if (v > 100000000000LL) return false;    // 1e11: room for the 10^dec scaling
-        v = v * 10 + (*p - '0');
-        digits++;
-    }
-    if (!digits) return false;
-    if (*p && *p != ' ' && *p != '\t') return false;   // "1.2.3", "5x"
-    for (int k = frac < 0 ? 0 : frac; k < dec; k++) v *= 10;
-    *out = neg ? -v : v;
-    *s = p;
-    return true;
-}
 
 static void show(void)
 {
@@ -257,13 +226,10 @@ static void show(void)
         link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo CAL VAC and CAL AIR\r\n",
                     (unsigned long)old_version);
     if (!active_is_default && active.kind == CAL_KIND_BENCH) {
-        char u[20];
         fixed_fmt(p, sizeof p, active.p_mmbar[0], 3);
-        fixed_fmt(u, sizeof u, active.vac_unc_mmbar, 3);
-        link_printf("CAL bench vacuum point %s +/- %s mbar\r\n", p, u);
+        link_printf("CAL bench vacuum point %s mbar\r\n", p);
         fixed_fmt(p, sizeof p, active.p_mmbar[1], 3);
-        fixed_fmt(u, sizeof u, active.air_unc_mmbar, 3);
-        link_printf("CAL bench air point %s +/- %s mbar\r\n", p, u);
+        link_printf("CAL bench air point %s mbar\r\n", p);
     } else if (bench.have_vac != bench.have_air) {
         link_printf("CAL bench %s point captured, %s point still to do\r\n",
                     bench.have_vac ? "vacuum" : "air", bench.have_vac ? "air" : "vacuum");
@@ -278,33 +244,29 @@ static void show(void)
 
 /*
  * Bench two-point cal, through the INA228 as wired:
- *   CAL VAC [mbar] [unc]   pump the sensor down; pressure taken as 0 unless
- *                          given (0 to 50 mbar), unc default 0.010 mbar
- *   CAL AIR <mbar> [unc]   vent to the room and give the room pressure
- *                          (500 to 1100 mbar), unc default 1.0 mbar
+ *   CAL VAC [mbar]   pump the sensor down; pressure taken as 0 unless given
+ *                    (0 to 50 mbar)
+ *   CAL AIR <mbar>   vent to the room and give the room pressure (500 to
+ *                    1100 mbar)
+ * A number after the pressure (the uncertainty, to 0.11.36) is ignored.
  * Each averages the live ratio over CAPTURE_N readings, then replies. Once
  * both points are held the two-point table is applied (RAM only, then CAL
  * SAVE). Either point can be redone alone; the other is kept.
  */
 static void capture_start(int what, const char *s)
 {
-    int64_t p = 0, u = what == 1 ? CAL_VAC_UNC_DEFAULT : CAL_AIR_UNC_DEFAULT;
+    int64_t p = 0;
     bool vac = what == 1;
 
     while (*s == ' ') s++;
     if ((*s || !vac) &&
-        (!parse_fixed(&s, 3, &p) || (vac ? p < 0 || p > 50000 : p < 500000 || p > 1100000))) {
-        link_printf(vac ? "ERR expected: CAL VAC [mbar 0 to 50] [uncertainty mbar]\r\n"
-                        : "ERR expected: CAL AIR <mbar 500 to 1100> [uncertainty mbar]\r\n");
-        return;
-    }
-    while (*s == ' ') s++;
-    if (*s && (!parse_fixed(&s, 3, &u) || u <= 0 || u > 50000)) {
-        link_printf("ERR uncertainty: 0.001 to 50 mbar\r\n");
+        (!fixed_parse(&s, 3, &p) || (vac ? p < 0 || p > 50000 : p < 500000 || p > 1100000))) {
+        link_printf(vac ? "ERR expected: CAL VAC [mbar 0 to 50]\r\n"
+                        : "ERR expected: CAL AIR <mbar 500 to 1100>\r\n");
         return;
     }
     const char *why;
-    if (!cal_capture(what, (int32_t)p, (int32_t)u, &why)) {
+    if (!cal_capture(what, (int32_t)p, &why)) {
         link_printf("ERR %s\r\n", why);
         return;
     }
@@ -312,7 +274,7 @@ static void capture_start(int what, const char *s)
                 vac ? "vacuum" : "air", CAPTURE_N);
 }
 
-bool cal_capture(int what, int32_t p_mmbar, int32_t unc_mmbar, const char **why)
+bool cal_capture(int what, int32_t p_mmbar, const char **why)
 {
     const clicks_state_t *s = clicks_state();
     if (cap.what)        { *why = "a capture is running"; return false; }
@@ -325,7 +287,6 @@ bool cal_capture(int what, int32_t p_mmbar, int32_t unc_mmbar, const char **why)
     memset(&cap, 0, sizeof cap);
     cap.what = what;
     cap.p = p_mmbar;
-    cap.u = unc_mmbar > 0 ? unc_mmbar : what == 1 ? CAL_VAC_UNC_DEFAULT : CAL_AIR_UNC_DEFAULT;
     return true;
 }
 
@@ -343,8 +304,8 @@ static void bench_apply(void)
         lv_snprintf(r.id, CAL_ID_LEN, "%s bench %.8s", sensor_serial, iso + 2);
     else
         lv_snprintf(r.id, CAL_ID_LEN, "%s bench", sensor_serial);
-    r.r_ppb[0] = bench.r_vac; r.p_mmbar[0] = bench.p_vac; r.vac_unc_mmbar = bench.u_vac;
-    r.r_ppb[1] = bench.r_air; r.p_mmbar[1] = bench.p_air; r.air_unc_mmbar = bench.u_air;
+    r.r_ppb[0] = bench.r_vac; r.p_mmbar[0] = bench.p_vac;
+    r.r_ppb[1] = bench.r_air; r.p_mmbar[1] = bench.p_air;
     if (rec_check(&r) != NULL) {
         link_printf("ERR air ratio not above vacuum ratio: check the pump-down and venting, redo both\r\n");
         return;
@@ -361,7 +322,7 @@ static void bench_apply(void)
 
 void cal_update(const clicks_state_t *s)
 {
-    if (!cap.what || s->pm_diag)
+    if (!cap.what)
         return;
     if (!s->reading_ok) {
         link_printf("ERR capture stopped: Druck reading lost\r\n");
@@ -383,8 +344,8 @@ void cal_update(const clicks_state_t *s)
     fixed_fmt(a, sizeof a, r, 6);
     fixed_fmt(b, sizeof b, isqrt64((uint64_t)(var > 0 ? var : 0)), 6);
     bool vac = cap.what == 1;
-    if (vac) { bench.have_vac = true; bench.r_vac = r; bench.p_vac = cap.p; bench.u_vac = cap.u; }
-    else     { bench.have_air = true; bench.r_air = r; bench.p_air = cap.p; bench.u_air = cap.u; }
+    if (vac) { bench.have_vac = true; bench.r_vac = r; bench.p_vac = cap.p; }
+    else     { bench.have_air = true; bench.r_air = r; bench.p_air = cap.p; }
     cap.what = 0;
     link_printf("OK %s point %s mV/V (sd %s mV/V over %d readings)\r\n",
                 vac ? "vacuum" : "air", a, b, CAPTURE_N);
@@ -429,7 +390,7 @@ bool cal_command(const char *line)
         int64_t r, p;
         if (staging.magic != CAL_MAGIC) { link_printf("ERR CAL NEW first\r\n"); return true; }
         if (staging.npts >= CAL_MAX_POINTS) { link_printf("ERR table full (32)\r\n"); return true; }
-        if (!parse_fixed(&s, 6, &r) || !parse_fixed(&s, 3, &p) ||
+        if (!fixed_parse(&s, 6, &r) || !fixed_parse(&s, 3, &p) ||
             r < -50000000 || r > 50000000 || p < -10000000 || p > 100000000) {
             link_printf("ERR expected: CAL PT <mV/V> <mbar>\r\n");
             return true;

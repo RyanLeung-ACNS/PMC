@@ -8,14 +8,13 @@
 #include "link.h"
 #include "pmc_config.h"
 #include "limit.h"
+#include "supply.h"
 #include "stepper3.h"
 
 /* --------------------------------------------------------------------------
  * Hardware
  *
- * Stepper 3 in socket PMC_STEPPER3_SOCKET (pmc_config.h):
- *   S1: AN PA4, RST PC2, CS PB12, PWM PD12
- *   S2: AN PB0, RST PC3, CS PA15, PWM PD13
+ * Stepper 3 in socket S1: AN PA4, RST PC2, CS PB12, PWM PD12.
  * These drive ULN2003 inputs 1-4 (high = that output pulls its coil end to ground). The motor centre
  * taps go to the COM terminal, which J1 connects to the external supply
  * (VCC-EXT, 12 V for the Portescap motors).
@@ -33,7 +32,6 @@ typedef struct {
     uint16_t pin;
 } out_pin_t;
 
-#if PMC_STEPPER3_SOCKET == 1
 static const out_pin_t out_pins[4] = {
     { GPIOA, 4 },    // MIKROBUS_1_AN  -> ULN2003 IN1
     { GPIOC, 2 },    // MIKROBUS_1_RST -> IN2
@@ -41,17 +39,6 @@ static const out_pin_t out_pins[4] = {
     { GPIOD, 12 },   // MIKROBUS_1_PWM -> IN4
 };
 #define SOCKET_PINS { MIKROBUS_1_AN, MIKROBUS_1_RST, MIKROBUS_1_CS, MIKROBUS_1_PWM }
-#elif PMC_STEPPER3_SOCKET == 2
-static const out_pin_t out_pins[4] = {
-    { GPIOB, 0 },    // MIKROBUS_2_AN  -> ULN2003 IN1
-    { GPIOC, 3 },    // MIKROBUS_2_RST -> IN2
-    { GPIOA, 15 },   // MIKROBUS_2_CS  -> IN3
-    { GPIOD, 13 },   // MIKROBUS_2_PWM -> IN4
-};
-#define SOCKET_PINS { MIKROBUS_2_AN, MIKROBUS_2_RST, MIKROBUS_2_CS, MIKROBUS_2_PWM }
-#else
-#error "PMC_STEPPER3_SOCKET must be 1 or 2"
-#endif
 
 static digital_out_t sdk_pins[4];
 
@@ -77,7 +64,8 @@ static uint32_t rate_start = 200;    // steps/s, ramp starts and ends here
 static uint32_t accel      = 3200;   // steps/s^2
 static stepper3_mode_t mode = STEPPER3_FULL;
 static bool hold;                    // coils on when idle
-static bool reverse = true;          // flips the sequence direction; reversed by default (Ryan, 19 Oct)
+static bool reverse;                // flips the sequence direction. Normal (0) is the direction that was
+                                    // "Reversed" before 0.11.19, the factory default (Ryan, 22 Oct)
 static uint8_t order[4] = { 0, 2, 1, 3 };   // coil n -> output order[n]; 0213 found on the bench (8 Oct, 26M motor)
 
 /* --------------------------------------------------------------------------
@@ -97,7 +85,7 @@ static uint32_t v_fp;                   // current rate, steps/s * 256
 static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
-static uint32_t deadline_ms;            // F-13: lv_tick_get() past this = timeout
+static uint32_t deadline_ms;            // F-05: lv_tick_get() past this = timeout
 static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
 static int32_t move_from;                // last move: start position and times
 static uint32_t move_t0;
@@ -264,7 +252,7 @@ void TIM7_IRQHandler(void)
     }
 
     int8_t inc = (mode == STEPPER3_HALF) ? 1 : 2;
-    if (reverse != (dir < 0))
+    if (reverse == (dir < 0))
         inc = -inc;
     phase = (uint8_t)(phase + inc) & 7;
     write_coils(seq[phase]);
@@ -331,7 +319,7 @@ static void step_irq_release(void) { TIM7->DIER = TIM_DIER_UIE; }
 
 static int32_t abs32(int32_t v) { return v < 0 ? -v : v; }
 
-// F-13: the move should be done within |distance| / rate, plus the ramps
+// F-05: the move should be done within |distance| / rate, plus the ramps
 // (counted twice over, for a turn round), plus 2 s.
 static void set_deadline(void)
 {
@@ -387,6 +375,11 @@ from_rest:
     if (dist < 0 && stepper3_limit_open()) {
         last_stop = STEPPER3_STOP_LIMIT;
         refusal = "limit open, closing move refused";
+        return false;
+    }
+    // No motor supply: the count would run on with the valve still.
+    if (supply_off()) {
+        refusal = "Motor supply off";
         return false;
     }
     // The saved position is withdrawn before anything moves; if it cannot
@@ -459,7 +452,7 @@ void stepper3_poll(void)
         return;
     stepper3_stop();
     last_stop = STEPPER3_STOP_TIMEOUT;
-    link_printf("F-13 motion timeout: stopped at %ld, target %ld\r\n",
+    link_printf("F-05 motion timeout: stopped at %ld, target %ld\r\n",
                 (long)position, (long)target);
 }
 
@@ -543,7 +536,7 @@ const char *stepper3_status(void)
     if (run_state == ST_MOVING)
         lv_snprintf(to, sizeof to, " to %ld", (long)target);
     lv_snprintf(status_text, sizeof status_text,
-                "S%d Stepper 3: %s, pos %ld%s, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
+                "S1 Stepper 3: %s, pos %ld%s, %s %lu sps, limit %s",
                 st, (long)position, to, stepper3_mode_name(mode),
                 (unsigned long)(run_state == ST_MOVING ? move_rate : rate_run),
                 !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)"
@@ -581,13 +574,16 @@ bool stepper3_set_accel(uint32_t sps2)
     return true;
 }
 
+int32_t stepper3_scale(void) { return mode == STEPPER3_HALF ? 2 : 1; }
+
 bool stepper3_set_mode(stepper3_mode_t nm)
 {
     if (run_state != ST_IDLE || nm > STEPPER3_HALF)
         return false;
-    if (nm != mode)
-        ref_changed("step mode changed");
-    // Keep the position in the new step size.
+    // Keep the position in the new step size; the homing stays (since
+    // 0.11.33, Ryan 23 Oct), the valve settings being in full steps. HALF to
+    // FULL or WAVE drops an odd half step, and WAVE and FULL rest half a
+    // step apart: at most one half step, against 16512 full steps a turn.
     if (mode == STEPPER3_HALF && nm != STEPPER3_HALF)
         position /= 2;
     else if (mode != STEPPER3_HALF && nm == STEPPER3_HALF)
@@ -665,7 +661,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_DONE:  return "done";
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
-    case STEPPER3_STOP_TIMEOUT: return "F-13 timeout";
+    case STEPPER3_STOP_TIMEOUT: return "F-05 timeout";
     default:                  return "none";
     }
 }

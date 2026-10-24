@@ -6,6 +6,8 @@
 #include "limit.h"
 #include "stepper3.h"
 #include "valve.h"
+#include "valvepos.h"
+#include "supply.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -20,6 +22,7 @@ static const char *why_no_steps(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    if (valve_auto()) return "Switch to MANUAL first";
     return NULL;
 }
 
@@ -76,8 +79,9 @@ static void right(lv_obj_t *l)
  * Valve page
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *p, *v, *go, *fill, *pfill, *btn[8];
+    lv_obj_t *p, *v, *go, *go_card, *go_chev, *fill, *pfill, *btn[8];
     bool jog;                 // a Close or Open hold is moving the valve
+    int go_live;              // Go to card styled as live (1) or flat (0), -1 not yet
 } vp;
 
 static const char *const valve_help =
@@ -148,6 +152,10 @@ static bool goto_set(int32_t v100, const char **why)
 static void goto_cb(lv_event_t *e)
 {
     (void)e;
+    if (valve_auto() && !valve_motion_blocked()) {
+        ui_manual_ask();   // in AUTO a tap on Go to asks Switch to MANUAL
+        return;
+    }
     const char *why = why_not_manual();
     if (why) {
         ui_msg(why);
@@ -170,8 +178,7 @@ static void full_cb(lv_event_t *e)
 
 static void help_cb(lv_event_t *e)
 {
-    ui_text_view(lv_event_get_user_data(e) == valve_help ? "Valve" : "Valve homing",
-                 lv_event_get_user_data(e));
+    ui_text_view("Valve", lv_event_get_user_data(e));
 }
 
 /* Readings 64 px tall with 26 px numbers; move buttons 40 px in two rows
@@ -195,11 +202,13 @@ static void bar_width(lv_obj_t *fill, int32_t w)
         lv_obj_set_width(fill, w);
 }
 
-// Reading card: caption, 26 px number right-aligned, optional bar.
-static lv_obj_t *reading(lv_obj_t *scr, int32_t x, int32_t h, const char *cap, lv_obj_t **fill)
+// Reading card: caption left and unit right as on the Home tiles (Ryan,
+// 21 Oct), 26 px number right-aligned, optional bar.
+static lv_obj_t *reading(lv_obj_t *scr, int32_t x, int32_t h, const char *cap, const char *unit, lv_obj_t **fill)
 {
     lv_obj_t *v = ui_info(scr, x, 48, 148, h, cap);
     lv_obj_t *card = lv_obj_get_parent(v);
+    ui_label(card, 10, 5, 128, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, unit);
     right(v);
     lv_obj_set_style_text_font(v, &ui_num_26, 0);
     lv_obj_set_y(v, 20);
@@ -218,24 +227,37 @@ static void hold_btn(lv_obj_t *b, bool open)
 static void valve_build(lv_obj_t *scr)
 {
     memset(&vp, 0, sizeof vp);
-    vp.p = reading(scr, 10, 64, "Pressure, mB", &vp.pfill);
-    vp.v = reading(scr, 166, 64, "Valve, %", &vp.fill);
-    vp.go = reading(scr, 322, 64, "Go to, %", NULL);
+    vp.go_live = -1;
+    vp.p = reading(scr, 10, 64, "Pressure", "mB", &vp.pfill);
+    vp.v = reading(scr, 166, 64, "Valve", "%", &vp.fill);
+    // Go to is the card itself: white as the other cards, with a blue
+    // underline and a chevron when a tap opens the keypad (Ryan, 22 Oct:
+    // the tint looked odd).
+    vp.go = reading(scr, 322, 64, "Go to", "%", NULL);
+    vp.go_card = lv_obj_get_parent(vp.go);
+    lv_obj_add_flag(vp.go_card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(vp.go_card, goto_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_border_side(vp.go_card, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(vp.go_card, UI_BLUE, 0);
+    lv_obj_set_width(vp.go, 110);
+    vp.go_chev = ui_label(vp.go_card, 126, 28, 0, &lv_font_montserrat_14, UI_BLUE, LV_TEXT_ALIGN_LEFT, LV_SYMBOL_RIGHT);
 
-    static const char *const row2[4] = { "Close", "-5 %", "+5 %", "Open" };
+    // Row 1: hold to close or open, 1 % steps; row 2: fully close or open
+    // under them, 5 % steps.
+    static const char *const row1[4] = { "Close", "-1 %", "+1 %", "Open" };
     for (int i = 0; i < 4; i++) {
-        lv_obj_t *b = ui_btn(scr, 10 + i * 118, 120, 106, 40, UI_SECONDARY, row2[i],
-                             i == 1 || i == 2 ? step_cb : NULL, (void *)(intptr_t)(i == 1 ? -50 : 50));
+        lv_obj_t *b = ui_btn(scr, 10 + i * 118, 120, 106, 40, UI_SECONDARY, row1[i],
+                             i == 1 || i == 2 ? step_cb : NULL, (void *)(intptr_t)(i == 1 ? -10 : 10));
         if (i == 0 || i == 3) {
             hold_btn(b, i == 3);
-            ui_btn_text(b, row2[i], "hold");
+            ui_btn_text(b, row1[i], "hold");
         }
         vp.btn[i] = b;
     }
-    vp.btn[4] = ui_btn(scr, 10, 168, 106, 40, UI_PRIMARY, "Go to", goto_cb, NULL);
-    vp.btn[5] = ui_btn(scr, 128, 168, 106, 40, UI_SECONDARY, "Fully close", full_cb, NULL);
-    vp.btn[6] = ui_btn(scr, 246, 168, 106, 40, UI_SECONDARY, "Fully open", full_cb, (void *)1);
-    ui_btn(scr, 364, 168, 106, 40, UI_NAV, "Help", help_cb, (void *)valve_help);
+    vp.btn[4] = ui_btn(scr, 128, 168, 106, 40, UI_SECONDARY, "-5 %", step_cb, (void *)(intptr_t)-50);
+    vp.btn[5] = ui_btn(scr, 246, 168, 106, 40, UI_SECONDARY, "+5 %", step_cb, (void *)(intptr_t)50);
+    vp.btn[6] = ui_btn(scr, 10, 168, 106, 40, UI_SECONDARY, "Fully close", full_cb, NULL);
+    vp.btn[7] = ui_btn(scr, 364, 168, 106, 40, UI_SECONDARY, "Fully open", full_cb, (void *)1);
 }
 
 // Valve %, its bar and Go to, at 10 Hz.
@@ -244,16 +266,19 @@ static void valve_fast(void)
     char buf[16];
     bool cal = valve_calibrated() && valve_mode() != VALVE_CALIBRATING;
     ui_set_text(vp.v, cal ? pct_text(buf, sizeof buf, valve_pct_milli()) : "----");
-    ui_set_color(vp.v, cal ? UI_TEXT : UI_IDLE);
+    ui_set_color(vp.v, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "AUTO"
     int32_t p = cal ? ui_pct_shown(valve_pct_milli()) : 0;
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch
     // away from the button without a release: stop the hold.
     if (vp.jog && ui_overlay_open())
         stepper3_stop_ramped();
-    bool moving = cal && stepper3_busy() && !vp.jog;   // a Close or Open hold has no target
-    ui_set_text(vp.go, moving ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
-    ui_set_color(vp.go, moving ? UI_TEXT : UI_IDLE);
+    // Where the valve is going (or last went); "--" during a hold, which
+    // has no target, and before homing. In AUTO the position AUTO is
+    // sending it to, greyed (Ryan, 22 Oct; was "AUTO").
+    bool have = cal && !(stepper3_busy() && vp.jog);
+    ui_set_text(vp.go, have ? pct_text(buf, sizeof buf, valve_target_pct_milli()) : "--");
+    ui_set_color(vp.go, have && !valve_auto() && why_not_manual() == NULL ? UI_TEXT : UI_IDLE);
 }
 
 static void valve_refresh(void)
@@ -265,9 +290,16 @@ static void valve_refresh(void)
     bar_width(vp.pfill, ok ? ui_log_px(clicks_state()->p_mmbar, 128) : 0);   // log, 0.1 to 1000 mB
     valve_fast();
     bool on = why_not_manual() == NULL, steps = why_no_steps() == NULL;
-    for (int i = 0; i < 7; i++)
-        if (vp.btn[i])
-            ui_btn_enable(vp.btn[i], i < 4 ? steps : on);
+    for (int i = 0; i < 8; i++)
+        ui_btn_enable(vp.btn[i], i < 6 ? steps : on);
+    // The Go to card: live (underline, chevron) when a tap opens the
+    // keypad; flat otherwise. In AUTO a tap asks Switch to MANUAL.
+    if (on != vp.go_live) {
+        vp.go_live = on;
+        lv_obj_set_style_border_width(vp.go_card, on ? 3 : 0, 0);
+        if (on) lv_obj_remove_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
+        else    lv_obj_add_flag(vp.go_chev, LV_OBJ_FLAG_HIDDEN);
+    }
     if (vp.jog && !stepper3_busy())
         vp.jog = false;
     ui_status_line();
@@ -279,17 +311,35 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * Calibrate valve
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *state, *v, *last, *seat, *start;
+    lv_obj_t *seg[2], *page[2];
+    lv_obj_t *state, *v, *seat, *start;
     lv_obj_t *tile[3], *tcap[3], *tval[3], *time;
+    lv_obj_t *closed, *enter, *saved, *how;
 } cp;
+static int cp_tab;
 
+/* Two tabs (Ryan, 23 Oct: homing and setting the position from what you
+ * know are two jobs). Top row on both: the tabs, Motor steps, Help.
+ *   Home          Homing state, Limit switch, Start homing; the three
+ *                 steps, Time
+ *   Set position  Set as closed, Enter %; Use saved, how the position
+ *                 was last set */
 static const char *const calib_help =
-    "Finds 0 % at the limit switch in three steps: 1 fast close to the switch, "
+    "Home finds 0 % at the limit switch in three steps: 1 fast close to the switch, "
     "2 back off it, 3 slow close onto it. The step running is filled dark; "
     "Motor, steps counts the motor as it moves; Time counts up, then shows how long it took.\n"
     "Takes up to a few minutes. STOP cancels it.\n\n"
-    "F-07 switch not found, F-09 switch stuck: check the switch and its wire, "
+    "F-03 switch not found, F-04 switch stuck: check the switch and its wire, "
     "reset the fault, home again.";
+
+static const char *const setpos_help =
+    "Set position takes the position from you, without moving the valve and without "
+    "checking it against the limit switch.\n"
+    "Set as closed: the valve is known to be seated.\n"
+    "Enter %: you know where it is, for example from the last run.\n"
+    "Use saved: the position saved before power was lost, offered after start-up "
+    "until the valve moves or is homed.\n"
+    "Home the valve when you can: only homing checks the position.";
 
 static void start_cb(lv_event_t *e)
 {
@@ -298,8 +348,36 @@ static void start_cb(lv_event_t *e)
         ui_msg("Homing: STOP to cancel");
     else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
+    else if (valve_auto())
+        ui_msg("Switch to MANUAL first");
     else
-        ui_calibrate_ask();
+        ui_home_ask();
+}
+
+static void calib_help_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_text_view(cp_tab ? "Set position" : "Valve homing", cp_tab ? setpos_help : calib_help);
+}
+
+// Set position: the same guards as Start homing, then the list's actions.
+static const char *setpos_why(void)
+{
+    if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    if (valve_motion_blocked())            return "Reset the fault first";
+    if (valve_auto())                      return "Switch to MANUAL first";
+    if (stepper3_busy())                   return "Wait for the valve to stop";
+    return NULL;
+}
+
+static void setpos_cb(lv_event_t *e)
+{
+    const char *why = setpos_why();
+    if (why) {
+        ui_msg(why);
+        return;
+    }
+    ui_set_position_pick((int)(intptr_t)lv_event_get_user_data(e));
 }
 
 // Limit switch at 50 Hz, as on Diagnostics.
@@ -314,19 +392,74 @@ static void timer_deleted(lv_event_t *e)
     lv_timer_delete(lv_event_get_user_data(e));
 }
 
+static void tab_draw(void)
+{
+    for (int i = 0; i < 2; i++) {
+        bool on = i == cp_tab;
+        lv_obj_set_style_bg_opa(cp.seg[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        ui_set_color(lv_obj_get_child(cp.seg[i], 0), on ? UI_TEXT : UI_MUTED);
+        if (on)
+            lv_obj_remove_flag(cp.page[i], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(cp.page[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void tab_cb(lv_event_t *e)
+{
+    cp_tab = (int)(intptr_t)lv_event_get_user_data(e);
+    tab_draw();
+}
+
+// A tab's page: rows 2 and 3, clear of the header and the top row.
+static lv_obj_t *calib_page(lv_obj_t *scr)
+{
+    lv_obj_t *pg = lv_obj_create(scr);
+    lv_obj_remove_style_all(pg);
+    lv_obj_remove_flag(pg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(pg, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(pg, 0, 104);
+    lv_obj_set_size(pg, 480, 104);
+    return pg;
+}
+
 static void calib_build(lv_obj_t *scr)
 {
-    cp.state = ui_info(scr, 10, 48, 226, 48, "Homing");
+    memset(&cp, 0, sizeof cp);
+    // Opens on Set position when the valve was set rather than homed.
+    valve_ref_t how = valve_reference();
+    cp_tab = how == VALVE_REF_HAND || how == VALVE_REF_SAVED;
+
+    // Top row: tabs as Valve setup's, Motor steps, Help.
+    static const char *const tabs[2] = { "Home", "Set position" };
+    lv_obj_t *t = ui_card(scr, 10, 48, 226, 48);
+    lv_obj_set_style_bg_color(t, lv_color_hex(0xC3CDD7), 0);
+    lv_obj_set_style_border_width(t, 0, 0);
+    lv_obj_set_style_radius(t, 6, 0);
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = ui_card(t, 4 + i * 109, 4, 109, 40);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_radius(b, 4, 0);
+        lv_obj_set_style_border_width(b, 0, 0);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_t *l = ui_label(b, 0, 0, 109, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER, tabs[i]);
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_add_event_cb(b, tab_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        cp.seg[i] = b;
+    }
     cp.v = ui_info(scr, 244, 48, 109, 48, "Motor, steps");
     right(cp.v);
-    cp.last = ui_info(scr, 10, 104, 226, 48, "Last homed");   // "15/10/26 14:28"
-    cp.seat = ui_info(scr, 244, 104, 109, 48, "Limit switch");
-    ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", help_cb, (void *)calib_help);
-    cp.start = ui_btn(scr, 361, 104, 109, 48, UI_PRIMARY, "Start homing", start_cb, NULL);
+    ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", calib_help_cb, NULL);
+
+    // Home.
+    lv_obj_t *p = cp.page[0] = calib_page(scr);
+    cp.state = ui_info(p, 10, 0, 226, 48, "Homing");
+    cp.seat = ui_info(p, 244, 0, 109, 48, "Limit switch");
+    cp.start = ui_btn(p, 361, 0, 109, 48, UI_PRIMARY, "Start homing", start_cb, NULL);
     // The three steps as one card split in three, the one running filled
     // dark (Ryan, 16 Oct: the row should read as one sequence).
     static const char *const cap[3] = { "1 Fast close", "2 Back off", "3 Slow close" };
-    lv_obj_t *steps = ui_card(scr, 10, 160, 343, 48);
+    lv_obj_t *steps = ui_card(p, 10, 56, 343, 48);
     lv_obj_set_style_clip_corner(steps, true, 0);
     for (int i = 0; i < 3; i++) {
         cp.tval[i] = ui_info(steps, i * 114 + (i > 1), 0, i == 1 ? 115 : 114, 48, cap[i]);
@@ -339,11 +472,20 @@ static void calib_build(lv_obj_t *scr)
             lv_obj_set_style_border_color(cp.tile[i], UI_TICK, 0);
         }
     }
-    // Time into the calibration, then how long the last one took.
-    cp.time = ui_info(scr, 361, 160, 109, 48, "Time taken");
-    lv_timer_t *t = lv_timer_create(calib_switch, 20, NULL);
-    lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
-    calib_switch(t);
+    // Time into the homing, then how long the last one took.
+    cp.time = ui_info(p, 361, 56, 109, 48, "Time taken");
+
+    // Set position: no move, not checked against the switch.
+    p = cp.page[1] = calib_page(scr);
+    cp.closed = ui_btn(p, 10, 0, 226, 48, UI_SECONDARY, "Set as closed", setpos_cb, (void *)(intptr_t)0);
+    cp.enter = ui_btn(p, 244, 0, 226, 48, UI_SECONDARY, "Enter %", setpos_cb, (void *)(intptr_t)1);
+    cp.saved = ui_btn(p, 10, 56, 226, 48, UI_SECONDARY, "Use saved", setpos_cb, (void *)(intptr_t)2);
+    cp.how = ui_info(p, 244, 56, 226, 48, "Position from");
+
+    lv_timer_t *tm = lv_timer_create(calib_switch, 20, NULL);
+    lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, tm);
+    calib_switch(tm);
+    tab_draw();
 }
 
 // Step count at 10 Hz: it moves in every step, where the valve % cannot.
@@ -368,37 +510,58 @@ static void tile_set(int i, int state)   // 0 waiting, 1 running, 2 done
 
 static void calib_refresh(void)
 {
-    char w[16];
+    char w[24], d[20];
     bool calib = valve_mode() == VALVE_CALIBRATING;
     int step = valve_cal_step();
+    valve_ref_t how = valve_reference();
     static const char *const doing[4] = { "Moving off the switch", "Fast close to switch",
                                           "Backing off switch", "Slow close to switch" };
-    if (calib)
-        ui_set_text(cp.state, doing[step < 0 ? 0 : step]);
-    else
-        ui_set_text(cp.state, valve_calibrated() ? "Homed" : "Not homed");
-    // Done after a calibration this power-up, not after Use saved position.
+    // Homing: what runs, else when it was last homed (this power-up).
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
+    const char *iso = valve_last_cal_iso();
+    const char *when = !ran ? NULL : iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age);
+    char st[40];
+    if (calib)
+        lv_strlcpy(st, doing[step < 0 ? 0 : step], sizeof st);
+    else if (how == VALVE_REF_HOMED && when)
+        lv_snprintf(st, sizeof st, "Homed %s", when);
+    else if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED)
+        lv_strlcpy(st, "Not homed, position set", sizeof st);
+    else
+        lv_strlcpy(st, "Not homed", sizeof st);
+    ui_set_text(cp.state, st);
     for (int i = 0; i < 3; i++)
-        tile_set(i, calib ? (step > i + 1 ? 2 : step == i + 1 ? 1 : 0) : valve_calibrated() && ran ? 2 : 0);
+        tile_set(i, calib ? (step > i + 1 ? 2 : step == i + 1 ? 1 : 0) : how == VALVE_REF_HOMED && ran ? 2 : 0);
     char tm[16];
     uint32_t s = calib ? valve_cal_elapsed_s() : took;
-    if (calib || (ran && valve_calibrated()))
+    if (calib || (ran && how == VALVE_REF_HOMED))
         lv_snprintf(tm, sizeof tm, "%lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
     else
         lv_strlcpy(tm, "--", sizeof tm);
     ui_set_text(cp.time, tm);
     calib_fast();
-    if (ran) {
-        const char *iso = valve_last_cal_iso();
-        char d[20];
-        ui_set_text(cp.last, iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age));
-    } else {
-        ui_set_text(cp.last, "Not since power-up");
-    }
     ui_btn_text(cp.start, calib ? "Homing" : "Start homing", NULL);
-    ui_btn_enable(cp.start, !calib && !valve_motion_blocked());
+    ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
+
+    // Set position.
+    bool can = !setpos_why();
+    ui_btn_text(cp.closed, "Set as closed", "0 %, valve seated");
+    ui_btn_text(cp.enter, "Enter %", "Type where it is");
+    int32_t q;
+    bool offer = valvepos_offer(&q);
+    char v[16], sv[32];
+    if (offer) {
+        int32_t pm = valve_pos_max();
+        ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
+        lv_snprintf(sv, sizeof sv, "%s %%", v);
+    }
+    ui_btn_text(cp.saved, "Use saved", offer ? sv : "None on offer");
+    ui_btn_enable(cp.closed, can);
+    ui_btn_enable(cp.enter, can);
+    ui_btn_enable(cp.saved, can && offer);
+    static const char *const from[4] = { "Not set", "Homing", "You, not checked", "Saved, not checked" };
+    ui_set_text(cp.how, calib ? "Homing" : from[how]);
     ui_status_line();
 }
 
@@ -409,7 +572,7 @@ const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, c
  * ------------------------------------------------------------------------ */
 #define LOG_ROWS 40
 static struct {
-    lv_obj_t *list, *none, *reset, *log, *box, *page[2];
+    lv_obj_t *list, *none, *reset, *log, *log_time, *log_tag, *box, *page[2];
     int nf;                   // rows built
     char sig[64];             // tags shown, to rebuild on change
     uint32_t log_total;
@@ -417,6 +580,9 @@ static struct {
     lv_obj_t *d_title, *d_when, *d_text[4], *d_next;
 } fp;
 static char log_text[LOG_ROWS * 112];
+// Time and tag columns, one line per wrapped text line (Ryan, 22 Oct: the
+// event texts start at one x).
+static char log_time[LOG_ROWS * 20], log_tag[LOG_ROWS * 12];
 
 typedef struct {
     const char *tag, *happened, *controller, *check, *reset;
@@ -427,26 +593,26 @@ static const fault_help_t fault_help[] = {
       "Pressure shows ----. The valve still moves.",
       "The Druck cable and plug, and the Power Monitor Click.",
       "The reading is back." },
-    { "F-03", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
+    { "F-02", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
       "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
-    { "F-07", "Homing, the valve closed 1.1 x full travel without the limit switch.",
+    { "F-03", "Homing, the valve closed 1.1 x full travel without the limit switch.",
       "Stopped. The valve is not homed.",
       "The switch and its wire, and that the valve turns.",
       "Any time. Then home again." },
-    { "F-09", "The limit switch stayed pressed after the valve moved off it.",
+    { "F-04", "The limit switch stayed pressed after the valve moved off it.",
       "Stopped. The valve is not homed.",
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then home again." },
-    { "F-13", "A move took longer than its distance at the set rate, plus 2 s.",
+    { "F-05", "A move took longer than its distance at the set rate, plus 2 s.",
       "Stopped the valve and holds it. Homing kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
-    { "F-12", "STOP was pressed in AUTO, or CTRL STOP sent.",
-      "Stopped the valve and holds it, not closed.",
-      "Why it was stopped.",
-      "Any time." },
+    { "F-06", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
+      "Stopped the valve and holds it. MANUAL.",
+      "Drive slipping, motor unplugged, needle seized.",
+      "Any time. Check before starting AUTO." },
 };
 
 static const fault_help_t *help_for(const char *tag)
@@ -459,7 +625,12 @@ static const fault_help_t *help_for(const char *tag)
 
 static const char *mode_word(valve_mode_t m)
 {
-    return m == VALVE_CALIBRATING ? "HOMING" : m == VALVE_MANUAL ? "MANUAL" : "NOT HOMED";
+    switch (m) {
+    case VALVE_CALIBRATING: return "HOMING";
+    case VALVE_MANUAL:      return "MANUAL";
+    case VALVE_AUTO:        return "AUTO";
+    default:                return "NOT HOMED";
+    }
 }
 
 static void detail_fill(void)
@@ -604,9 +775,12 @@ static void faults_build(lv_obj_t *scr)
         lv_obj_add_event_cb(b, log_page, LV_EVENT_LONG_PRESSED_REPEAT, (void *)(intptr_t)i);
         fp.page[i] = b;
     }
+    fp.log_time = ui_label(box, 0, 0, 0, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
+    fp.log_tag = ui_label(box, 0, 0, 0, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     fp.log = ui_label(box, 0, 0, 317, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, "");
     lv_label_set_long_mode(fp.log, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(fp.log, 2, 0);
+    for (int i = 0; i < 3; i++)
+        lv_obj_set_style_text_line_space(i == 0 ? fp.log_time : i == 1 ? fp.log_tag : fp.log, 2, 0);
     fp.log_total = (uint32_t)-1;
 }
 
@@ -651,18 +825,52 @@ static void faults_log(void)
     if (total == fp.log_total)
         return;
     fp.log_total = total;
-    size_t len = 0;
-    log_text[0] = '\0';
-    for (int i = 0; i < LOG_ROWS; i++) {
+    // Column widths from the widest time and tag shown.
+    const lv_font_t *f = &ui_font_12;
+    int32_t tw = 0, gw = 0;
+    int n = 0;
+    for (; n < LOG_ROWS; n++) {
+        uint32_t age;
+        const char *tag, *text;
+        char w[16];
+        if (!valve_event_get(n, &age, &tag, &text))
+            break;
+        lv_point_t a, b;
+        lv_text_get_size(&a, ui_when(w, sizeof w, age), f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_text_get_size(&b, tag, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (a.x > tw) tw = a.x;
+        if (b.x > gw) gw = b.x;
+    }
+    const int32_t gap = 8, x_tag = tw + gap, x_text = x_tag + gw + gap, text_w = 317 - x_text;
+    size_t lt = 0, lg = 0, lx = 0;
+    log_text[0] = log_time[0] = log_tag[0] = '\0';
+    for (int i = 0; i < n; i++) {
         uint32_t age;
         const char *tag, *text;
         char w[16];
         if (!valve_event_get(i, &age, &tag, &text))
             break;
-        lv_snprintf(log_text + len, sizeof log_text - len, "%s%s  %s  %s", i ? "\n" : "",
-                    ui_when(w, sizeof w, age), tag, text);
-        len += strlen(log_text + len);
+        // Lines the text wraps to: the time and tag columns skip as many.
+        lv_point_t sz;
+        lv_text_get_size(&sz, text, f, 0, 2, text_w, LV_TEXT_FLAG_NONE);
+        int lines = (sz.y + 2) / (lv_font_get_line_height(f) + 2);
+        if (lines < 1) lines = 1;
+        lv_snprintf(log_time + lt, sizeof log_time - lt, "%s%s", i ? "\n" : "", ui_when(w, sizeof w, age));
+        lv_snprintf(log_tag + lg, sizeof log_tag - lg, "%s%s", i ? "\n" : "", tag);
+        lv_snprintf(log_text + lx, sizeof log_text - lx, "%s%s", i ? "\n" : "", text);
+        lt += strlen(log_time + lt);
+        lg += strlen(log_tag + lg);
+        lx += strlen(log_text + lx);
+        for (int k = 1; k < lines; k++) {
+            if (lt + 1 < sizeof log_time) { log_time[lt++] = '\n'; log_time[lt] = '\0'; }
+            if (lg + 1 < sizeof log_tag)  { log_tag[lg++] = '\n'; log_tag[lg] = '\0'; }
+        }
     }
+    lv_obj_set_x(fp.log_tag, x_tag);
+    lv_obj_set_x(fp.log, x_text);
+    lv_obj_set_width(fp.log, text_w);
+    lv_label_set_text_static(fp.log_time, log_time);
+    lv_label_set_text_static(fp.log_tag, log_tag);
     lv_label_set_text_static(fp.log, log_text);
     log_buttons();
 }
@@ -679,7 +887,7 @@ static void faults_refresh(void)
     char t[48];
     int n = valve_fault_count();
     lv_snprintf(t, sizeof t, n ? "%d latched. Tap one for detail." : "No faults latched", n);
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, t);
+    ui_strip_set(UI_STRIP_INFO, n ? LV_SYMBOL_WARNING : LV_SYMBOL_OK, t);
 }
 
 const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refresh, NULL };
@@ -688,7 +896,7 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9];
+    lv_obj_t *v[9], *sup;
 } dp;
 
 // Valve motor row: position, limit switch and steps past it, at 50 Hz so
@@ -718,9 +926,20 @@ static void diag_build(lv_obj_t *scr)
                                          "Result", "Moved, steps", "Took, s" };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
-        lv_obj_t *l = ui_label(scr, 10, 48 + r * 56, 80, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
+        // 16 px as the Menu captions, centred on the row (Ryan, 22 Oct).
+        lv_obj_t *l = ui_label(scr, 10, 0, 84, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 10, 48 + r * 56 + 9);
+        lv_obj_update_layout(l);
+        lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
+        // The valve motor row has four: its supply first (0.11.35).
+        if (r == 1) {
+            static const char *const mcap[4] = { "Supply, V", "Steps", "Limit switch", "Past limit" };
+            lv_obj_t **to[4] = { &dp.sup, &dp.v[3], &dp.v[4], &dp.v[5] };
+            static const int32_t mx[4] = { 98, 182, 272, 380 }, mw[4] = { 80, 86, 104, 90 };
+            for (int c = 0; c < 4; c++)
+                *to[c] = ui_info(scr, mx[c], 104, mw[c], 48, mcap[c]);
+            continue;
+        }
         for (int c = 0; c < 3; c++)
             dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
@@ -733,7 +952,7 @@ static void diag_refresh(void)
 {
     const clicks_state_t *s = clicks_state();
     char buf[48];
-    bool sig = s->pm_found && !s->pm_diag;
+    bool sig = s->pm_found;
     int32_t uv = s->shunt_nv / 1000;    // Druck output, 0.001 mV
     int32_t au = uv < 0 ? -uv : uv;
     lv_snprintf(buf, sizeof buf, "%s%ld.%03ld", uv < 0 ? "-" : "", (long)(au / 1000), (long)(au % 1000));
@@ -758,11 +977,19 @@ static void diag_refresh(void)
     lv_snprintf(buf, sizeof buf, "%ld", (long)(stepper3_position() - from));
     ui_set_text(dp.v[7], any ? buf : "--");
     ui_set_text(dp.v[8], any ? ui_fmt1(buf, sizeof buf, ms) : "--");
+    // Motor supply (supply.h): coloured only when abnormal.
+    supply_state_t sup = supply_state();
+    if (!supply_fitted())
+        lv_strlcpy(buf, "Not fitted", sizeof buf);
+    else
+        ui_fmt1(buf, sizeof buf, supply_mv() < 0 ? 0 : supply_mv());
+    ui_set_text(dp.sup, buf);
+    ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
     char t[16];
     lv_snprintf(buf, sizeof buf, "Firmware %s. Board %s \xC2\xB0" "C. Link %s.", PMC_FW_VERSION,
                 ui_fmt1(t, sizeof t, s->die_mc), PMC_LINK_ETHERNET ? "Ethernet" : "USB");
-    ui_strip_set(UI_STRIP_INFO, UI_MUTED, buf);
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, buf);
 }
 
 const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };

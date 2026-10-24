@@ -5,7 +5,6 @@
 #include "clicks.h"
 #include "cal.h"
 #include "sysinfo.h"
-#include "uncert.h"
 #include "fixed.h"
 #include "valve.h"
 #include "trend.h"
@@ -13,7 +12,7 @@
 
 /*
  * Once a second from the main loop (was main_screen.c to 0.8.x): re-read
- * the boards, update the cal, uncertainty and valve fault checks, print any
+ * the boards, update the cal and valve fault checks, print any
  * changed status line and the DATA line. Outside LVGL, so a slow redraw
  * does not delay the reading or the fault checks.
  *
@@ -68,9 +67,11 @@ static void print_changed_lines(void)
     // The Power Monitor and Druck lines carry live readings and change every
     // second, so DATA OFF holds them back too.
     const bool live[STATUS_LINES] = { false, false, false, true, true, false };
+    // In AUTO the motor line changes every second: the AUTO line says it better.
+    bool in_auto = valve_auto();
 
     for (int i = 0; i < STATUS_LINES; i++) {
-        if (!line[i][0] || (live[i] && !data_on))
+        if (!line[i][0] || (live[i] && !data_on) || (i == 1 && in_auto))
             continue;
         if (resend || last_line[i] == NULL || strcmp(line_copy[i], line[i]) != 0) {
             lv_strlcpy(line_copy[i], line[i], sizeof line_copy[i]);
@@ -80,16 +81,42 @@ static void print_changed_lines(void)
     }
 }
 
+static bool hot;
+static int32_t hot_mc;
+
+static void hot_check(const clicks_state_t *s)
+{
+    if (!s->pm_found)
+        return;   // no reading: as it was
+    hot_mc = s->die_mc;
+    char t[16];
+    if (!hot && s->die_mc >= SENSE_HOT_MC) {
+        hot = true;
+        valve_event("W-03", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+    } else if (hot && s->die_mc < SENSE_COOL_MC) {
+        hot = false;
+        valve_event("W-03", "Controller cooled, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+    }
+}
+
+bool sense_hot(int32_t *die_mc)
+{
+    *die_mc = hot_mc;
+    return hot;
+}
+
 void sense_second(void)
 {
     clicks_poll();
     print_changed_lines();
 
     const clicks_state_t *s = clicks_state();
-    uncert_update(s);
     cal_update(s);
     valve_sense(s);
     trend_second(s);
-    if (s->pm_found && data_on && !s->pm_diag)
+    hot_check(s);
+    if (valve_auto())
+        link_printf("%s\r\n", valve_auto_line());   // one readable line a second in AUTO
+    if (s->pm_found && data_on)
         print_data_line(s);
 }

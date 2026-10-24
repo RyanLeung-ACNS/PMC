@@ -8,7 +8,7 @@
  * @brief Bring-up checks for the Click boards on the mikroBUS shield.
  *
  * Socket layout (Ryan, 7 Oct 2026):
- *   S1 Stepper 3     (ULN2003)  AN PA4, RST PC2, CS PB12, PWM PD12 (PMC_STEPPER3_SOCKET)
+ *   S1 Stepper 3     (ULN2003)  AN PA4, RST PC2, CS PB12, PWM PD12
  *   S3 Boost 10      (LT8337 + TPL0501)  SPI1 PA5/PA6/PB5, CS PF8, PG PG2
  *   S4 Power Monitor (INA228)   SCL PF1 / SDA PF0 (I2C2, mikroSDK driver)
  *
@@ -31,7 +31,6 @@ typedef struct {
     bool boost_tripped;   // 11.5 V trip latched
     int32_t boost_trip_mv;
     int32_t boost_set_mv; // nominal setpoint for the wiper written
-    bool pm_diag;         // PM DIAG running (readings frozen)
 } clicks_state_t;
 
 void clicks_init(void);
@@ -42,10 +41,6 @@ void clicks_poll(void);
 // One status line per board, valid after clicks_init().
 const char *clicks_stepper3_status(void);
 
-// Sets the Boost 10 (Druck excitation), clamped to 9.0-11.0 V nominal.
-// Returns the nominal output in mV for the wiper written, or -1 if the
-// 11.5 V trip has latched (no change until reset).
-int32_t clicks_boost10_set_mv(int32_t mv);
 const char *clicks_boost10_status(void);
 const char *clicks_powermonitor_status(void);
 const char *clicks_druck_status(void);
@@ -56,9 +51,5 @@ const char *clicks_druck_value(void);
 bool clicks_druck_cal_nominal(void);
 
 const clicks_state_t *clicks_state(void);
-
-// "PM DIAG": Power Monitor input diagnostic, one result line per second on
-// the link (PMC_PM_DIAG). Returns false if the line is not a PM command.
-bool clicks_command(const char *line);
 
 #endif // _CLICKS_H_
