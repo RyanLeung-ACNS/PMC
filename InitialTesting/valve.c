@@ -550,7 +550,7 @@ bool valve_set_target(int32_t mmbar, const char **why)
     int32_t fs = valve_range_mmbar();
     char a[16], b[16];
     if (mmbar < 0 || mmbar > fs) {
-        ev("W-03", "Setpoint %s rejected, allowed 0 to %s mB", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
+        ev("TARGET", "Setpoint %s rejected, allowed 0 to %s mB", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
            fixed_fmt(b, sizeof b, fixed_round(fs, 2), 1));
         *why = "Target outside the sensor range";
         return false;
