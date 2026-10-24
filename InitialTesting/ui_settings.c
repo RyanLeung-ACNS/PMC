@@ -1315,7 +1315,7 @@ static void vac_cb(lv_event_t *e)
 {
     (void)e;
     if (ui_btn_disabled(e)) {
-        ui_msg(cal_capturing() ? "A capture is running" : "No Druck signal");
+        ui_msg(cal_capturing() ? "A capture is running" : "No pressure signal");
         return;
     }
     ui_ask("Sensor at vacuum? Capture sets 0 mB.",
@@ -1332,7 +1332,7 @@ static bool cs_air_set(int32_t v10, const char **why)
 static void air_cb(lv_event_t *e)
 {
     if (ui_btn_disabled(e)) {
-        ui_msg(cal_capturing() ? "A capture is running" : "No Druck signal");
+        ui_msg(cal_capturing() ? "A capture is running" : "No pressure signal");
         return;
     }
     ui_kp_t k = { .title = "Barometer reading, mB", .info = "Vent sensor to room air first", .dec = 1,
