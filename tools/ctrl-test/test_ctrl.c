@@ -259,6 +259,16 @@ int main(int argc, char **argv)
         K = kk;
     }
 
+    // A target far above the pressure opens the valve fully (0.11.39). One
+    // step of ki x e alone overshoots the top, which used to freeze the
+    // integral and leave the valve where AUTO started.
+    fresh();
+    set_sp(500);
+    to_auto();
+    run(30, 500);
+    CHECK(C.pos_cmd == K.pos_max && fault == CTRL_RUN,
+          "Target 500 mB from %.1f mB: command %ld of %ld steps (fully open)", M.pv, (long)C.pos_cmd, (long)K.pos_max);
+
     printf(fails ? "%d failed\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }
