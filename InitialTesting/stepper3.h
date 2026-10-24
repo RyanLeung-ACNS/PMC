@@ -51,7 +51,7 @@ typedef enum {
     STEPPER3_STOP_DONE,     // reached the target
     STEPPER3_STOP_CMD,      // MOT STOP / MOT OFF / stepper3_stop()
     STEPPER3_STOP_LIMIT,    // limit input open during a closing move
-    STEPPER3_STOP_TIMEOUT   // F-05: still moving after |distance| / rate + 2 s
+    STEPPER3_STOP_TIMEOUT   // F-5: still moving after |distance| / rate + 2 s
 } stepper3_stop_t;
 
 // Pins low (coils off). Does not move the motor.
@@ -76,7 +76,7 @@ int32_t stepper3_target(void);
 void stepper3_stop(void);
 // Ramps down at the normal deceleration, then stops (last stop "stopped").
 void stepper3_stop_ramped(void);
-// From the main loop: F-05 motion timeout, stops at once.
+// From the main loop: F-5 motion timeout, stops at once.
 void stepper3_poll(void);
 // Goes up by one each time a move ends (done, stopped, limit, timeout);
 // stepper3_last_stop() then says why.

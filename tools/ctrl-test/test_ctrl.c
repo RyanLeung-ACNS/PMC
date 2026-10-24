@@ -1,8 +1,8 @@
 /* Host test of ctrl.c (stage 8) against the C port of the simulator's flow
  * line (model.c). Runs the porting plan's cases and checks them:
  *   closed to 5 mB, 4.5 to 10 mB, targets 5, 7, 3, 5 with no false trip,
- *   helium off -> F-06, pump off -> W-02 to MANUAL (no wrong-way fault since 0.11.20),
- *   slipping drive -> F-06, AUTO min 0 closing to the seat without a fault, and the
+ *   helium off -> F-6, pump off -> W-2 to MANUAL (no wrong-way fault since 0.11.20),
+ *   slipping drive -> F-6, AUTO min 0 closing to the seat without a fault, and the
  *   entry refusals. -v prints a line a second. */
 #include <math.h>
 #include <stdio.h>
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
     run(2000, 5);
     // No wrong-way fault: with the valve pinned open and the pressure flat,
     // the response monitor catches it instead.
-    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-06 after %.0f s, MANUAL, valve idle", fault_t - t0);
+    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-6 after %.0f s, MANUAL, valve idle", fault_t - t0);
 
     // Pump off at 5 mB.
     fresh();
@@ -197,7 +197,7 @@ int main(int argc, char **argv)
     M.pump = false;
     t0 = M.t;
     run(2000, 5);
-    CHECK(fault == CTRL_RUN && w02 && mode == MANUAL, "pump off: no fault, W-02 to MANUAL (t %.0f s)", M.t - t0);
+    CHECK(fault == CTRL_RUN && w02 && mode == MANUAL, "pump off: no fault, W-2 to MANUAL (t %.0f s)", M.t - t0);
 
     // Slipping drive at 5 mB, then a step in target.
     fresh();
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
     set_sp(7);
     t0 = M.t;
     run(900, 7);
-    CHECK(fault == CTRL_F06 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-06 after %.0f s (sim 150)", fault_t - t0);
+    CHECK(fault == CTRL_F06 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-6 after %.0f s (sim 150)", fault_t - t0);
 
     // Room air, target above the reading (the bench test with no process).
     fresh();
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
     to_auto();
     t0 = M.t;
     run(400, 1030);
-    CHECK(fault == CTRL_F06, "room air, target above: F-06 after %.0f s", fault_t - t0);
+    CHECK(fault == CTRL_F06, "room air, target above: F-6 after %.0f s", fault_t - t0);
 
     // AUTO min 0 (the factory value since 0.11.33; the cases above keep the
     // simulator's 14 to match its references): a target the closed valve

@@ -286,7 +286,7 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * Calibrate valve
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *state, *turns, *start, *closed, *enter, *saved;
+    lv_obj_t *state, *state_cap, *turns, *start, *closed, *enter, *saved;
 } cp;
 
 /* One page (Ryan, 24 Oct: no tabs, less homing detail). Row 1 the valve's
@@ -301,7 +301,7 @@ static const char *const calib_help =
     "Set as other %: use when the position is known, for example from the previous run.\n"
     "Use last saved: the position stored before power was lost. Available after start-up "
     "until the valve moves or is homed.\n\n"
-    "F-03 switch not found, F-04 switch stuck: check the switch and its wire, "
+    "F-3 switch not found, F-4 switch stuck: check the switch and its wire, "
     "reset the fault, home again.";
 
 static void start_cb(lv_event_t *e)
@@ -351,7 +351,8 @@ static void timer_deleted(lv_event_t *e)
 static void calib_build(lv_obj_t *scr)
 {
     memset(&cp, 0, sizeof cp);
-    cp.state = ui_info(scr, 10, 48, 226, 48, "Valve");
+    cp.state = ui_info(scr, 10, 48, 226, 48, "Valve position");
+    cp.state_cap = lv_obj_get_child(lv_obj_get_parent(cp.state), 0);
     cp.turns = ui_info(scr, 244, 48, 109, 48, "Turns");
     right(cp.turns);
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", calib_help_cb, NULL);
@@ -378,8 +379,10 @@ static void calib_refresh(void)
     bool calib = valve_mode() == VALVE_CALIBRATING;
     int step = valve_cal_step();
     valve_ref_t how = valve_reference();
-    static const char *const doing[4] = { "Homing: off the switch", "Homing 1/3: fast close",
-                                          "Homing 2/3: backing off", "Homing 3/3: slow close" };
+    // While homing the caption says Homing and the box the stage, the
+    // strip's "Homing 2 of 3: backing off" in two parts (too long for 226).
+    static const char *const doing[4] = { "Off the switch", "1 of 3: fast close",
+                                          "2 of 3: backing off", "3 of 3: slow close" };
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     const char *iso = valve_last_cal_iso();
@@ -389,12 +392,13 @@ static void calib_refresh(void)
     else if (how == VALVE_REF_HOMED && when)
         lv_snprintf(st, sizeof st, "Homed %s", when);
     else if (how == VALVE_REF_HAND)
-        lv_strlcpy(st, "Not homed, entered", sizeof st);
+        lv_strlcpy(st, "Entered, not homed", sizeof st);
     else if (how == VALVE_REF_SAVED)
-        lv_strlcpy(st, "Not homed, last saved", sizeof st);
+        lv_strlcpy(st, "Last saved, not homed", sizeof st);
     else
         lv_strlcpy(st, "Not homed", sizeof st);
     ui_set_text(cp.state, st);
+    ui_set_text(cp.state_cap, calib ? "Homing" : "Valve position");
     calib_fast();
     ui_btn_text(cp.start, calib ? "Homing" : "Home valve", NULL);
     ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
@@ -439,27 +443,27 @@ typedef struct {
 } fault_help_t;
 
 static const fault_help_t fault_help[] = {
-    { "F-01", "The Druck reading is missing or outside 0.005-11 mV/V.",
+    { "F-1", "The Druck reading is missing or outside 0.005-11 mV/V.",
       "Pressure shows ----. The valve still moves.",
       "The Druck cable and plug, and the Power Monitor Click.",
       "The reading is back." },
-    { "F-02", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
+    { "F-2", "The Druck excitation left 9.5-10.5 V, or the Boost 10 tripped.",
       "Pressure not trusted. The valve still moves.",
       "The Boost 10 and the 5 V supply. A trip needs a power cycle.",
       "The excitation is back in the window." },
-    { "F-03", "Homing, the valve closed 1.1 x full travel without the limit switch.",
+    { "F-3", "Homing, the valve closed 1.1 x full travel without the limit switch.",
       "Stopped. The valve is not homed.",
       "The switch and its wire, and that the valve turns.",
       "Any time. Then home again." },
-    { "F-04", "The limit switch stayed pressed after the valve moved off it.",
+    { "F-4", "The limit switch stayed pressed after the valve moved off it.",
       "Stopped. The valve is not homed.",
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then home again." },
-    { "F-05", "A move took longer than its distance at the set rate, plus 2 s.",
+    { "F-5", "A move took longer than its distance at the set rate, plus 2 s.",
       "Stopped the valve and holds it. Homing kept.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
-    { "F-06", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
+    { "F-6", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
       "Stopped the valve and holds it. MANUAL.",
       "Drive slipping, motor unplugged, needle seized.",
       "Any time. Check before starting AUTO." },

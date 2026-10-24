@@ -14,7 +14,7 @@
  * Ported from the simulator (stage 2 of the porting plan). Settings are kept
  * by CFG SAVE (cfg.c, stage 3).
  *
- * Modes: NOT CALIBRATED (boot, watchdog reset, after F-03/F-04 or an
+ * Modes: NOT CALIBRATED (boot, watchdog reset, after F-3/F-4 or an
  * aborted calibration), CALIBRATING, MANUAL and AUTO (stage 8,
  * ctrl.c). Nothing moves at boot.
  *
@@ -22,28 +22,28 @@
  * the target set; bumpless from where the valve is going. Every second,
  * after the pressure read, ctrl_step works out the valve command and the
  * checks. A fault stops the valve and drops to MANUAL, holding where it
- * stopped (sensor faults too). W-02 (not settling) stops it and drops to
+ * stopped (sensor faults too). W-2 (not settling) stops it and drops to
  * MANUAL too, the valve idle (no PAUSED state since 0.11.25, Ryan 22 Oct);
- * the strip shows W-02 until OK or the next Start AUTO. Leaving AUTO ramps the valve down and
+ * the strip shows W-2 until OK or the next Start AUTO. Leaving AUTO ramps the valve down and
  * MANUAL holds where it stops. MANUAL moves, homing and the valve settings
  * are refused in AUTO ("Switch to MANUAL first").
  *
  * Calibration (Control Logic 4): if the switch is pressed, an N_clear
- * clearance move off it first (F-04 if still pressed); a fast close at
- * f_home for up to 1.1 x POS_MAX (F-03 if the switch is not found); an
- * N_backoff back-off (F-04 if still pressed); a creep close at f_creep
- * (F-03 if not found); the switch point is N_offset (0 %).
+ * clearance move off it first (F-4 if still pressed); a fast close at
+ * f_home for up to 1.1 x POS_MAX (F-3 if the switch is not found); an
+ * N_backoff back-off (F-4 if still pressed); a creep close at f_creep
+ * (F-3 if not found); the switch point is N_offset (0 %).
  *
  * The switch pressed during any other move, once calibrated: the move stops
- * (stepper3.c), a W-01 event, and a question waits for VALVE SETZERO (this
+ * (stepper3.c), a W-1 event, and a question waits for VALVE SETZERO (this
  * point is 0 %) or VALVE SKIP (count kept).
  *
  * Faults latch, stop the motor and lock out MOT moves until CTRL RESET,
  * which clears only the latches whose cause has gone:
- *   F-01 no pressure signal, F-02 excitation outside 9.5-10.5 V or tripped,
- *   F-03 switch not found while calibrating, F-04 switch still pressed
- *   after moving off it, F-05 motion timeout; in AUTO only: F-06 no
- *   pressure response. F-01 and F-02 do not block manual moves. STOP
+ *   F-1 no pressure signal, F-2 excitation outside 9.5-10.5 V or tripped,
+ *   F-3 switch not found while calibrating, F-4 switch still pressed
+ *   after moving off it, F-5 motion timeout; in AUTO only: F-6 no
+ *   pressure response. F-1 and F-2 do not block manual moves. STOP
  *   latches nothing; in AUTO it drops to MANUAL.
  * Outside AUTO, STOP stops and holds the valve without a latch (STOP event).
  *
@@ -82,12 +82,12 @@ valve_ref_t valve_reference(void);
 int32_t valve_pos_max(void);
 int32_t valve_pct10(void);       // position in 0.1 % of POS_MAX
 bool valve_fault_latched(void);
-bool valve_motion_blocked(void); // a latched fault that stops the motor (not F-01, F-02)
+bool valve_motion_blocked(void); // a latched fault that stops the motor (not F-1, F-2)
 const char *valve_status(void);  // one status line
 
 // AUTO (stage 8).
 bool valve_auto(void);
-// W-02 fired since the last Start AUTO, not yet acknowledged.
+// W-2 fired since the last Start AUTO, not yet acknowledged.
 bool valve_w02(void);
 void valve_w02_clear(void);
 bool valve_start_auto(const char **why);         // CTRL AUTO, Start / Resume AUTO
@@ -139,7 +139,7 @@ bool valve_stop_latches(void);                   // STOP would end AUTO now (red
 int valve_reset(char *left, size_t n);
 int valve_fault_count(void);
 bool valve_fault_first(const char **tag, const char **text);   // highest priority
-bool valve_fault_is(const char *tag);            // e.g. "F-05" latched
+bool valve_fault_is(const char *tag);            // e.g. "F-5" latched
 bool valve_question(int32_t *pct10);             // switch question waiting, where
 bool valve_answer(bool set_zero, const char **why);   // VALVE SETZERO / VALVE SKIP
 

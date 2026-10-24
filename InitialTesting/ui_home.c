@@ -388,7 +388,7 @@ static void set_position_ask(void)
 static void set_closed_ask(void)
 {
     ui_confirm("Set the valve as closed (0 %)? Use only if the valve is known to be seated. Not verified by homing.",
-               "Set as closed", set_closed);
+               "Set as 0 %", set_closed);
 }
 
 static void use_saved(void)
@@ -412,14 +412,14 @@ void ui_set_position_pick(int i)
 void ui_set_position_ask(void)
 {
     static char saved[32];
-    static const char *items[3] = { "Closed, 0 %", "Enter %", saved };
+    static const char *items[3] = { "Set as 0 %", "Set as other %", saved };
     int32_t q;
     int n = 2;
     if (valvepos_offer(&q)) {
         char v[16];
         int32_t pm = valve_pos_max();
         ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
-        lv_snprintf(saved, sizeof saved, "Last saved, %s %%", v);
+        lv_snprintf(saved, sizeof saved, "Use last saved, %s %%", v);
         n = 3;
     }
     ui_pick("Set position (not verified by homing)", items, n, -1, ui_set_position_pick);
@@ -440,7 +440,7 @@ void ui_home_ask(void)
 {
     lv_snprintf(home_q, sizeof home_q, "Home the valve? It closes onto the limit switch to find 0 %%, %s.",
                 home_minutes());
-    ui_confirm(home_q, "Home", calibrate);
+    ui_confirm(home_q, "Home valve", calibrate);
 }
 
 // Home's mode button while not homed: the two jobs side by side.
@@ -448,7 +448,7 @@ void ui_position_ask(void)
 {
     lv_snprintf(home_q, sizeof home_q, "Valve position unknown. Home the valve on the limit switch (%s), or set the position?",
                 home_minutes());
-    ui_ask3(home_q, "Cancel", NULL, "Set\nposition", ui_set_position_ask, "Home", calibrate);
+    ui_ask3(home_q, "Cancel", NULL, "Set\nposition", ui_set_position_ask, "Home\nvalve", calibrate);
 }
 
 static void mode_event(lv_event_t *e)
@@ -528,7 +528,7 @@ static void home_fast(void)
         if (lv_obj_get_style_text_font(vt.reading, 0) != &ui_num_40)
             lv_obj_set_style_text_font(vt.reading, &ui_num_40, 0);
         ui_set_text(vt.reading, cal ? ui_fmt2(buf, sizeof buf, valve_pct_milli()) : "----");
-        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO, as "AUTO" (Ryan, 22 Oct)
+        ui_set_color(vt.reading, cal && !valve_auto() ? UI_TEXT : UI_IDLE);   // grey in AUTO (Ryan, 22 Oct)
     }
     int32_t p = ui_pct_shown(valve_pct_milli());
     bar_set(&vt, cal ? p * BAR_W / 10000 : -1);
@@ -546,16 +546,19 @@ static void home_refresh(void)
     ui_set_text(pt.reading, ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
     ui_set_color(pt.reading, ok ? UI_TEXT : UI_FAULT);
     bar_set(&pt, ok ? pbar_x(s->p_mmbar) : -1);
-    alarm_set(&pt, !ok || valve_fault_is("F-01") || valve_fault_is("F-02"));
+    alarm_set(&pt, !ok || valve_fault_is("F-1") || valve_fault_is("F-2"));
     int32_t sp;
     bool auto_on = valve_auto();
     box_set(&pt, auto_on, valve_target(&sp) ? ui_fmt1(buf, sizeof buf, sp) : "Not set");
 
     home_fast();
-    alarm_set(&vt, valve_fault_is("F-03") || valve_fault_is("F-04") || valve_fault_is("F-05") ||
-                   valve_fault_is("F-06"));
+    alarm_set(&vt, valve_fault_is("F-3") || valve_fault_is("F-4") || valve_fault_is("F-5") ||
+                   valve_fault_is("F-6"));
     bool manual = m == VALVE_MANUAL && !valve_motion_blocked();
-    box_set(&vt, manual, manual ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : auto_on ? "AUTO" : "");
+    // Where the valve is going, greyed when not editable (in AUTO the
+    // position AUTO sends it to, as the Valve page); "----" until homed.
+    bool have = valve_calibrated() && m != VALVE_CALIBRATING;
+    box_set(&vt, manual, have ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "----");
 
     // Mode button.
     int step = valve_cal_step();
@@ -592,22 +595,22 @@ void ui_status_line(void)
     int32_t q;
     if (valve_question(&q)) {
         char t[64], v[16];
-        lv_snprintf(t, sizeof t, "W-01 Limit switch pressed at %s %%",
+        lv_snprintf(t, sizeof t, "W-1 Limit switch pressed at %s %%",
                     ui_fmt1(v, sizeof v, (int64_t)q * 100));
         ui_strip_set(UI_STRIP_WARN, NULL, t);
     } else if (m == VALVE_NOT_CAL) {
         // A plain info line with the valve icon, as the others (Ryan, 22 Oct).
         ui_strip_set(UI_STRIP_INFO, UI_ICON_VALVE, "Valve not homed");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close to the switch",
-                                             "Homing 2 of 3: backing off the switch",
-                                             "Homing 3 of 3: slow close onto the switch" };
+        static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close",
+                                             "Homing 2 of 3: backing off",
+                                             "Homing 3 of 3: slow close" };
         ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
     } else if (m == VALVE_MANUAL && valve_w02()) {
-        // No PAUSED state (Ryan, 22 Oct): W-02 drops to MANUAL; shown until OK.
+        // No PAUSED state (Ryan, 22 Oct): W-2 drops to MANUAL; shown until OK.
         if (!nf)
             ui_strip_action("OK", NULL, w02_ok_event);
-        ui_strip_set(UI_STRIP_WARN, NULL, "W-02 Not settling: switched to MANUAL, valve idle");
+        ui_strip_set(UI_STRIP_WARN, NULL, "W-2 Not settling: switched to MANUAL, valve idle");
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];

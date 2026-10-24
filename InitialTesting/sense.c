@@ -92,10 +92,10 @@ static void hot_check(const clicks_state_t *s)
     char t[16];
     if (!hot && s->die_mc >= SENSE_HOT_MC) {
         hot = true;
-        valve_event("W-03", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+        valve_event("W-3", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
     } else if (hot && s->die_mc < SENSE_COOL_MC) {
         hot = false;
-        valve_event("W-03", "Controller cooled, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+        valve_event("W-3", "Controller cooled, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
     }
 }
 
