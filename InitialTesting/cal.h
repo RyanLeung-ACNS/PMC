@@ -27,9 +27,9 @@
  *
  * Set over COM3, one command per line:
  *   CAL?                       show the active calibration
- *   CAL VAC [mbar] [unc]       vacuum point: average the live ratio over 10
+ *   CAL VAC [mbar]             vacuum point: average the live ratio over 5
  *                              readings; pressure 0 unless given
- *   CAL AIR <mbar> [unc]       air point, same, at the given room pressure
+ *   CAL AIR <mbar>             air point, same, at the given room pressure
  *                              (once both are held the table is applied,
  *                              RAM only; either can be redone alone)
  *   CAL NEW <id text>          start an entered table (id up to 23 chars)
@@ -46,9 +46,6 @@
 #define CAL_KIND_TABLE 0   // entered with CAL NEW / PT / APPLY, or nominal
 #define CAL_KIND_BENCH 1   // CAL VAC + CAL AIR
 
-// Default uncertainties of the two bench points, 0.001 mbar.
-#define CAL_VAC_UNC_DEFAULT 10     // 0.010 mbar: pumped to about 1e-2 mbar, taken as 0
-#define CAL_AIR_UNC_DEFAULT 1000   // 1.0 mbar: room barometer
 #define CAL_CAPTURE_N       5      // readings per bench capture point, one a second (Ryan, 22 Oct: was 10)
 
 #define CAL_MAGIC       0x4C414350UL  // "PCAL"
@@ -64,8 +61,9 @@ typedef struct {
     int32_t r_ppb[CAL_MAX_POINTS];     // ratio, ppb, strictly ascending
     int32_t p_mmbar[CAL_MAX_POINTS];   // pressure, 0.001 mbar
     int32_t kind;            // CAL_KIND_TABLE or CAL_KIND_BENCH
-    int32_t vac_unc_mmbar;   // bench: uncertainty of the vacuum point's pressure
-    int32_t air_unc_mmbar;   // bench: uncertainty of the air point's pressure
+    // Unused since 0.11.37 (the point uncertainties, with UNC?); kept so
+    // saved records load unchanged. Written 0, ignored on load.
+    int32_t spare[2];
     uint32_t crc;
 } cal_rec_t;
 
@@ -99,15 +97,13 @@ uint32_t cal_old_version(void);
 // Bench points of the active table (ratio ppb, pressure 0.001 mbar); false
 // if the active table is not a bench cal.
 bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air);
-int32_t cal_vac_unc_mmbar(void);
-int32_t cal_air_unc_mmbar(void);
 // Readings still to take in a running capture, 0 if none.
 int cal_capture_left(void);
 // The running capture: 0 none, 1 vacuum, 2 air.
 int cal_capturing(void);
-// Starts a bench capture (1 vacuum, 2 air) at p_mmbar, as CAL VAC / CAL AIR;
-// unc_mmbar 0 for the default. False with *why if refused.
-bool cal_capture(int what, int32_t p_mmbar, int32_t unc_mmbar, const char **why);
+// Starts a bench capture (1 vacuum, 2 air) at p_mmbar, as CAL VAC / CAL AIR.
+// False with *why if refused.
+bool cal_capture(int what, int32_t p_mmbar, const char **why);
 typedef struct { bool have; int32_t r_ppb, p_mmbar; } cal_point_t;
 // The bench points held for the sensor in use (captured, or from its table).
 void cal_points(cal_point_t *vac, cal_point_t *air);

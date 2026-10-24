@@ -13,31 +13,10 @@
  */
 #define PMC_LINK_ETHERNET 0
 
-// 1: "PM DIAG" command on the link: INA228 register readback and a sweep of
-// conversion times, modes and excitation, one line a second. Harmless when
-// not asked for; it moves the excitation 9-11 V and puts it back.
-#define PMC_PM_DIAG       1
-
-// INA228 averaging window. 1: shunt 2074 us, bus 540 us, temperature
-// 2074 us, 128 averages = 600.06 ms, 30.00 cycles of 50 Hz mains, so mains
-// pickup averages out. 0: the old 1052 us each x128 = 404 ms (20.2 cycles).
-// Redo CAL VAC, CAL AIR and CAL SAVE after changing it: the Druck output
-// loading makes the shunt reading depend slightly on conversion time.
-#define PMC_PM_MAINS_AVG  1
-
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.11.36"
+#define PMC_FW_VERSION    "0.11.37"
 
-// 1 shows the +/- mbar uncertainty under the unit; UNC? works either way.
-#define PMC_SHOW_UNCERTAINTY 0
-
-// mikroBUS socket the Stepper 3 Click is fitted in (1 or 2). S3 and S4 hold
-// the Boost 10 and Power Monitor.
-#define PMC_STEPPER3_SOCKET 1
-
-// Valve limit switch (one NC dry contact to GND) on the empty socket S2:
-//   1: INT, PG1   2: PWM, PD13
-#define PMC_LIMIT_INPUT   2
+// Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
 // 1 for the bare contact with the pull-up; 0 for an inverting interface.
 #define PMC_LIMIT_OPEN_LEVEL 1

@@ -7,7 +7,7 @@
 #include "pmc_config.h"
 
 /*
- * Valve limit switch: one dry NC contact between the PMC_LIMIT_INPUT pin and GND,
+ * Valve limit switch: one dry NC contact between PD13 (S2 PWM) and GND,
  * read with the MCU's internal pull-up. Contact closed pulls the pin low
  * (healthy, valve away from the limit); open (at the limit, or a broken
  * wire) lets it float high. PMC_LIMIT_OPEN_LEVEL flips this for an
@@ -25,21 +25,9 @@
  * With PMC_LIMIT_STOP 1 stepper3.c refuses and stops closing moves while
  * this reports open; with 0 the same state is only displayed.
  */
-#if PMC_LIMIT_INPUT == 1
-#define PMC_LIMIT_PORT      GPIOG
-#define PMC_LIMIT_PIN       1
-#define PMC_LIMIT_PIN_NAME  "PG1 (S2 INT)"
-#elif PMC_LIMIT_INPUT == 2
 #define PMC_LIMIT_PORT      GPIOD
 #define PMC_LIMIT_PIN       13
 #define PMC_LIMIT_PIN_NAME  "PD13 (S2 PWM)"
-#else
-#error "PMC_LIMIT_INPUT must be 1 (PG1) or 2 (PD13)"
-#endif
-
-#if PMC_STEPPER3_SOCKET == 2
-#error "The limit input is on S2, which also holds the Stepper 3 Click"
-#endif
 
 #define SAMPLE_MS   5
 #define STABLE_N    4          // 20 ms of closed samples before a release counts

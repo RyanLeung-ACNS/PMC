@@ -5,7 +5,6 @@
 #include "clicks.h"
 #include "cal.h"
 #include "sysinfo.h"
-#include "uncert.h"
 #include "fixed.h"
 #include "valve.h"
 #include "trend.h"
@@ -13,7 +12,7 @@
 
 /*
  * Once a second from the main loop (was main_screen.c to 0.8.x): re-read
- * the boards, update the cal, uncertainty and valve fault checks, print any
+ * the boards, update the cal and valve fault checks, print any
  * changed status line and the DATA line. Outside LVGL, so a slow redraw
  * does not delay the reading or the fault checks.
  *
@@ -87,7 +86,7 @@ static int32_t hot_mc;
 
 static void hot_check(const clicks_state_t *s)
 {
-    if (!s->pm_found || s->pm_diag)
+    if (!s->pm_found)
         return;   // no reading: as it was
     hot_mc = s->die_mc;
     char t[16];
@@ -112,13 +111,12 @@ void sense_second(void)
     print_changed_lines();
 
     const clicks_state_t *s = clicks_state();
-    uncert_update(s);
     cal_update(s);
     valve_sense(s);
     trend_second(s);
     hot_check(s);
     if (valve_auto())
         link_printf("%s\r\n", valve_auto_line());   // one readable line a second in AUTO
-    if (s->pm_found && data_on && !s->pm_diag)
+    if (s->pm_found && data_on)
         print_data_line(s);
 }

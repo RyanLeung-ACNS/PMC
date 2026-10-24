@@ -939,7 +939,7 @@ static const tab_t valve_tabs[3] = {
 };
 static const tab_t tune_tab[1] = {
     { "Control", { CFG_KP, CFG_TI, CFG_OUTMIN, CFG_DB, CFG_KDIR, CFG_BAND }, 6,
-      "AUTO uses these from a later firmware; they can be set and saved now." },
+      "Used by AUTO from the next control step. Save to keep them." },
 };
 
 static struct {
@@ -1283,7 +1283,7 @@ static void cs_start(int what, int32_t p_mmbar)
 {
     const char *why;
     char t[80];
-    if (!cal_capture(what, p_mmbar, 0, &why)) {
+    if (!cal_capture(what, p_mmbar, &why)) {
         lv_snprintf(t, sizeof t, "Not started: %s", why);
         ui_msg(t);
     }

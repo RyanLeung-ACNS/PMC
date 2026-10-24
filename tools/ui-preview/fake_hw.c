@@ -9,7 +9,6 @@
 #include "sysinfo.h"
 #include "cal.h"
 #include "rtclock.h"
-#include "uncert.h"
 #include "fixed.h"
 
 static clicks_state_t st;
@@ -88,8 +87,6 @@ bool cal_saved(void) { return fake_saved; }
 void cal_update(const clicks_state_t *s) { (void)s; }
 uint32_t cal_old_version(void) { return 0; }
 int cal_capture_left(void) { return 0; }
-int32_t cal_vac_unc_mmbar(void) { return 10; }
-int32_t cal_air_unc_mmbar(void) { return 1000; }
 bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
 {
     if (!fake_bench) return false;
@@ -98,7 +95,6 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
     return true;
 }
 #endif
-int32_t clicks_boost10_set_mv(int32_t mv) { return st.boost_tripped ? -1 : mv; }
 
 void link_init(void) {}
 void link_task(void) {}
@@ -121,13 +117,6 @@ void link_printf(const char *fmt, ...)
 }
 bool rtclock_valid(void) { return !st.cal_nominal; }
 const char *rtclock_screen_text(void) { return st.cal_nominal ? "time not set" : "08 Oct  12:34"; }
-void uncert_update(const clicks_state_t *s) { (void)s; }
-const char *uncert_screen_text(bool *warn)
-{
-    *warn = st.cal_nominal;
-    if (!st.reading_ok) return "";
-    return st.cal_nominal ? "+/- ? (not calibrated)" : "+/- 1.08 mbar";
-}
 
 /* Stepper 3: settings only, a move completes at once. */
 #include "stepper3.h"

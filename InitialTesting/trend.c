@@ -69,8 +69,7 @@ void trend_second(const clicks_state_t *s)
     }
 
     trend_pt_t q;
-    // PM DIAG freezes the readings: no-data samples while it runs.
-    bool ok = !s->pm_diag && s->pm_found && s->reading_ok && !s->boost_tripped;
+    bool ok = s->pm_found && s->reading_ok && !s->boost_tripped;
     q.p = ok ? s->p_mmbar : TREND_NONE;
     int32_t sp;
     q.sp = valve_auto() && valve_target(&sp) ? sp : TREND_NONE;   // the target, in AUTO only

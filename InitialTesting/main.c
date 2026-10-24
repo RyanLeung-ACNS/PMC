@@ -23,7 +23,6 @@
 #include "link.h"
 #include "sysinfo.h"
 #include "rtclock.h"
-#include "uncert.h"
 #include "clicks.h"
 #include "cal.h"
 #include "stepper3.h"
@@ -116,13 +115,9 @@ static const char *const help_sys[] = {
     "  VER?                       firmware version and build time",
     "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-    "  UNC?                       pressure uncertainty budget",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
     "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
-#if PMC_PM_DIAG
-    "  PM DIAG                    sweep the excitation 9-11 V, then put it back",
-#endif
 };
 static const char *const help_cfg[] = {
     "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
@@ -136,8 +131,8 @@ static const char *const help_cfg[] = {
 static const char *const help_cal[] = {
     "Calibration:",
     "  CAL?                       active cal and bench points",
-    "  CAL VAC [mbar] [unc]       capture the vacuum point (default 0 mbar, 0-50)",
-    "  CAL AIR <mbar> [unc]       capture the air point (500-1100 mbar)",
+    "  CAL VAC [mbar]             capture the vacuum point (default 0 mbar, 0-50)",
+    "  CAL AIR <mbar>             capture the air point (500-1100 mbar)",
     "  CAL SAVE                   save all settings, cal included (= CFG SAVE)",
     "  CAL ERASE                  use nominal and save (old cal record erased)",
     "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
@@ -314,8 +309,8 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !uncert_command(line) &&
-            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) && !clicks_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
+            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
         uint32_t t0 = lv_tick_get();

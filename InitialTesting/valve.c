@@ -578,8 +578,6 @@ ctrl_reg_t valve_regulation(void)
 
 void valve_sense(const clicks_state_t *s)
 {
-    if (s->pm_diag)
-        return;
     bool exc_bad = s->pm_found && (s->boost_tripped || s->bus_mv < EXC_MIN_MV || s->bus_mv > EXC_MAX_MV);
     cause_f02 = exc_bad;
     cause_f01 = !s->pm_found || (!exc_bad && !s->reading_ok);

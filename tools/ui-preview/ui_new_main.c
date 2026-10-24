@@ -205,7 +205,7 @@ static void seed_flash(void)
     strcpy(c->id, "5880156 bench 26-10-05");
     c->r_ppb[0] = 127900; c->p_mmbar[0] = 0;
     c->r_ppb[1] = 9798300; c->p_mmbar[1] = 1013250;
-    c->kind = CAL_KIND_BENCH; c->vac_unc_mmbar = 10; c->air_unc_mmbar = 1000;
+    c->kind = CAL_KIND_BENCH;
     c->crc = crc32(c, offsetof(cal_rec_t, crc));
     r.crc = crc32(&r, offsetof(__typeof__(r), crc));
     extflash_write(0x7FD000, &r, sizeof r);

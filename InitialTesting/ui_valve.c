@@ -952,7 +952,7 @@ static void diag_refresh(void)
 {
     const clicks_state_t *s = clicks_state();
     char buf[48];
-    bool sig = s->pm_found && !s->pm_diag;
+    bool sig = s->pm_found;
     int32_t uv = s->shunt_nv / 1000;    // Druck output, 0.001 mV
     int32_t au = uv < 0 ? -uv : uv;
     lv_snprintf(buf, sizeof buf, "%s%ld.%03ld", uv < 0 ? "-" : "", (long)(au / 1000), (long)(au % 1000));

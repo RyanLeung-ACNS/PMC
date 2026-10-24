@@ -78,7 +78,6 @@ add_executable(InitialTesting
     sysinfo.h
     sysinfo.c
     rtclock.c
-    uncert.c
     fixed.h
     fixed.c
     pmc_config.h

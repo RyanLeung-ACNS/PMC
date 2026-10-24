@@ -636,11 +636,7 @@ static const ui_screen_t *const menu_scr[6] = { &ui_scr_trend, &ui_scr_faults, &
 
 static void menu_tile_event(lv_event_t *e)
 {
-    const ui_screen_t *s = lv_event_get_user_data(e);
-    if (s)
-        ui_open(s);
-    else
-        ui_msg("Comes in a later firmware");
+    ui_open(lv_event_get_user_data(e));
 }
 
 static void menu_build(lv_obj_t *scr)

@@ -14,9 +14,7 @@
 /* --------------------------------------------------------------------------
  * Hardware
  *
- * Stepper 3 in socket PMC_STEPPER3_SOCKET (pmc_config.h):
- *   S1: AN PA4, RST PC2, CS PB12, PWM PD12
- *   S2: AN PB0, RST PC3, CS PA15, PWM PD13
+ * Stepper 3 in socket S1: AN PA4, RST PC2, CS PB12, PWM PD12.
  * These drive ULN2003 inputs 1-4 (high = that output pulls its coil end to ground). The motor centre
  * taps go to the COM terminal, which J1 connects to the external supply
  * (VCC-EXT, 12 V for the Portescap motors).
@@ -34,7 +32,6 @@ typedef struct {
     uint16_t pin;
 } out_pin_t;
 
-#if PMC_STEPPER3_SOCKET == 1
 static const out_pin_t out_pins[4] = {
     { GPIOA, 4 },    // MIKROBUS_1_AN  -> ULN2003 IN1
     { GPIOC, 2 },    // MIKROBUS_1_RST -> IN2
@@ -42,17 +39,6 @@ static const out_pin_t out_pins[4] = {
     { GPIOD, 12 },   // MIKROBUS_1_PWM -> IN4
 };
 #define SOCKET_PINS { MIKROBUS_1_AN, MIKROBUS_1_RST, MIKROBUS_1_CS, MIKROBUS_1_PWM }
-#elif PMC_STEPPER3_SOCKET == 2
-static const out_pin_t out_pins[4] = {
-    { GPIOB, 0 },    // MIKROBUS_2_AN  -> ULN2003 IN1
-    { GPIOC, 3 },    // MIKROBUS_2_RST -> IN2
-    { GPIOA, 15 },   // MIKROBUS_2_CS  -> IN3
-    { GPIOD, 13 },   // MIKROBUS_2_PWM -> IN4
-};
-#define SOCKET_PINS { MIKROBUS_2_AN, MIKROBUS_2_RST, MIKROBUS_2_CS, MIKROBUS_2_PWM }
-#else
-#error "PMC_STEPPER3_SOCKET must be 1 or 2"
-#endif
 
 static digital_out_t sdk_pins[4];
 
@@ -550,7 +536,7 @@ const char *stepper3_status(void)
     if (run_state == ST_MOVING)
         lv_snprintf(to, sizeof to, " to %ld", (long)target);
     lv_snprintf(status_text, sizeof status_text,
-                "S%d Stepper 3: %s, pos %ld%s, %s %lu sps, limit %s", PMC_STEPPER3_SOCKET,
+                "S1 Stepper 3: %s, pos %ld%s, %s %lu sps, limit %s",
                 st, (long)position, to, stepper3_mode_name(mode),
                 (unsigned long)(run_state == ST_MOVING ? move_rate : rate_run),
                 !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)"

@@ -180,8 +180,6 @@ static cal_rec_t bench_cal(const char *id, int32_t r_vac, int32_t r_air, int32_t
     c.r_ppb[0] = r_vac; c.p_mmbar[0] = 0;
     c.r_ppb[1] = r_air; c.p_mmbar[1] = p_air;
     c.kind = CAL_KIND_BENCH;
-    c.vac_unc_mmbar = 10;
-    c.air_unc_mmbar = 1000;
     c.crc = crc32(&c, offsetof(cal_rec_t, crc));
     return c;
 }
@@ -346,10 +344,10 @@ static void test_capture(void)
     int32_t v[CFG_N] = { 0 };
     bool set[CFG_N] = { 0 };
     cs.r_ppb = 9300000;
-    CHECK(!cal_capture(1, 0, 0, &why));            // not a vacuum
+    CHECK(!cal_capture(1, 0, &why));            // not a vacuum
     cs.r_ppb = 51000;
-    CHECK(cal_capture(1, 0, 0, &why) && cal_capturing() == 1);
-    CHECK(!cal_capture(2, 1013000, 0, &why));      // one at a time
+    CHECK(cal_capture(1, 0, &why) && cal_capturing() == 1);
+    CHECK(!cal_capture(2, 1013000, &why));      // one at a time
     for (int i = 0; i < 10; i++)
         cal_update(&cs);
     CHECK(cal_capturing() == 0);
@@ -357,7 +355,7 @@ static void test_capture(void)
     CHECK(vac.have && vac.r_ppb == 51000 && air.have);   // air kept from the table
     CHECK(!cal_saved() && cfg_unsaved() == 1);
     cs.r_ppb = 9310000;
-    CHECK(cal_capture(2, 1012000, 0, &why));
+    CHECK(cal_capture(2, 1012000, &why));
     for (int i = 0; i < 10; i++)
         cal_update(&cs);
     CHECK(cal_pressure_mmbar(9310000) == 1012000 && cal_pressure_mmbar(51000) == 0);

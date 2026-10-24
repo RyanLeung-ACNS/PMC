@@ -73,7 +73,6 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `pmc_config.h` | Build options: link (USB or Ethernet), version, Stepper 3 socket, limit input pin and polarity |
 | `clicks.c` | Boost 10 excitation set-up and 11.5 V trip, INA228 reads, Druck plausibility, pressure from the cal |
 | `cal.c` | Druck calibration table: ratio (mV/V) against pressure, linear between points; bench two-point (CAL VAC, CAL AIR) |
-| `uncert.c` | Pressure uncertainty budget (`UNC?`), the Druck term from the full scale of the sensor in use |
 | `sense.c` | The once-a-second read, DATA and status lines |
 | `limit.c` | Limit switch input: a trip counts at once, the release is debounced (20 ms) |
 | `stepper3.c` | Step sequences (wave, full, half), ramps, absolute moves with retarget, the limit stop, F-05 timeout |
@@ -126,7 +125,7 @@ LVGL heap: 64 KB in CCM plus a 24 KB second pool in main RAM. `PERF?` reports lo
 
 ## Pressure measurement
 
-The Druck output is ratiometric, so the firmware uses the ratio of signal to excitation (mV/V), read by the INA228 with 128 averages over 600 ms (30 cycles of 50 Hz mains, `PMC_PM_MAINS_AVG`), once a second. `cal.c` turns the ratio into pressure. The normal cal is the bench two-point: a pumped-down vacuum point (`CAL VAC`, or Calibrate sensor) and an air point at a barometer reading (`CAL AIR`). Both are read live through the INA228 as wired, so the INA228's loading of the Druck output (the reading is about 5 % low uncalibrated) and its gain and offset sit inside the cal. With no cal saved, the nominal 0 to 100 mV at 10 V is used and the screen says so. The display shows 0.1 mbar; accuracy is set by the Druck (±0.04 % FS, ±0.41 mbar) and the cal points (`UNC?`).
+The Druck output is ratiometric, so the firmware uses the ratio of signal to excitation (mV/V), read by the INA228 with 128 averages over 600 ms (30 cycles of 50 Hz mains), once a second. `cal.c` turns the ratio into pressure. The normal cal is the bench two-point: a pumped-down vacuum point (`CAL VAC`, or Calibrate sensor) and an air point at a barometer reading (`CAL AIR`). Both are read live through the INA228 as wired, so the INA228's loading of the Druck output (the reading is about 5 % low uncalibrated) and its gain and offset sit inside the cal. With no cal saved, the nominal 0 to 100 mV at 10 V is used and the screen says so. The display shows 0.1 mbar; accuracy is set by the Druck (±0.04 % FS, ±0.41 mbar) and the cal points.
 
 ## Storage
 
@@ -164,10 +163,8 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
 | `LIM?` | Valve limit switch: state, raw pin level, change count |
 | `SUP?` | Motor 12 V supply (PA3, x5 divider module): volts, state (ok, LOW below 10.5 V, HIGH above 14.0 V, OFF below 6.0 V), raw ADC and VREFINT counts |
-| `UNC?` | Pressure uncertainty budget, term by term |
 | `TOUCH?` | Touch controller read and error counters |
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
-| `PM DIAG` | Steps the excitation from 9 to 11 V, one step a second, then puts it back (only when `PMC_PM_DIAG` is 1) |
 
 Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, the cryostat name and the save time, in one record in serial flash; version 3 from 0.10.9, a version 2 record (0.9.0 to 0.10.8) loads with the name CF-11, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 
@@ -186,8 +183,8 @@ Calibration (Druck, through the INA228):
 | Command | What it does |
 | --- | --- |
 | `CAL?` | Active cal, whether it is saved, and the bench points held |
-| `CAL VAC [mbar] [unc]` | Capture the vacuum point over 5 readings. Defaults: 0 mbar, ±0.010 mbar. Range 0 to 50 mbar |
-| `CAL AIR <mbar> [unc]` | Capture the air point at the reference reading, 500 to 1100 mbar. Default ±1.0 mbar |
+| `CAL VAC [mbar]` | Capture the vacuum point over 5 readings. Default 0 mbar, range 0 to 50 mbar |
+| `CAL AIR <mbar>` | Capture the air point at the reference reading, 500 to 1100 mbar |
 | `CAL SAVE` | Same as `CFG SAVE`: saves all settings, the active cal included (it is only in RAM until then) |
 | `CAL ERASE` | Go back to nominal, erase the old 0.5.x cal record and save |
 | `CAL NEW [id]`, `CAL PT <mV/V> <mbar>`, `CAL APPLY` | Enter a table by hand (up to 32 points), then make it active |
