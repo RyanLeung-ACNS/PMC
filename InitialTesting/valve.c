@@ -271,6 +271,7 @@ static bool cal_start(const char **err)
     stepper3_stop();
     stepper3_override_cancel();
     question = false;
+    cal_settling = false;
     cal_was = calibrated;
     calibrated = false;
     mode = VALVE_CALIBRATING;
@@ -295,9 +296,10 @@ static void cal_move_ended(stepper3_stop_t why)
     case CAL_BACK:
         if (why != STEPPER3_STOP_DONE)
             cal_abort(stepper3_stop_name(why));
-        else
+        else {
             cal_settle_from = lv_tick_get();   // then check the switch
             cal_settling = true;
+        }
         break;
     case CAL_FAST:
         if (why == STEPPER3_STOP_LIMIT) {
