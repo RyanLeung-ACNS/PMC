@@ -8,7 +8,7 @@
 // print the status and DATA lines.
 void sense_second(void);
 
-// W-03 controller hot (0.11.36, Ryan 23 Oct): the Power Monitor die
+// W-3 controller hot (0.11.36, Ryan 23 Oct): the Power Monitor die
 // temperature at or above SENSE_HOT_MC, cleared below SENSE_COOL_MC. A
 // warning only: not latched, blocks nothing, logged.
 #define SENSE_HOT_MC   55000

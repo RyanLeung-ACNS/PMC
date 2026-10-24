@@ -14,7 +14,7 @@
  * setup, Control tuning, Review and save, and Calibrate sensor (Menu >
  * Calibrate > Sensor).
  *
- * An edit is a draft (violet edge and value) until Save settings, which
+ * An edit is a draft (dark edge) until Save settings, which
  * checks the drafts and the settings in use together, puts them in use all
  * or nothing, and writes the whole record (cfg_save_with).
  * A grey edge is a setting in use that differs from the last save (a
@@ -22,9 +22,9 @@
  * settings > Previous save is the undo.
  * ------------------------------------------------------------------------ */
 
-#define COL_DRAFT  lv_color_hex(0x6A4C93)
-#define COL_GREY   lv_color_hex(0x5B6B7B)
-#define STEPS_PER_TURN 16512   // full steps per output turn: 48 x 344
+#define COL_DRAFT  UI_TEXT   // dark edge, no colour (Ryan, 24 Oct; was violet)
+#define COL_GREY   UI_IDLE   // light, apart from the draft's dark edge
+#define STEPS_PER_TURN STEPPER3_STEPS_PER_TURN
 
 static const int32_t RY[4] = { 48, 104, 160, 216 };
 #define RH 48
@@ -90,11 +90,11 @@ static const char *save_icon(int n)
     return drafts() ? LV_SYMBOL_EDIT : n ? LV_SYMBOL_SAVE : LV_SYMBOL_OK;
 }
 
-// A save is named by when it was made: "16/10/26 14:32", or "no date"
+// A save is named by when it was made: "16/10/26 14:32", or "date unknown"
 // when the clock was not set at the time.
 static const char *save_when(char *buf, size_t n, const char *at)
 {
-    return at[0] ? ui_date(buf, n, at) : "no date";
+    return at[0] ? ui_date(buf, n, at) : "date unknown";
 }
 
 static const char *plural(char *buf, size_t n, int count, const char *word)
@@ -224,7 +224,7 @@ static const char *cal_date(char *buf, size_t n, const cal_rec_t *c)
 }
 
 /* Editable card: white, outlined, 12 px caption, 16 px value, chevron; a
- * 3 px edge on the left for draft (violet) or unsaved (grey). */
+ * 3 px edge on the left for draft (dark) or unsaved (light grey). */
 typedef struct {
     lv_obj_t *card, *edge, *v;
 } ecard_t;
@@ -253,7 +253,7 @@ static void ecard_make(ecard_t *e, lv_obj_t *scr, int32_t x, int32_t y, int32_t 
 static void ecard_state(ecard_t *e, const char *text, bool draft, bool applied)
 {
     ui_set_text(e->v, text);
-    ui_set_color(e->v, draft ? COL_DRAFT : UI_TEXT);
+    ui_set_color(e->v, UI_TEXT);
     lv_opa_t opa = draft || applied ? LV_OPA_COVER : LV_OPA_TRANSP;
     if (lv_obj_get_style_bg_opa(e->edge, 0) != opa)
         lv_obj_set_style_bg_opa(e->edge, opa, 0);
@@ -1212,15 +1212,15 @@ static const char *rev_text(char *buf, size_t n, cfg_from_t from)
     const char *at;
     if (!cfg_rev(from, &rev, &at))
         return "None";
-    // Saves from 0.8.x have no date; the older one still reads apart.
-    return at[0] ? save_when(buf, n, at) : from == CFG_FROM_PREVIOUS ? "Earlier, no date" : "Saved, no date";
+    // Saves from 0.8.x have no date; the caption tells the two apart.
+    return at[0] ? save_when(buf, n, at) : "Date unknown";
 }
 
 static void rv_refresh(void)
 {
     char t[48], c[24];
     int n = unsaved(), d = drafts(), u = n - d;
-    // The state in words, not only the violet / grey edge (review of 0.10.11).
+    // The state in words, not only the dark / light edge (review of 0.10.11).
     if (d && u > 0)
         lv_snprintf(t, sizeof t, "%s, %d in use not saved", plural(c, sizeof c, d, "draft"), u);
     else if (d)

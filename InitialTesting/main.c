@@ -108,7 +108,7 @@ static const char *const help_auto[] = {
     "  PID?                       all control parameters",
     "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
-    "In AUTO: F-06 no response, W-02 to MANUAL after 1800 s",
+    "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
 };
 static const char *const help_sys[] = {
     "System:",

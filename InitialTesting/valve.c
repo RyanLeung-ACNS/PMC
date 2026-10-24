@@ -58,7 +58,7 @@ static int32_t f_rate(int32_t full)
 
 #define SETTLE_MS     150     // after a move, before the switch is read
 #define CREEP_EXTRA   200     // creep goes this far past the back-off
-#define EXC_MIN_MV    9500    // F-02 window
+#define EXC_MIN_MV    9500    // F-2 window
 #define EXC_MAX_MV    10500
 
 /* --------------------------------------------------------------------------
@@ -107,7 +107,7 @@ void valve_event(const char *tag, const char *fmt, ...)
  * ------------------------------------------------------------------------ */
 typedef enum { F01, F02, F03, F04, F05, F06, F_N } fault_t;   // priority order (Ryan, 22 Oct)
 
-static const char *const fault_tag[F_N]   = { "F-01", "F-02", "F-03", "F-04", "F-05", "F-06" };
+static const char *const fault_tag[F_N]   = { "F-1", "F-2", "F-3", "F-4", "F-5", "F-6" };
 static const char *const fault_short[F_N] = {
     "No pressure signal", "Excitation out of window", "Limit not found while calibrating",
     "Limit still active after clearance", "Motion timeout", "No pressure response" };
@@ -162,14 +162,14 @@ static const char *pct_text(char *buf, size_t n, int32_t pos)
     return fixed_fmt(buf, n, pct10_of(pos), 1);
 }
 
-// The pressure faults (F-01 no Druck, F-02 excitation) do not block the motor: manual moves and calibrating use the step
+// The pressure faults (F-1 no Druck, F-2 excitation) do not block the motor: manual moves and calibrating use the step
 // count and the limit switch, not the pressure (Ryan 16 Oct). In AUTO they
 // stop the valve and drop to MANUAL like any other fault.
 static bool sensor_fault(fault_t f) { return f == F01 || f == F02; }
 
 static bool is_auto(void) { return mode == VALVE_AUTO; }
 
-static bool w02;   // W-02 shown until OK or the next Start AUTO
+static bool w02;   // W-2 shown until OK or the next Start AUTO
 
 static bool any_latched(void)
 {
@@ -358,7 +358,7 @@ static void limit_hit(void)
     question_at = stepper3_position();
     question = true;
     char p[16];
-    ev("W-01", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
+    ev("W-1", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)question_at, pct_text(p, sizeof p, question_at));
 }
 
@@ -477,7 +477,7 @@ static void auto_step(void)
         stepper3_stop();
         mode = VALVE_MANUAL;
         w02 = true;
-        ev("W-02", "Convergence timeout after %d s, AUTO ended, MANUAL, valve idle", CTRL_TCONV_S);
+        ev("W-2", "Convergence timeout after %d s, AUTO ended, MANUAL, valve idle", CTRL_TCONV_S);
         update_lock();
         break;
     case CTRL_F06:
@@ -1065,9 +1065,9 @@ bool valve_answer(bool set_zero, const char **why)
         int32_t d = stepper3_position() - question_at;
         stepper3_set_position(sc(n_offset) + d);
         switch_at += sc(n_offset) - question_at;
-        ev("W-01", "Point set as 0 %%, count %ld", (long)sc(n_offset));
+        ev("W-1", "Point set as 0 %%, count %ld", (long)sc(n_offset));
     } else {
-        ev("W-01", "Zero skipped, count kept at %ld", (long)question_at);
+        ev("W-1", "Zero skipped, count kept at %ld", (long)question_at);
     }
     return true;
 }

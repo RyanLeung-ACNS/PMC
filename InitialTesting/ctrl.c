@@ -151,7 +151,7 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         const int way = judged ? sgnf(moved) : !in->moving && pin_open ? 1 : !in->moving && pin_min ? -1 : 0;
         if (way) {
             // A wrong-way change is a response too: no fault for it (Ryan, 22 Oct;
-            // on the model a lost helium supply shows as F-06, a stopped pump as W-02).
+            // on the model a lost helium supply shows as F-6, a stopped pump as W-2).
             if (judged && fabsf(dp) < CTRL_DPMIN) {
                 if (++c->noresp >= CTRL_NRESP)
                     return CTRL_F06;
@@ -166,7 +166,7 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         c->win_pv = pv;
     }
 
-    // W-02 convergence timeout.
+    // W-2 convergence timeout.
     if (fabsf(c->sp - pv) <= k->band)
         c->conv_ms = in->t_ms;
     else if (since(in->t_ms, c->conv_ms) > CTRL_TCONV_S * 1000u)
