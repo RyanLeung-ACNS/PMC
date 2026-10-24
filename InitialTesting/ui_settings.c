@@ -24,7 +24,7 @@
 
 #define COL_DRAFT  lv_color_hex(0x6A4C93)
 #define COL_GREY   lv_color_hex(0x5B6B7B)
-#define STEPS_PER_TURN 16512   // full steps per output turn: 48 x 344
+#define STEPS_PER_TURN STEPPER3_STEPS_PER_TURN
 
 static const int32_t RY[4] = { 48, 104, 160, 216 };
 #define RH 48

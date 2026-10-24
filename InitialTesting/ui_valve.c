@@ -9,6 +9,7 @@
 #include "valvepos.h"
 #include "supply.h"
 #include "ui.h"
+#include "fixed.h"
 
 /* --------------------------------------------------------------------------
  * Operator screens for MANUAL (stage 5, simulator v63): Valve, Calibrate
@@ -285,7 +286,7 @@ const ui_screen_t ui_scr_valve = { "Valve", valve_build, valve_refresh, valve_fa
  * Calibrate valve
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *state, *start, *closed, *enter, *saved;
+    lv_obj_t *state, *turns, *start, *closed, *enter, *saved;
 } cp;
 
 /* One page (Ryan, 24 Oct: no tabs, less homing detail). Row 1 the valve's
@@ -349,12 +350,23 @@ static void timer_deleted(lv_event_t *e)
 static void calib_build(lv_obj_t *scr)
 {
     memset(&cp, 0, sizeof cp);
-    cp.state = ui_info(scr, 10, 48, 343, 48, "Valve");
+    cp.state = ui_info(scr, 10, 48, 226, 48, "Valve");
+    cp.turns = ui_info(scr, 244, 48, 109, 48, "Turns");
+    right(cp.turns);
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", calib_help_cb, NULL);
     cp.start = ui_btn(scr, 10, 104, 226, 48, UI_PRIMARY, "Home valve", start_cb, NULL);
     cp.closed = ui_btn(scr, 244, 104, 226, 48, UI_SECONDARY, "Set as closed", setpos_cb, (void *)(intptr_t)0);
     cp.enter = ui_btn(scr, 244, 160, 226, 48, UI_SECONDARY, "Enter %", setpos_cb, (void *)(intptr_t)1);
     cp.saved = ui_btn(scr, 10, 160, 226, 48, UI_SECONDARY, "Use last saved", setpos_cb, (void *)(intptr_t)2);
+}
+
+// Motor turns from closed at 10 Hz (Ryan, 24 Oct: turns read more
+// plainly than steps); counts through every homing stage.
+static void calib_fast(void)
+{
+    char buf[16];
+    int64_t full = (int64_t)stepper3_position() / stepper3_scale();
+    ui_set_text(cp.turns, fixed_fmt(buf, sizeof buf, fixed_round(full * 1000 / STEPPER3_STEPS_PER_TURN, 1), 2));
 }
 
 static void calib_refresh(void)
@@ -363,8 +375,8 @@ static void calib_refresh(void)
     bool calib = valve_mode() == VALVE_CALIBRATING;
     int step = valve_cal_step();
     valve_ref_t how = valve_reference();
-    static const char *const doing[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close",
-                                          "Homing 2 of 3: backing off", "Homing 3 of 3: slow close" };
+    static const char *const doing[4] = { "Homing: off the switch", "Homing 1/3: fast close",
+                                          "Homing 2/3: backing off", "Homing 3/3: slow close" };
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     const char *iso = valve_last_cal_iso();
@@ -374,12 +386,13 @@ static void calib_refresh(void)
     else if (how == VALVE_REF_HOMED && when)
         lv_snprintf(st, sizeof st, "Homed %s", when);
     else if (how == VALVE_REF_HAND)
-        lv_strlcpy(st, "Not homed, position entered", sizeof st);
+        lv_strlcpy(st, "Not homed, entered", sizeof st);
     else if (how == VALVE_REF_SAVED)
-        lv_strlcpy(st, "Not homed, last saved position", sizeof st);
+        lv_strlcpy(st, "Not homed, last saved", sizeof st);
     else
         lv_strlcpy(st, "Not homed", sizeof st);
     ui_set_text(cp.state, st);
+    calib_fast();
     ui_btn_text(cp.start, calib ? "Homing" : "Home valve", NULL);
     ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
 
@@ -399,7 +412,7 @@ static void calib_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, NULL };
+const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log
