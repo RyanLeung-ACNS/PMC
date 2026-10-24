@@ -290,14 +290,15 @@ static struct {
 } cp;
 
 /* One page (Ryan, 24 Oct: no tabs, less homing detail). Row 1 the valve's
- * state and Help; then Home valve and the three ways to set the position. */
+ * state, turns and Help; then Home valve and the three ways to set the
+ * position. */
 static const char *const calib_help =
     "Home valve finds 0 % on the limit switch: a fast close to the switch, a back-off, "
     "then a slow close onto it. Takes up to a few minutes. STOP cancels it.\n\n"
-    "Set as closed, Enter % and Use last saved record a position without moving the valve. "
+    "Set as 0 %, Set as other % and Use last saved record a position without moving the valve. "
     "They are not verified against the limit switch.\n"
-    "Set as closed: use only when the valve is known to be seated.\n"
-    "Enter %: use when the position is known, for example from the previous run.\n"
+    "Set as 0 %: use only when the valve is known to be seated.\n"
+    "Set as other %: use when the position is known, for example from the previous run.\n"
     "Use last saved: the position stored before power was lost. Available after start-up "
     "until the valve moves or is homed.\n\n"
     "F-03 switch not found, F-04 switch stuck: check the switch and its wire, "
@@ -354,10 +355,12 @@ static void calib_build(lv_obj_t *scr)
     cp.turns = ui_info(scr, 244, 48, 109, 48, "Turns");
     right(cp.turns);
     ui_btn(scr, 361, 48, 109, 48, UI_NAV, "Help", calib_help_cb, NULL);
-    cp.start = ui_btn(scr, 10, 104, 226, 48, UI_PRIMARY, "Home valve", start_cb, NULL);
-    cp.closed = ui_btn(scr, 244, 104, 226, 48, UI_SECONDARY, "Set as closed", setpos_cb, (void *)(intptr_t)0);
-    cp.enter = ui_btn(scr, 244, 160, 226, 48, UI_SECONDARY, "Enter %", setpos_cb, (void *)(intptr_t)1);
-    cp.saved = ui_btn(scr, 10, 160, 226, 48, UI_SECONDARY, "Use last saved", setpos_cb, (void *)(intptr_t)2);
+    // Ryan, 24 Oct: set positions on the left, Home valve and Use last
+    // saved on the right.
+    cp.closed = ui_btn(scr, 10, 104, 226, 48, UI_SECONDARY, "Set as 0 %", setpos_cb, (void *)(intptr_t)0);
+    cp.start = ui_btn(scr, 244, 104, 226, 48, UI_PRIMARY, "Home valve", start_cb, NULL);
+    cp.enter = ui_btn(scr, 10, 160, 226, 48, UI_SECONDARY, "Set as other %", setpos_cb, (void *)(intptr_t)1);
+    cp.saved = ui_btn(scr, 244, 160, 226, 48, UI_SECONDARY, "Use last saved", setpos_cb, (void *)(intptr_t)2);
 }
 
 // Motor turns from closed at 10 Hz (Ryan, 24 Oct: turns read more
