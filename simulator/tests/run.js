@@ -48,26 +48,26 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('supply off: no move', s.get(5) === 0);
   shot(s, 'supply-off');
 }
-{ // F-01: Druck unplugged.
+{ // F-1: Druck unplugged.
   const s = homed(load()); s.set(8, 0); s.run(5000);
   const ev = s.cmd('EVT? 5');
-  check('F-01 Druck unplugged', /F-01/.test(ev), ev);
+  check('F-1 Druck unplugged', /F-1/.test(ev), ev);
   shot(s, 'f01');
 }
-{ // F-02: excitation out of 9.5-10.5 V.
+{ // F-2: excitation out of 9.5-10.5 V.
   const s = homed(load()); s.set(10, 9.2); s.run(5000);
   const ev = s.cmd('EVT? 5');
-  check('F-02 excitation low', /F-02/.test(ev), ev);
+  check('F-2 excitation low', /F-2/.test(ev), ev);
 }
-{ // F-03: the switch never trips during homing.
+{ // F-3: the switch never trips during homing.
   const s = load(); s.boot(); s.set(5, 40000); s.set(7, 2); s.run(2000);
   const out = s.cmd('VALVE CAL', 400000);
-  check('F-03 limit not found', /F-03/.test(out), out.slice(-600));
+  check('F-3 limit not found', /F-3/.test(out), out.slice(-600));
 }
-{ // F-04: homing from the switch, which stays pressed after the clearance move.
+{ // F-4: homing from the switch, which stays pressed after the clearance move.
   const s = homed(load()); s.set(7, 1);
   const out = s.cmd('VALVE CAL', 60000);
-  check('F-04 limit stuck', /F-04/.test(out), out.slice(-600));
+  check('F-4 limit stuck', /F-4/.test(out), out.slice(-600));
 }
 { // AUTO at 5 mbar settles.
   const s = homed(load());
@@ -77,26 +77,26 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('AUTO 5 mbar stable', /Stable/.test(last), last);
   shot(s, 'auto');
 }
-{ // F-06: the needle slips in AUTO, so the pressure does not follow.
+{ // F-6: the needle slips in AUTO, so the pressure does not follow.
   const s = homed(load());
   s.cmd('CTRL SP 5'); s.cmd('CTRL AUTO'); s.run(300000);
   s.set(6, 0); s.cmd('CTRL SP 8');
   s.out = ''; s.run(600000);
-  check('F-06 no response', /F-06/.test(s.out), s.out.split('\n').filter(l => /EVT|AUTO/.test(l)).slice(-5).join('\n'));
+  check('F-6 no response', /F-6/.test(s.out), s.out.split('\n').filter(l => /EVT|AUTO/.test(l)).slice(-5).join('\n'));
   shot(s, 'f06');
 }
-{ // W-02: the rotary pump stops in AUTO; the pressure never comes back into band.
+{ // W-2: the rotary pump stops in AUTO; the pressure never comes back into band.
   const s = homed(load());
   s.cmd('CTRL SP 5'); s.cmd('CTRL AUTO'); s.run(300000);
   s.set(4, 0);
   s.out = ''; s.run(1900000);
-  check('W-02 to MANUAL', /W-02/.test(s.out), s.out.split('\n').filter(l => /EVT/.test(l)).slice(-5).join('\n'));
+  check('W-2 to MANUAL', /W-2/.test(s.out), s.out.split('\n').filter(l => /EVT/.test(l)).slice(-5).join('\n'));
   shot(s, 'w02');
 }
-{ // W-03: controller hot.
+{ // W-3: controller hot.
   const s = homed(load()); s.set(13, 57); s.run(3000);
   const ev = s.cmd('EVT? 3');
-  check('W-03 controller hot', /W-03 Controller hot/.test(ev), ev);
+  check('W-3 controller hot', /W-3 Controller hot/.test(ev), ev);
   shot(s, 'w03');
 }
 { // Settings and the saved position survive a power cycle (serial flash).

@@ -25,12 +25,12 @@ The stand-ins are in `wasm/`: `include/` (register structs for GPIO, RCC, TIM7, 
 
 ## Tests
 
-- `node simulator/tests/run.js [--png dir]`: bench scenarios against the build, in node, about 3 s: boot, homing from the screen, Set position, a MANUAL move, supply off, F-01 to F-06 (except F-05), W-02, W-03, settings and saved position over a power cycle.
+- `node simulator/tests/run.js [--png dir]`: bench scenarios against the build, in node, about 3 s: boot, homing from the screen, Set position, a MANUAL move, supply off, F-1 to F-6 (except F-5), W-2, W-3, settings and saved position over a power cycle.
 - `node simulator/tests/page.js [shot.png]`: the page in Chromium (Playwright): taps, homing, a console command, settings kept over a reload.
 
 ## Not simulated
 
-- F-05 (motion timeout): the step interrupt is never late here, so a move cannot overrun its time.
+- F-5 (motion timeout): the step interrupt is never late here, so a move cannot overrun its time.
 - Ethernet / Modbus TCP (the build is the USB one, as `pmc_config.h`), the mikroBootloader, the watchdog's timing (an LVGL assert stops the page and restarts the firmware with reset reason watchdog).
 - Real speed: PERF? and redraw times are the browser's, not the STM32's. The LVGL heap is the board's size (64 + 24 KB), so running out of it would show.
 - The Druck, Power Monitor and cryostat are models: noise, drift and the cryostat's response are not the bench's.
@@ -90,7 +90,7 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 - Duplications removed from Engineer settings: the Diagnostics tile (Diagnostics is on the Menu without the PIN) and the Setup guide (it repeated the six tiles). Each tile now shows where it stands; Review and save shows no count because the status strip carries it.
 
 ### Ryan's batch, 14 October 2026 (v57)
-- Pressure limits removed: the target is 0 to the sensor range, F-02 only above the range, no low alarm. Target band moved to Control tuning.
+- Pressure limits removed: the target is 0 to the sensor range, F-2 only above the range, no low alarm. Target band moved to Control tuning.
 - A reading a little below 0 (calibration drift) is shown as it is (for example -0.4), with no fault; the target can be 0.
 - No engineer mode: no PIN, no Lock, no idle lock, no ACCESS commands. Menu > Settings has four tiles (Pressure sensor, Valve setup, Control tuning, Review and save).
 - Review and save keeps the previous saved revision. v60: Restore saved, Load defaults and Revert are one Load settings button listing Last save, Previous save and Factory defaults; any of them comes in as unapplied changes (Apply, then Save). Saved config key is now v7.
