@@ -57,9 +57,9 @@ static bool v_sp_set;
 static int32_t v_sp = 5000;
 static ctrl_reg_t v_reg = CTRL_REG_BAND;
 bool valve_auto(void) { return v_mode == VALVE_AUTO; }
-static bool v_w02;
-bool valve_w02(void) { return v_w02; }
-void valve_w02_clear(void) { v_w02 = false; }
+static const char *v_warn;
+const char *valve_warning(void) { return v_warn; }
+void valve_warning_clear(void) { v_warn = NULL; }
 int valve_fault_count(void);
 bool valve_start_auto(const char **why)
 {
@@ -286,13 +286,16 @@ int main(int argc, char **argv)
     if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     // AUTO (stage 8).
-    bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strcmp(st, "f08") || !strcmp(st, "trendauto");
+    bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strncmp(st, "warn", 4) || !strcmp(st, "f08") || !strcmp(st, "trendauto");
     if (aut) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_sp_set = strcmp(st, "autofirst") != 0; }
     if (!strcmp(st, "auto") || !strcmp(st, "autostable") || !strcmp(st, "autoreg") || !strcmp(st, "autosp") ||
         !strcmp(st, "automan") || !strcmp(st, "autovalve")) v_mode = VALVE_AUTO;
     if (!strcmp(st, "autostable")) v_reg = CTRL_REG_STABLE;
     if (!strcmp(st, "autoreg")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 356; v_reg = CTRL_REG_REGULATING; }
-    if (!strcmp(st, "paused")) v_w02 = true;   // W-2: MANUAL, shown until OK
+    if (!strcmp(st, "paused")) v_warn = "W-2 Not settling: switched to MANUAL, valve idle";   // shown until OK
+    if (!strcmp(st, "warn4")) v_warn = "W-4 Switch pressed at 48.04 %: check the switch";
+    if (!strcmp(st, "warn5")) v_warn = "W-5 Pressure above the sensor range: switched to MANUAL";
+    if (!strcmp(st, "warn6")) v_warn = "W-6 Valve driven the wrong way: check KDIR";
     if (!strcmp(st, "f08")) v_f16 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 

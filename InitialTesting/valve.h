@@ -87,9 +87,10 @@ const char *valve_status(void);  // one status line
 
 // AUTO (stage 8).
 bool valve_auto(void);
-// W-2 fired since the last Start AUTO, not yet acknowledged.
-bool valve_w02(void);
-void valve_w02_clear(void);
+// The strip text of a warning not yet acknowledged (W-2, W-4, W-5, W-6), or
+// NULL; cleared by OK, Start AUTO and homing.
+const char *valve_warning(void);
+void valve_warning_clear(void);
 bool valve_start_auto(const char **why);         // CTRL AUTO, Start / Resume AUTO
 bool valve_to_manual(const char **why);          // CTRL MAN, Switch to MANUAL
 // Target in 0.001 mbar, kept to 0.1 mbar; refused outside 0 to the range.

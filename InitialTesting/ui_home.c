@@ -311,10 +311,10 @@ void ui_manual_ask(void)
     ui_confirm("Switch to MANUAL? Valve holds where it is.", "Switch to\nMANUAL", to_manual);
 }
 
-static void w02_ok_event(lv_event_t *e)
+static void warn_ok_event(lv_event_t *e)
 {
     (void)e;
-    valve_w02_clear();
+    valve_warning_clear();
 }
 
 static void target_event(lv_event_t *e)
@@ -606,11 +606,12 @@ void ui_status_line(void)
                                              "Homing 2 of 3: backing off",
                                              "Homing 3 of 3: slow close" };
         ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
-    } else if (m == VALVE_MANUAL && valve_w02()) {
-        // No PAUSED state (Ryan, 22 Oct): W-2 drops to MANUAL; shown until OK.
+    } else if (m == VALVE_MANUAL && valve_warning()) {
+        // No PAUSED state (Ryan, 22 Oct): W-2, W-4, W-5 and W-6 drop to
+        // MANUAL; shown until OK.
         if (!nf)
-            ui_strip_action("OK", NULL, w02_ok_event);
-        ui_strip_set(UI_STRIP_WARN, NULL, "W-2 Not settling: switched to MANUAL, valve idle");
+            ui_strip_action("OK", NULL, warn_ok_event);
+        ui_strip_set(UI_STRIP_WARN, NULL, valve_warning());
     } else if (m == VALVE_AUTO) {
         // The regulation words, moving or not: AUTO moves the valve all the time.
         char t[48];
