@@ -20,7 +20,7 @@
 #define PMC_LINK_WRITE    0
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.11.46"
+#define PMC_FW_VERSION    "0.11.47"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
@@ -36,6 +36,12 @@
 // the motor supply to S2 RX, PA3 (Adapter Click IDC10 pad 8). 1: read, and
 // moves are refused while it reads off (supply.h); 0: not fitted.
 #define PMC_MOTOR_SENSE   1
+
+// Room pressure (0.11.47): a Pressure 21 Click (BMP581, I2C2 0x46) on the
+// Adapter Click in S2. 1: probed at start-up and read once a second
+// (BARO?, DATA baro_mbar, baro.c); nothing changes if it is not fitted.
+// 0: not built in.
+#define PMC_BARO          1
 
 // Serial number of the Druck in use, shown on the Calibration tab.
 #define PMC_DRUCK_SERIAL  "5880156"

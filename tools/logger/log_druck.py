@@ -27,7 +27,9 @@ import serial   # pip install pyserial
 
 TCP_PORT = 5000
 
-FIELDS = ["t_ms", "p_mbar", "signal_uV", "exc_mV", "ratio_mV_per_V", "die_C", "set_mV", "ok"]
+FIELDS = ["t_ms", "p_mbar", "signal_uV", "exc_mV", "ratio_mV_per_V", "die_C", "set_mV", "ok", "baro_mbar"]
+# Firmware before 0.11.47 sends the first eight only; baro_mbar is then empty.
+OLD_FIELDS = len(FIELDS) - 1
 
 
 class Link:
@@ -113,6 +115,8 @@ def log_rows(port, f, rows):
             print(line)
             continue
         vals = line.split(",")[1:]
+        if len(vals) == OLD_FIELDS:
+            vals.append("")
         if len(vals) != len(FIELDS):
             print("skipped malformed line:", line, file=sys.stderr)
             continue

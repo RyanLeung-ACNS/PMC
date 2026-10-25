@@ -34,6 +34,7 @@
 #include "sense.h"
 #include "valvepos.h"
 #include "trend.h"
+#include "baro.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -115,6 +116,7 @@ static const char *const help_sys[] = {
     "  VER?                       firmware version and build time",
     "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+    "  BARO?                      room pressure from the Pressure 21 Click (S2)",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
     "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
@@ -313,7 +315,7 @@ int main(void)
             link_printf("ERR read only over the network, use the screen\r\n");
             got = false;
         }
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
             !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");

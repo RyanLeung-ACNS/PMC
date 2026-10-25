@@ -47,6 +47,8 @@ add_executable(InitialTesting
     tinyusb_cdc_device.c
     clicks.h
     clicks.c
+    baro.h
+    baro.c
     stepper3.h
     stepper3.c
     valve.h
