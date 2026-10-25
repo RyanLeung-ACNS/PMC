@@ -33,6 +33,7 @@ static bool fallback;
 static int phy_addr = ETH_HW_NO_PHY;
 static uint32_t phy_id;
 static char ip_text[16] = "";
+static char mac_text[18] = "";
 static char status_text[112] = "Ethernet: not started";
 static const char *chip_err = "NET";   // short fault for the header
 static bool was_linked;
@@ -119,6 +120,8 @@ void ethlink_init(void)
     mac.b[3] = uid[2] ^ uid[8] ^ uid[11];
     mac.b[4] = uid[3] ^ uid[9];
     mac.b[5] = uid[4] ^ uid[10] ^ uid[5];
+    lv_snprintf(mac_text, sizeof mac_text, "%02X:%02X:%02X:%02X:%02X:%02X",
+                mac.b[0], mac.b[1], mac.b[2], mac.b[3], mac.b[4], mac.b[5]);
 
     netSetInterfaceName(ifc, "eth0");
     netSetHostname(ifc, PMC_HOSTNAME);
@@ -354,6 +357,11 @@ const char *ethlink_chip_text(void)
     if (!netGetLinkState(ifc))
         return "NO CABLE";
     return ip_text[0] ? ip_text : "DHCP...";
+}
+
+const char *ethlink_mac(void)
+{
+    return mac_text;
 }
 
 const char *ethlink_ip(void)

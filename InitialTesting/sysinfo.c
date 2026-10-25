@@ -4,6 +4,7 @@
 #include "lvgl.h"   // lv_snprintf
 #include "pmc_config.h"
 #include "link.h"
+#include "ethlink.h"
 #include "sysinfo.h"
 
 static const char *reason = "unknown";
@@ -44,6 +45,12 @@ bool sysinfo_command(const char *cmd)
 {
     if (strcmp(cmd, "VER?") != 0)
         return false;
-    link_printf("%s\r\nOK\r\n", line);
+    link_printf("%s\r\n", line);
+#if PMC_LINK_ETHERNET
+    // For a DHCP reservation: the address IT ties the fixed IP to.
+    link_printf("MAC %s, IP %s\r\n", ethlink_mac()[0] ? ethlink_mac() : "none",
+                ethlink_ip()[0] ? ethlink_ip() : "none");
+#endif
+    link_printf("OK\r\n");
     return true;
 }

@@ -30,6 +30,10 @@ bool ethlink_take_new_client(void);
 // Header text: the IP, or a short fault ("NO CABLE", "NET NO CLK", ...).
 const char *ethlink_chip_text(void);
 
+// MAC address as text ("02:3A:91:C4:5E:07"), made from the chip's unique
+// ID, the same every boot; "" if the Ethernet hardware did not start.
+const char *ethlink_mac(void);
+
 // IPv4 address as text, "" until one is set.
 const char *ethlink_ip(void);
 
