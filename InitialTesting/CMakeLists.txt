@@ -89,6 +89,9 @@ add_executable(InitialTesting
     eth_hw.c
     ethlink.h
     ethlink.c
+    modbus.h
+    modbus.c
+    mbmap.c
     main.c
 )
 

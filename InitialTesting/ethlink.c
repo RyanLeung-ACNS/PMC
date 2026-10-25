@@ -15,6 +15,7 @@
 #include "eth_hw.h"
 #include "ethlink.h"
 #include "link.h"
+#include "modbus.h"
 
 /* --------------------------------------------------------------------------
  * One TCP server on PMC_TCP_PORT, one client at a time (a new connection
@@ -32,7 +33,7 @@ static bool fallback;
 static int phy_addr = ETH_HW_NO_PHY;
 static uint32_t phy_id;
 static char ip_text[16] = "";
-static char status_text[80] = "Ethernet: not started";
+static char status_text[112] = "Ethernet: not started";
 static const char *chip_err = "NET";   // short fault for the header
 static bool was_linked;
 static bool new_client;
@@ -41,6 +42,19 @@ static bool new_client;
 static link_line_t line;
 static char rx[64];
 static size_t rx_len, rx_pos;
+
+// Modbus TCP on PMC_MODBUS_PORT (0.12.0): up to PMC_MODBUS_CLIENTS at once,
+// a new one past that replaces the one idle longest. Requests are answered
+// in the same main-loop pass; modbus.c does the protocol, mbmap.c the map.
+typedef struct {
+    Socket *s;
+    uint8_t buf[MODBUS_ADU_MAX];
+    size_t len;
+    uint32_t last_ms;
+    char ip[16];
+} mb_client_t;
+static Socket *mb_listener;
+static mb_client_t mb[PMC_MODBUS_CLIENTS];
 
 // Called by the MAC driver (overrides the library's weak default).
 void stm32f4xxEthInitGpio(NetInterface *interface)
@@ -136,7 +150,97 @@ void ethlink_init(void)
         return;
     }
     socketSetTimeout(listener, 0);
+
+    // Modbus is an extra: if it cannot listen the text link still runs.
+    mb_listener = socketOpen(SOCKET_TYPE_STREAM, SOCKET_IP_PROTO_TCP);
+    if (mb_listener &&
+        (socketBind(mb_listener, &IP_ADDR_ANY, PMC_MODBUS_PORT) != NO_ERROR ||
+         socketListen(mb_listener, PMC_MODBUS_CLIENTS) != NO_ERROR)) {
+        socketClose(mb_listener);
+        mb_listener = NULL;
+    }
+    if (mb_listener)
+        socketSetTimeout(mb_listener, 0);
     up = true;
+}
+
+static void mb_drop(mb_client_t *c)
+{
+    if (c->s) {
+        socketClose(c->s);
+        c->s = NULL;
+    }
+    c->len = 0;
+}
+
+static void mb_task(void)
+{
+    if (!mb_listener)
+        return;
+
+    IpAddr from;
+    uint16_t port;
+    Socket *s = socketAccept(mb_listener, &from, &port);
+    if (s) {
+        mb_client_t *c = &mb[0];
+        for (int i = 0; i < PMC_MODBUS_CLIENTS; i++) {
+            if (!mb[i].s) { c = &mb[i]; break; }
+            if (lv_tick_elaps(mb[i].last_ms) > lv_tick_elaps(c->last_ms))
+                c = &mb[i];
+        }
+        mb_drop(c);
+        c->s = s;
+        c->last_ms = lv_tick_get();
+        socketSetTimeout(s, 0);
+        ipAddrToString(&from, c->ip);
+    }
+
+    for (int i = 0; i < PMC_MODBUS_CLIENTS; i++) {
+        mb_client_t *c = &mb[i];
+        if (!c->s)
+            continue;
+        TcpState st = tcpGetState(c->s);
+        if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED) {
+            mb_drop(c);
+            continue;
+        }
+        // A client that sends half a request and stops is dropped.
+        if (c->len && lv_tick_elaps(c->last_ms) > PMC_MODBUS_IDLE_MS) {
+            mb_drop(c);
+            continue;
+        }
+        size_t got = 0;
+        if (socketReceive(c->s, c->buf + c->len, sizeof c->buf - c->len, &got, 0) != NO_ERROR || got == 0)
+            continue;
+        c->len += got;
+        c->last_ms = lv_tick_get();
+        // Every whole request in the buffer, in order.
+        for (;;) {
+            size_t n = modbus_frame_len(c->buf, c->len);
+            if (n == (size_t)-1) {
+                mb_drop(c);
+                break;
+            }
+            if (n == 0)
+                break;
+            uint8_t out[MODBUS_ADU_MAX];
+            size_t written;
+            mbmap_set_peer(c->ip);
+            size_t r = modbus_handle(c->buf, n, out);
+            if (r)
+                socketSend(c->s, out, r, &written, 0);
+            memmove(c->buf, c->buf + n, c->len - n);
+            c->len -= n;
+        }
+    }
+}
+
+int ethlink_modbus_clients(void)
+{
+    int n = 0;
+    for (int i = 0; i < PMC_MODBUS_CLIENTS; i++)
+        n += mb[i].s != NULL;
+    return n;
 }
 
 static void drop_client(void)
@@ -177,6 +281,8 @@ void ethlink_task(void)
         if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED)
             drop_client();
     }
+
+    mb_task();
 
     Ipv4Addr a = IPV4_UNSPECIFIED_ADDR;
     ipv4GetHostAddr(ifc, &a);
@@ -274,9 +380,10 @@ const char *ethlink_status(void)
     else if (!ip_text[0])
         lv_snprintf(status_text, sizeof status_text, "Ethernet: link up, waiting for DHCP");
     else
-        lv_snprintf(status_text, sizeof status_text, "Ethernet: %s%s port %d, %s",
+        lv_snprintf(status_text, sizeof status_text, "Ethernet: %s%s port %d, %s; Modbus %d: %d",
                     ip_text, fallback ? " (no DHCP, fallback)" : "", PMC_TCP_PORT,
-                    client ? "client connected" : "no client");
+                    client ? "client connected" : "no client", PMC_MODBUS_PORT,
+                    ethlink_modbus_clients());
     return status_text;
 }
 

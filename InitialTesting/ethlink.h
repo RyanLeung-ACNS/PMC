@@ -35,6 +35,8 @@ const char *ethlink_ip(void);
 
 bool ethlink_link_up(void);
 bool ethlink_client_connected(void);
+// Modbus TCP clients connected on PMC_MODBUS_PORT (modbus.h).
+int ethlink_modbus_clients(void);
 
 // Short text describing the link state.
 const char *ethlink_status(void);
