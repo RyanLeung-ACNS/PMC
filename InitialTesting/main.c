@@ -309,6 +309,10 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
+        if (got && PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !link_line_reads(line)) {
+            link_printf("ERR read only over the network, use the screen\r\n");
+            got = false;
+        }
         if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
             !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))

@@ -36,6 +36,15 @@ bool link_line_idle(link_line_t *l, uint32_t idle_ms, char *out, size_t n)
     return l->len > 0 && lv_tick_elaps(l->last_ms) >= idle_ms && line_take(l, out, n);
 }
 
+bool link_line_reads(const char *line)
+{
+    size_t w = strcspn(line, " ");
+    if (w > 0 && line[w - 1] == '?')
+        return true;
+    return strcmp(line, "HELP") == 0 || strncmp(line, "HELP ", 5) == 0 || strcmp(line, "DATA ON") == 0 ||
+           strcmp(line, "DATA OFF") == 0 || strcmp(line, "TREND DUMP") == 0 || strncmp(line, "TREND DUMP ", 11) == 0;
+}
+
 #if PMC_LINK_ETHERNET
 
 void link_init(void)                         { ethlink_init(); }
