@@ -159,6 +159,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | --- | --- |
 | `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
 | `VER?` | Firmware version and build time |
+| `*IDN?` | Identity in one line, `PMC,MM4,<chip id>,<version>`, as instrument software expects: no echo and no `OK` |
 | `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |

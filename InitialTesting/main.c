@@ -114,6 +114,7 @@ static const char *const help_auto[] = {
 static const char *const help_sys[] = {
     "System:",
     "  VER?                       firmware version and build time",
+    "  *IDN?                      identity, one line: PMC,MM4,<chip id>,<version> (no echo, no OK)",
     "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
     "  BARO?                      room pressure from the Pressure 21 Click (S2)",
@@ -309,8 +310,10 @@ int main(void)
             sense_second();
         }
         bool got = link_getline(line, sizeof line);
-        if (got)
-            link_printf("> %s\r\n", line);   // echo, so the log shows what was received
+        // Echo, so the log shows what was received; not for *IDN?, whose
+        // standard one-line reply instrument software reads as the first line.
+        if (got && strcmp(line, "*IDN?") != 0)
+            link_printf("> %s\r\n", line);
         if (got && PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !link_line_reads(line)) {
             link_printf("ERR read only over the network, use the screen\r\n");
             got = false;
