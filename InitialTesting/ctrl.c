@@ -56,6 +56,7 @@ void ctrl_start(ctrl_t *c, const ctrl_tune_t *k, uint32_t t_ms, float pv, int32_
     c->win_pv = pv;
     c->noresp = 0;
     c->conv_ms = t_ms;
+    c->right_ms = t_ms;
     c->move = false;
     c->kp_used = kp_steps(k);
     c->kdir_used = k->kdir;
@@ -164,6 +165,20 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         c->win_t = 0;
         c->win_pos = c->pos_f;
         c->win_pv = pv;
+    }
+
+    // W-6 wrong way: pinned at the end that moves the pressure away from the
+    // target. With KDIR right the loop leaves that end within a step or two.
+    {
+        const float tol = 0.01f * pos_max;
+        const bool shut = in->limit || (float)in->pos <= lo + tol;
+        const bool full = (float)in->pos >= pos_max - tol;
+        const bool wrong = !in->moving && ((shut && c->sp > k->band && c->sp - pv > k->band) ||
+                                           (full && pv - c->sp > k->band));
+        if (!wrong)
+            c->right_ms = in->t_ms;
+        else if (since(in->t_ms, c->right_ms) > CTRL_TWRONG_S * 1000u)
+            return CTRL_W06;
     }
 
     // W-2 convergence timeout.
