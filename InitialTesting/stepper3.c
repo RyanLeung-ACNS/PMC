@@ -792,7 +792,8 @@ bool stepper3_command(const char *line)
         link_printf("OK coils off at %ld\r\n", (long)position);
     } else if (lock_why && (strncmp(a, " MOVE", 5) == 0 || strncmp(a, " GOTO", 5) == 0 ||
                             strncmp(a, " OVERRIDE", 9) == 0 || strcmp(a, " ZERO") == 0 ||
-                            strncmp(a, " MODE ", 6) == 0)) {
+                            strncmp(a, " MODE ", 6) == 0 || strncmp(a, " DIR ", 5) == 0 ||
+                            strncmp(a, " ORDER ", 7) == 0)) {   // DIR, ORDER clear the homing
         link_printf("ERR %s\r\n", lock_why);
     } else if (strncmp(a, " MOVE", 5) == 0) {
         if (!parse_int(a + 5, -STEPPER3_MAX_MOVE, STEPPER3_MAX_MOVE, &v) || v == 0)
