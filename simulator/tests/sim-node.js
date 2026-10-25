@@ -19,6 +19,9 @@ function load() {
     x, halted: () => halted,
     out: '',
     boot(flash) {
+      // application_init() runs once per instance, as on the board: use a new load() per boot.
+      if (sim.booted) throw new Error('boot() twice on one instance: use a new load()');
+      sim.booted = true;
       x.sim_bench_init();
       const f = new Uint8Array(x.memory.buffer, x.sim_flash(), x.sim_flash_size());
       if (flash) f.set(flash); else f.fill(0xff);
@@ -27,7 +30,15 @@ function load() {
     },
     run(ms) { for (let t = 0; t < ms; t += 100) { x.sim_run(Math.min(100, ms - t)); sim.drain(); } },
     drain() { const n = x.sim_tx_len(); if (n) { sim.out += Buffer.from(new Uint8Array(x.memory.buffer, x.sim_tx(), n)).toString(); x.sim_tx_clear(); } },
-    send(line) { const b = Buffer.from(line + '\r'); new Uint8Array(x.memory.buffer, x.sim_rx_buf(), b.length).set(b); x.sim_rx(b.length); },
+    send(line) {
+      // sim_rx_buf holds 256 bytes: longer lines go in parts, as the page sends them.
+      const b = Buffer.from(line + '\r');
+      for (let i = 0; i < b.length; i += 256) {
+        const part = b.subarray(i, i + 256);
+        new Uint8Array(x.memory.buffer, x.sim_rx_buf(), part.length).set(part);
+        x.sim_rx(part.length);
+      }
+    },
     cmd(line, ms = 300) { sim.out = ''; sim.send(line); sim.run(ms); return sim.out; },
     tap(px, py, ms = 400) { x.sim_touch(px, py, 1); sim.run(120); x.sim_touch(px, py, 0); sim.run(ms); },
     png(file) {

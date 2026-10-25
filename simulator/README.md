@@ -26,6 +26,7 @@ The stand-ins are in `wasm/`: `include/` (register structs for GPIO, RCC, TIM7, 
 ## Tests
 
 - `node simulator/tests/run.js [--png dir]`: bench scenarios against the build, in node, about 3 s: boot, homing from the screen, Set position, a MANUAL move, supply off, F-1 to F-6 (except F-5), W-2, W-3, settings and saved position over a power cycle.
+- `node simulator/tests/explore.js`, `explore2.js`, `auto-commands.js`: exploratory runs from the 0.11.43 bug hunt (findings in the project notes); FIND lines are suspected bugs, not failures. At 0.11.44 the only FIND is MOT RATE and HOLD being accepted in AUTO, left for Ryan to decide.
 - `node simulator/tests/page.js [shot.png]`: the page in Chromium (Playwright): taps, homing, a console command, settings kept over a reload.
 
 ## Not simulated
