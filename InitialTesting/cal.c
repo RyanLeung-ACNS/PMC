@@ -10,6 +10,7 @@
 #include "rtclock.h"
 #include "pmc_config.h"   // PMC_DRUCK_SERIAL
 #include "clicks.h"   // live ratio for CAL VAC / CAL AIR
+#include "valve.h"    // valve_auto: no cal changes under AUTO
 
 /* --------------------------------------------------------------------------
  * Old stand-alone record (0.3.x to 0.5.x), read at start-up only. From 0.6.0
@@ -277,6 +278,9 @@ static void capture_start(int what, const char *s)
 bool cal_capture(int what, int32_t p_mmbar, const char **why)
 {
     const clicks_state_t *s = clicks_state();
+    // In AUTO the line is held at the target, not at vacuum or air, and a
+    // new point would move the reading AUTO regulates on (0.11.44).
+    if (valve_auto())    { *why = "Switch to MANUAL first"; return false; }
     if (cap.what)        { *why = "a capture is running"; return false; }
     if (!s->reading_ok)  { *why = "no valid Druck reading"; return false; }
     // A vacuum reads under 5 % of span (0.5 mV/V); room air at least 40 % of
@@ -376,6 +380,8 @@ bool cal_command(const char *line)
 
     if (strcmp(a, "?") == 0) {
         show();
+    } else if (valve_auto()) {
+        link_printf("ERR Switch to MANUAL first\r\n");   // a cal change moves the reading AUTO uses
     } else if (strncmp(a, " NEW", 4) == 0) {
         const char *id = a + 4;
         while (*id == ' ') id++;
