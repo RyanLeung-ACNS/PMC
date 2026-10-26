@@ -752,34 +752,31 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9], *sup;
+    lv_obj_t *v[9], *sup;   // v[5] unused since 0.12.9
 } dp;
 
-// Valve motor row: position, limit switch and steps past it, at 50 Hz so
-// the switch shows as the hardware reads it (limit.c samples every 5 ms).
+// Valve motor row: position and limit switch, at 50 Hz so the switch
+// shows as the hardware reads it (limit.c samples every 5 ms).
 static void diag_motor(lv_timer_t *t)
 {
     (void)t;
     char buf[16];
     lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
     ui_set_text(dp.v[3], buf);
-    bool pressed = limit_open_now();
-    ui_set_text(dp.v[4], pressed ? "Pressed" : "Released");
-    int32_t beyond;
-    if (pressed && valve_beyond_switch(&beyond))
-        lv_snprintf(buf, sizeof buf, "%ld", (long)beyond);
-    else
-        lv_strlcpy(buf, "--", sizeof buf);
-    ui_set_text(dp.v[5], buf);
+    ui_set_text(dp.v[4], limit_open_now() ? "Pressed" : "Released");
 }
 
 
 static void diag_build(lv_obj_t *scr)
 {
     static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
+    // The valve motor row: supply, steps, limit switch ("Past limit" went
+    // in 0.12.9, Ryan 26 Oct).
     static const char *const caps[9] = { "Signal, mV", "Supply, V", "Before cal, mB",
-                                         "Position, steps", "Limit switch", "Beyond limit",
+                                         "Supply, V", "Steps", "Limit switch",
                                          "Result", "Moved, steps", "Took, s" };
+    lv_obj_t **const to[9] = { &dp.v[0], &dp.v[1], &dp.v[2], &dp.sup, &dp.v[3], &dp.v[4],
+                               &dp.v[6], &dp.v[7], &dp.v[8] };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
         // 16 px as the Menu captions, centred on the row (Ryan, 22 Oct).
@@ -787,17 +784,8 @@ static void diag_build(lv_obj_t *scr)
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_update_layout(l);
         lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
-        // The valve motor row has four: its supply first (0.11.35).
-        if (r == 1) {
-            static const char *const mcap[4] = { "Supply, V", "Steps", "Limit switch", "Past limit" };
-            lv_obj_t **to[4] = { &dp.sup, &dp.v[3], &dp.v[4], &dp.v[5] };
-            static const int32_t mx[4] = { 98, 182, 272, 380 }, mw[4] = { 80, 86, 104, 90 };
-            for (int c = 0; c < 4; c++)
-                *to[c] = ui_info(scr, mx[c], 104, mw[c], 48, mcap[c]);
-            continue;
-        }
         for (int c = 0; c < 3; c++)
-            dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
+            *to[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
     lv_timer_t *t = lv_timer_create(diag_motor, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);

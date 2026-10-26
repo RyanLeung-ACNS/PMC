@@ -156,8 +156,6 @@ uint32_t valve_event_total(void);                // since boot
 bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **text);
 bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s);   // false: not since boot
 const char *valve_last_cal_iso(void);   // "YYYY-MM-DD HH:MM:SS" then, "" if the clock was not set
-// While the closed switch is pressed: steps closed past where it opened.
-bool valve_beyond_switch(int32_t *steps);
 
 // Adds an event to the log (tag up to 5 characters).
 void valve_event(const char *tag, const char *fmt, ...);

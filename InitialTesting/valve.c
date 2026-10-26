@@ -140,8 +140,6 @@ static int32_t question_at;       // count where the switch was pressed
 static uint32_t cal_done_ms, cal_took_s;   // last good calibration
 static bool cal_done;
 static char cal_done_iso[20];              // its wall time, "" if the clock is not set
-static int32_t switch_at;         // count where the switch last opened
-static bool switch_was_open;
 
 static char status_text[160];
 
@@ -423,10 +421,6 @@ void valve_task(void)
     if (mode == VALVE_CALIBRATING && cal_settling && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
     supply_check();
-    bool open = limit_open_now();
-    if (open && !switch_was_open)
-        switch_at = stepper3_position();
-    switch_was_open = open;
 }
 
 /* --------------------------------------------------------------------------
@@ -1286,7 +1280,6 @@ bool valve_answer(bool set_zero, const char **why)
     if (set_zero) {
         int32_t d = stepper3_position() - question_at;
         stepper3_set_position(sc(n_offset) + d);
-        switch_at += sc(n_offset) - question_at;
         ev("W-1", "Point set as 0 %%, count %ld", (long)sc(n_offset));
         if (!strncmp(warn, "W-4", 3))
             warn[0] = 0;   // the switch was right, the count was not
@@ -1339,13 +1332,6 @@ bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s)
     return true;
 }
 
-bool valve_beyond_switch(int32_t *steps)
-{
-    if (!switch_was_open)
-        return false;
-    *steps = switch_at - stepper3_position();
-    return true;
-}
 
 bool valve_command(const char *line)
 {
