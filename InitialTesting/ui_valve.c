@@ -8,6 +8,7 @@
 #include "valve.h"
 #include "valvepos.h"
 #include "supply.h"
+#include "link.h"
 #include "ui.h"
 #include "fixed.h"
 
@@ -840,10 +841,17 @@ static void diag_refresh(void)
     ui_set_text(dp.sup, buf);
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
-    char t[16];
-    lv_snprintf(buf, sizeof buf, "Firmware %s. Board %s \xC2\xB0" "C. Link %s.", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc), PMC_LINK_ETHERNET ? "Ethernet" : "USB");
-    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, buf);
+    char t[16], info[80];
+#if PMC_LINK_ETHERNET
+    // The address, or why there is none (NO CABLE, DHCP..., NET NO CLK,
+    // NET NO PHY): the only place on screen the network shows (0.11.51).
+    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C.\nEthernet %s", PMC_FW_VERSION,
+                ui_fmt1(t, sizeof t, s->die_mc), link_chip_text());
+#else
+    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C. Link USB.", PMC_FW_VERSION,
+                ui_fmt1(t, sizeof t, s->die_mc));
+#endif
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, info);
 }
 
 const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };
