@@ -57,9 +57,9 @@ static bool v_sp_set;
 static int32_t v_sp = 5000;
 static ctrl_reg_t v_reg = CTRL_REG_BAND;
 bool valve_auto(void) { return v_mode == VALVE_AUTO; }
-static bool v_w02;
-bool valve_w02(void) { return v_w02; }
-void valve_w02_clear(void) { v_w02 = false; }
+static const char *v_warn;
+const char *valve_warning(void) { return v_warn; }
+void valve_warning_clear(void) { v_warn = NULL; }
 int valve_fault_count(void);
 bool valve_start_auto(const char **why)
 {
@@ -95,23 +95,23 @@ int valve_fault_count(void) { return v_f01 + v_f16 + v_f12; }
 bool valve_motion_blocked(void) { return v_f12 || v_f16; }
 bool valve_fault_first(const char **tag, const char **text)
 {
-    if (v_f01) { *tag = "F-01"; *text = "No Druck signal"; return true; }
-    if (v_f12) { *tag = "F-05"; *text = "Motion timeout"; return true; }
-    if (v_f16) { *tag = "F-06"; *text = "No pressure response"; return true; }
+    if (v_f01) { *tag = "F-1"; *text = "No pressure signal"; return true; }
+    if (v_f12) { *tag = "F-5"; *text = "Motion timeout"; return true; }
+    if (v_f16) { *tag = "F-6"; *text = "No pressure response"; return true; }
     return false;
 }
 bool valve_fault_is(const char *tag)
 {
-    return (v_f01 && !strcmp(tag, "F-01")) || (v_f12 && !strcmp(tag, "F-05")) || (v_f16 && !strcmp(tag, "F-06"));
+    return (v_f01 && !strcmp(tag, "F-1")) || (v_f12 && !strcmp(tag, "F-5")) || (v_f16 && !strcmp(tag, "F-6"));
 }
-int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = v_f16 = false; if (n) strcpy(left, v_f01 ? "F-01" : ""); return a; }
+int valve_reset(char *left, size_t n) { int a = valve_fault_count(); v_f12 = v_f16 = false; if (n) strcpy(left, v_f01 ? "F-1" : ""); return a; }
 static bool v_q;
 bool valve_question(int32_t *p) { if (v_q && p) *p = 187; return v_q; }
 bool valve_answer(bool z, const char **why) { (void)z; (void)why; v_q = false; return true; }
 bool valve_fault_get(int i, valve_fault_t *f)
 {
-    const char *tags[3] = { "F-01", "F-05", "F-06" },
-               *texts[3] = { "No Druck signal", "Motion timeout", "No pressure response" };
+    const char *tags[3] = { "F-1", "F-5", "F-6" },
+               *texts[3] = { "No pressure signal", "Motion timeout", "No pressure response" };
     bool on[3] = { v_f01, v_f12, v_f16 };
     int k = 0;
     for (int j = 0; j < 3; j++) {
@@ -123,7 +123,7 @@ bool valve_fault_get(int i, valve_fault_t *f)
     }
     return false;
 }
-static const char *const ev_tag[] = { "STOP", "W-01", "REF", "REF", "BOOT" };
+static const char *const ev_tag[] = { "STOP", "W-1", "REF", "REF", "BOOT" };
 static const char *const ev_text[] = { "Operator stop at count 33880", "Point set as 0 %, count 0",
     "Homed in 15 s, position 0", "Homing started at count 1203", "Power-up (event only), valve not homed" };
 int valve_event_count(void) { return 5; }
@@ -286,13 +286,16 @@ int main(int argc, char **argv)
     if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     // AUTO (stage 8).
-    bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strcmp(st, "f08") || !strcmp(st, "trendauto");
+    bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strncmp(st, "warn", 4) || !strcmp(st, "f08") || !strcmp(st, "trendauto");
     if (aut) { v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342; v_sp_set = strcmp(st, "autofirst") != 0; }
     if (!strcmp(st, "auto") || !strcmp(st, "autostable") || !strcmp(st, "autoreg") || !strcmp(st, "autosp") ||
         !strcmp(st, "automan") || !strcmp(st, "autovalve")) v_mode = VALVE_AUTO;
     if (!strcmp(st, "autostable")) v_reg = CTRL_REG_STABLE;
     if (!strcmp(st, "autoreg")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 356; v_reg = CTRL_REG_REGULATING; }
-    if (!strcmp(st, "paused")) v_w02 = true;   // W-02: MANUAL, shown until OK
+    if (!strcmp(st, "paused")) v_warn = "W-2 Not settling: switched to MANUAL, valve idle";   // shown until OK
+    if (!strcmp(st, "warn4")) v_warn = "W-4 Switch pressed at 48.04 %: check the switch";
+    if (!strcmp(st, "warn5")) v_warn = "W-5 Pressure above the sensor range: switched to MANUAL";
+    if (!strcmp(st, "warn6")) v_warn = "W-6 Valve driven the wrong way: check KDIR";
     if (!strcmp(st, "f08")) v_f16 = true;
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { v_f01 = true; v_f12 = true; }
 

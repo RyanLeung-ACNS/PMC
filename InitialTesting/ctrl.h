@@ -13,17 +13,22 @@
  *
  * Once per Ts (1 s), straight after the pressure read:
  *   - PI in position form, D on the measurement (Kd 0, off), output in steps.
- *     Bumpless entry: the first output is the position in force.
+ *     Bumpless entry: the first output is the position in force. A KP or
+ *     KDIR change in AUTO re-bases the integral the same way (0.11.38).
  *   - Anti-windup: no integration past POS_MAX or AUTO min in the direction
  *     of the error, while the closed switch blocks closing, or while the valve
  *     is still more than CTRL_LEAD_MAX steps short of the last command.
  *   - Commands within the deadband (DB steps) of the last one sent are held.
  *   - Response monitor: every CTRL_TCHECK s, the counted position through a
- *     CTRL_TLAG s lag against the pressure change. F-06 after CTRL_NRESP
+ *     CTRL_TLAG s lag against the pressure change. F-6 after CTRL_NRESP
  *     windows with no response. A window with the valve pinned fully open,
  *     or at AUTO min, while the loop asks for more is judged too. A
  *     wrong-way change counts as a response (no fault since 0.11.20).
- *   - W-02: outside the target band for CTRL_TCONV s; AUTO ends, MANUAL, valve idle.
+ *   - W-2: outside the target band for CTRL_TCONV s; AUTO ends, MANUAL, valve idle.
+ *   - W-6 (0.11.45): the valve at rest at AUTO min (or on the closed switch)
+ *     with the pressure below the target band, or fully open above it, for
+ *     CTRL_TWRONG s. Opening raises this pressure, so AUTO is driving the
+ *     wrong way (KDIR the wrong way round); AUTO ends, MANUAL, valve idle.
  */
 
 // Fixed for now (the simulator's DEF_P); the tuning in cfg.c is KP, TI,
@@ -31,10 +36,11 @@
 #define CTRL_TS_S       1       // control step, s
 #define CTRL_KD         0.0f    // derivative, % per mbar/s (off)
 #define CTRL_TCHECK_S   30      // response window, s
-#define CTRL_NRESP      5       // windows with no response before F-06
+#define CTRL_NRESP      5       // windows with no response before F-6
 #define CTRL_DPMIN      0.05f   // smallest pressure change that counts, mbar
 #define CTRL_CHECKMIN   1000    // smallest lagged move that is judged, steps
-#define CTRL_TCONV_S    1800    // W-02 after this long outside the band, s
+#define CTRL_TCONV_S    1800    // W-2 after this long outside the band, s
+#define CTRL_TWRONG_S   60      // W-6 after this long pinned the wrong way, s
 #define CTRL_LEAD_MAX   3000    // travel anti-windup, steps
 #define CTRL_TLAG_S     40      // process lag for the response monitor, s
 #define CTRL_STABLE_S   60      // in band this long reads Stable, s
@@ -62,7 +68,8 @@ typedef struct {
 typedef enum {
     CTRL_RUN,          // carry on (a move may be requested)
     CTRL_F06,          // no pressure response
-    CTRL_W02           // not settling: to MANUAL
+    CTRL_W02,          // not settling: to MANUAL
+    CTRL_W06           // driving the wrong way: to MANUAL
 } ctrl_result_t;
 
 typedef enum { CTRL_REG_NONE, CTRL_REG_REGULATING, CTRL_REG_BAND, CTRL_REG_STABLE } ctrl_reg_t;
@@ -78,10 +85,13 @@ typedef struct {
     float win_t, win_pos, win_pv;
     int noresp;
     uint32_t conv_ms;  // last time in band (or target set, or AUTO started)
+    uint32_t right_ms; // last time not pinned the wrong way (W-6)
     bool in_band;
     uint32_t in_band_ms;
     bool move;         // ctrl_step asks for a move to move_to
     int32_t move_to;
+    float kp_used;     // gain (steps per mbar) and response sign of the last
+    int kdir_used;     // step: a change in AUTO re-bases the integral
 } ctrl_t;
 
 void ctrl_init(ctrl_t *c);

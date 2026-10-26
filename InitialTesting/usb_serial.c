@@ -71,6 +71,13 @@ void usb_serial_init(void)
 {
     usb_clock_48mhz();
     usb_hw_init();
+    // NECTO's terminal opens COM3 without DTR. TinyUSB's default then lets a
+    // full TX FIFO overwrite its oldest bytes, which dropped the start of
+    // replies longer than the FIFO (PID? on the bench, 26 Oct). The FIFO is
+    // kept from overwriting; usb_serial_printf waits for room instead.
+    static const tud_cdc_configure_t cdc_cfg = {
+        .rx_persistent = 0, .tx_persistent = 0, .tx_overwritabe_if_not_connected = 0 };
+    tud_cdc_configure(&cdc_cfg);
     tusb_init(0, NULL);
 }
 
@@ -116,7 +123,13 @@ void usb_serial_printf(const char *fmt, ...)
 
     // The CDC TX FIFO (tinyusb_cdc_device.c, 256 bytes) can be full, so a longer
     // line has to be fed in pieces while the stack sends. Give up after
-    // ~5 ms if the PC is not reading (port closed), dropping the rest.
+    // ~10 ms if the PC is not reading (no terminal open), dropping the rest.
+    // After that, lines that do not fit are dropped whole without waiting,
+    // until the PC reads again, so a closed port costs the loop nothing.
+    static bool stuck;
+    if (stuck && tud_cdc_write_available() < (uint32_t)len)
+        return;
+    stuck = false;
     uint32_t sent = 0;
     uint32_t t0 = lv_tick_get();
     while (sent < (uint32_t)len) {
@@ -125,8 +138,10 @@ void usb_serial_printf(const char *fmt, ...)
         tud_cdc_write_flush();
         if (n == 0) {
             tud_task();
-            if (lv_tick_elaps(t0) > 5)
+            if (lv_tick_elaps(t0) > 10) {
+                stuck = true;
                 break;
+            }
         }
     }
 }

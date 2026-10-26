@@ -330,6 +330,8 @@ void ui_btn_enable(lv_obj_t *b, bool on)
         return;
     if (on) lv_obj_remove_state(b, ST_DIS);
     else    lv_obj_add_state(b, ST_DIS);
+    if (lv_obj_has_flag(b, BTN_NAV))   // the chevron has its own colour
+        lv_obj_set_style_text_color(lv_obj_get_child(b, 1), on ? UI_CHEV : UI_IDLE, 0);
 }
 
 bool ui_btn_disabled(lv_event_t *e)
@@ -542,6 +544,10 @@ static void show(lv_obj_t *o, bool on)
 void ui_msg(const char *text)
 {
     lv_strlcpy(msg_text, text, sizeof msg_text);
+    // Refusal reasons shared with the link start in lower case there; on
+    // the screen every message starts with a capital (Ryan, 26 Oct).
+    if (msg_text[0] >= 'a' && msg_text[0] <= 'z')
+        msg_text[0] = (char)(msg_text[0] - 'a' + 'A');
     // With a fault latched the message is brief: the fault text is the one to read.
     msg_until = lv_tick_get() + (valve_fault_count() ? 2000 : 5000);
     if (!msg_until)
@@ -728,15 +734,20 @@ static void frame_refresh(void)
     // Mode badge: red and filled with a latched fault, filled white in
     // AUTO (dark lettering), outlined white in every other mode.
     static int badge_kind = -1;
-    // NOT HOMED (kind 3): white text, no outline (Ryan, 22 Oct).
-    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : m == VALVE_NOT_CAL ? 3 : 0;
+    // NOT HOMED outlined as the other modes (Ryan, 24 Oct; had none).
+    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : 0;
     if (kind != badge_kind) {
         badge_kind = kind;
         lv_obj_set_style_bg_opa(mode_lbl, kind == 1 || kind == 2 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
         lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
-        lv_obj_set_style_border_opa(mode_lbl, kind == 3 ? LV_OPA_TRANSP : LV_OPA_COVER, 0);   // width kept: text stays put
         ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
+    }
+    // NOT HOMED is wider than the button column: the badge grows left.
+    bool wide = m == VALVE_NOT_CAL && !nf;
+    if ((lv_obj_get_width(mode_lbl) > 109) != wide) {
+        lv_obj_set_x(mode_lbl, wide ? 341 : 361);
+        lv_obj_set_width(mode_lbl, wide ? 129 : 109);
     }
 
 
@@ -788,7 +799,7 @@ static void frame_refresh(void)
         strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
     } else if (hot) {
         char v[16];
-        lv_snprintf(buf, sizeof buf, "W-03 Controller hot, %s \xC2\xB0" "C", ui_fmt1(v, sizeof v, die_mc));
+        lv_snprintf(buf, sizeof buf, "W-3 Controller hot, %s \xC2\xB0" "C", ui_fmt1(v, sizeof v, die_mc));
         strip_draw(UI_STRIP_WARN, NULL, buf, false, false);
     } else {
         strip_draw(line_kind, line_icon, line_text, false, act_cb != NULL);
@@ -1333,14 +1344,14 @@ static void question_check(void)
             char e[16];
             int64_t m = ((int64_t)off * 100000 + pm - 1) / pm;   // 0.001 %, rounded up to 0.1
             ui_fmt1(e, sizeof e, (m + 99) / 100 * 100);
-            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved %s %%, may be out by %s %%.", v, e);
+            lv_snprintf(t, sizeof t, "Valve position unknown.\nLast saved %s %%, accurate to within %s %%.", v, e);
         } else {
-            lv_snprintf(t, sizeof t, "Valve position not known.\nSaved position %s %%.", v);
+            lv_snprintf(t, sizeof t, "Valve position unknown.\nLast saved position %s %%.", v);
         }
-        // Home, Set position (the list, the saved one in it), or the saved
-        // position at once (Ryan, 23 Oct: the two jobs apart).
+        // The saved position at once, Set position (the list, the saved one
+        // in it), or Home valve, the filled one (Ryan, 24 Oct).
         lv_snprintf(ok, sizeof ok, "Use\n%s %%", v);
-        ui_ask3(t, "Home", sp_calibrate, "Set\nposition", ui_set_position_ask, ok, sp_use);
+        ui_ask3(t, ok, sp_use, "Set\nposition", ui_set_position_ask, "Home\nvalve", sp_calibrate);
     }
     asking = false;
     overlay_q = want;

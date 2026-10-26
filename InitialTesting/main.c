@@ -34,6 +34,7 @@
 #include "sense.h"
 #include "valvepos.h"
 #include "trend.h"
+#include "baro.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -108,13 +109,14 @@ static const char *const help_auto[] = {
     "  PID?                       all control parameters",
     "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
-    "In AUTO: F-06 no response, W-02 to MANUAL after 1800 s",
+    "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
 };
 static const char *const help_sys[] = {
     "System:",
     "  VER?                       firmware version and build time",
     "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
+    "  BARO?                      room pressure from the Pressure 21 Click (S2)",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
     "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
@@ -309,7 +311,11 @@ int main(void)
         bool got = link_getline(line, sizeof line);
         if (got)
             link_printf("> %s\r\n", line);   // echo, so the log shows what was received
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
+        if (got && PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !link_line_reads(line)) {
+            link_printf("ERR read only over the network, use the screen\r\n");
+            got = false;
+        }
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
             !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");

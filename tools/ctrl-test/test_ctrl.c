@@ -1,8 +1,8 @@
 /* Host test of ctrl.c (stage 8) against the C port of the simulator's flow
  * line (model.c). Runs the porting plan's cases and checks them:
  *   closed to 5 mB, 4.5 to 10 mB, targets 5, 7, 3, 5 with no false trip,
- *   helium off -> F-06, pump off -> W-02 to MANUAL (no wrong-way fault since 0.11.20),
- *   slipping drive -> F-06, AUTO min 0 closing to the seat without a fault, and the
+ *   helium off -> F-6, pump off -> W-2 to MANUAL (no wrong-way fault since 0.11.20),
+ *   slipping drive -> F-6, AUTO min 0 closing to the seat without a fault, and the
  *   entry refusals. -v prints a line a second. */
 #include <math.h>
 #include <stdio.h>
@@ -10,6 +10,7 @@
 
 #include "ctrl.h"
 #include "model.h"
+#include <stdlib.h>
 
 static bool verbose;
 static int fails;
@@ -21,7 +22,9 @@ static ctrl_tune_t K = { 4.0f, 0.25f, 8, 1, 0.1f, 14.0f, 99072 };
 #define FS 1034.0f
 
 typedef enum { MANUAL, AUTO } mode_t_;
-static bool w02;
+static bool w02, w06;
+static double w06_t;
+static bool w06_seen;   // any W-6 in the cases with KDIR right
 static mode_t_ mode;
 static ctrl_t C;
 static ctrl_result_t fault;   // last fault, CTRL_RUN if none
@@ -52,6 +55,11 @@ static void ctrl_tick(void)
         model_stop();
         mode = MANUAL;
         w02 = true;
+    } else if (r == CTRL_W06) {
+        model_stop();
+        mode = MANUAL;
+        w06 = w06_seen = true;
+        w06_t = M.t;
     } else {
         model_stop();
         fault = r;
@@ -104,7 +112,7 @@ static void fresh(void)
     ctrl_init(&C);
     mode = MANUAL;
     fault = CTRL_RUN;
-    w02 = false;
+    w02 = w06 = false;
     run(120, 0);
 }
 
@@ -186,7 +194,7 @@ int main(int argc, char **argv)
     run(2000, 5);
     // No wrong-way fault: with the valve pinned open and the pressure flat,
     // the response monitor catches it instead.
-    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-06 after %.0f s, MANUAL, valve idle", fault_t - t0);
+    CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-6 after %.0f s, MANUAL, valve idle", fault_t - t0);
 
     // Pump off at 5 mB.
     fresh();
@@ -196,7 +204,7 @@ int main(int argc, char **argv)
     M.pump = false;
     t0 = M.t;
     run(2000, 5);
-    CHECK(fault == CTRL_RUN && w02 && mode == MANUAL, "pump off: no fault, W-02 to MANUAL (t %.0f s)", M.t - t0);
+    CHECK(fault == CTRL_RUN && w02 && mode == MANUAL, "pump off: no fault, W-2 to MANUAL (t %.0f s)", M.t - t0);
 
     // Slipping drive at 5 mB, then a step in target.
     fresh();
@@ -207,7 +215,7 @@ int main(int argc, char **argv)
     set_sp(7);
     t0 = M.t;
     run(900, 7);
-    CHECK(fault == CTRL_F06 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-06 after %.0f s (sim 150)", fault_t - t0);
+    CHECK(fault == CTRL_F06 && mode == MANUAL && fabs(fault_t - t0 - 150) <= 2, "slipping drive: F-6 after %.0f s (sim 150)", fault_t - t0);
 
     // Room air, target above the reading (the bench test with no process).
     fresh();
@@ -217,7 +225,7 @@ int main(int argc, char **argv)
     to_auto();
     t0 = M.t;
     run(400, 1030);
-    CHECK(fault == CTRL_F06, "room air, target above: F-06 after %.0f s", fault_t - t0);
+    CHECK(fault == CTRL_F06, "room air, target above: F-6 after %.0f s", fault_t - t0);
 
     // AUTO min 0 (the factory value since 0.11.33; the cases above keep the
     // simulator's 14 to match its references): a target the closed valve
@@ -235,6 +243,59 @@ int main(int argc, char **argv)
     CHECK(fault == CTRL_RUN && mode == AUTO && M.pos <= K.pos_max / 100,
           "AUTO min 0, target 0: closes to %ld steps (%.2f mB), no fault", (long)M.pos, M.pv);
     K.outmin = outmin;
+
+    // A live KP or KDIR change in AUTO keeps the output where it is (0.11.38).
+    fresh();
+    model_start_move(33000);
+    run(120, 0);
+    set_sp(5);
+    to_auto();
+    run(5, 5);
+    {
+        const ctrl_tune_t kk = K;
+        int32_t before = C.pos_cmd;
+        K.kp *= 2;
+        ctrl_tick();
+        int32_t d_kp = C.pos_cmd - before;
+        before = C.pos_cmd;
+        K.kdir = -K.kdir;
+        ctrl_tick();
+        int32_t d_dir = C.pos_cmd - before;
+        CHECK(labs(d_kp) < 60 && labs(d_dir) < 60,
+              "KP doubled and KDIR flipped in AUTO: command moves %ld and %ld steps (no jump)", (long)d_kp, (long)d_dir);
+        K = kk;
+    }
+
+    // A target far above the pressure opens the valve fully (0.11.39). One
+    // step of ki x e alone overshoots the top, which used to freeze the
+    // integral and leave the valve where AUTO started.
+    fresh();
+    set_sp(500);
+    to_auto();
+    run(30, 500);
+    CHECK(C.pos_cmd == K.pos_max && fault == CTRL_RUN,
+          "Target 500 mB from %.1f mB: command %ld of %ld steps (fully open)", M.pv, (long)C.pos_cmd, (long)K.pos_max);
+
+    // None of the cases above (KDIR right) raise W-6.
+    CHECK(!w06_seen, "W-6 not raised with KDIR right");
+
+    // KDIR the wrong way round (0.11.45): AUTO drives the valve to the
+    // wrong end, W-6 ends AUTO after CTRL_TWRONG_S at rest there.
+    for (int up = 0; up < 2; up++) {
+        fresh();
+        model_start_move(K.pos_max / 3);
+        run(300, 0);
+        float sp = up ? 9 : 2;
+        set_sp(sp);
+        K.kdir = -K.kdir;
+        to_auto();
+        t0 = M.t;
+        run(1200, sp);
+        CHECK(w06 && mode == MANUAL && fault == CTRL_RUN && w06_t - t0 < 300,
+              "KDIR wrong, target %.0f mB from %.2f mB: W-6 after %.0f s, valve at %ld steps", sp, M.pv,
+              w06 ? w06_t - t0 : -1, (long)M.pos);
+        K.kdir = -K.kdir;
+    }
 
     printf(fails ? "%d failed\n" : "all passed\n", fails);
     return fails ? 1 : 0;

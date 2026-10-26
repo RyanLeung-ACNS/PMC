@@ -85,7 +85,7 @@ static uint32_t v_fp;                   // current rate, steps/s * 256
 static volatile uint32_t v_run_fp, v_start_fp;
 static uint32_t n_acc;                  // steps spent accelerating
 static uint32_t move_rate;              // run rate of this move, steps/s
-static uint32_t deadline_ms;            // F-05: lv_tick_get() past this = timeout
+static uint32_t deadline_ms;            // F-5: lv_tick_get() past this = timeout
 static volatile uint32_t moves_ended;   // counts moves ended, for stepper3_move_seq()
 static int32_t move_from;                // last move: start position and times
 static uint32_t move_t0;
@@ -227,7 +227,15 @@ static void finish(stepper3_stop_t why)
     moves_ended++;
     move_t1 = lv_tick_get() | 1;
     run_state = ST_SETTLE;
+    // Restart the count for the settle: with ARPE an ARR write alone only
+    // takes effect after the current step period, so the coils dropped one
+    // step after the last (0.11.38). URS keeps the UG from raising another
+    // update interrupt.
+    TIM7->CR1 = TIM_CR1_URS;
     TIM7->ARR = SETTLE_US - 1;
+    TIM7->EGR = TIM_EGR_UG;
+    TIM7->SR = 0;
+    TIM7->CR1 = TIM_CR1_URS | TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
 void TIM7_IRQHandler(void)
@@ -312,14 +320,20 @@ void stepper3_init(void)
     coils_off();
 }
 
-// Holds off the step interrupt while a running move is changed. A step
-// that falls due meanwhile is taken as soon as it is released.
-static void step_irq_hold(void)    { TIM7->DIER = 0; }
-static void step_irq_release(void) { TIM7->DIER = TIM_DIER_UIE; }
+// Holds off every interrupt (PRIMASK) while a running move is changed, so
+// a step already pending cannot run on half-written values. A step that
+// falls due meanwhile is taken as soon as it is released.
+static uint32_t step_irq_hold(void)
+{
+    uint32_t pm;
+    __asm volatile ("mrs %0, primask\n\tcpsid i" : "=r" (pm) :: "memory");
+    return pm;
+}
+static void step_irq_release(uint32_t pm) { __asm volatile ("msr primask, %0" :: "r" (pm) : "memory"); }
 
 static int32_t abs32(int32_t v) { return v < 0 ? -v : v; }
 
-// F-05: the move should be done within |distance| / rate, plus the ramps
+// F-5: the move should be done within |distance| / rate, plus the ramps
 // (counted twice over, for a turn round), plus 2 s.
 static void set_deadline(void)
 {
@@ -344,10 +358,10 @@ bool stepper3_goto_rate(int32_t to, uint32_t sps)
 
     if (run_state == ST_MOVING) {
         // Retarget: the interrupt carries on, turning round if needed.
-        step_irq_hold();
+        uint32_t pm = step_irq_hold();
         if (run_state != ST_MOVING) {
             // The move ended just now; start a new one below.
-            step_irq_release();
+            step_irq_release(pm);
             goto from_rest;
         }
         target = to;
@@ -356,7 +370,7 @@ bool stepper3_goto_rate(int32_t to, uint32_t sps)
         v_start_fp = (rate_start < sps ? rate_start : sps) << 8;
         stop_ramp = false;
         set_deadline();
-        step_irq_release();
+        step_irq_release(pm);
         return true;
     }
 from_rest:
@@ -452,7 +466,7 @@ void stepper3_poll(void)
         return;
     stepper3_stop();
     last_stop = STEPPER3_STOP_TIMEOUT;
-    link_printf("F-05 motion timeout: stopped at %ld, target %ld\r\n",
+    link_printf("F-5 motion timeout: stopped at %ld, target %ld\r\n",
                 (long)position, (long)target);
 }
 
@@ -578,7 +592,9 @@ int32_t stepper3_scale(void) { return mode == STEPPER3_HALF ? 2 : 1; }
 
 bool stepper3_set_mode(stepper3_mode_t nm)
 {
-    if (run_state != ST_IDLE || nm > STEPPER3_HALF)
+    // Refused in AUTO and while homing (lock_why): the controller and the
+    // homing hold positions in the old step size.
+    if (run_state != ST_IDLE || nm > STEPPER3_HALF || lock_why)
         return false;
     // Keep the position in the new step size; the homing stays (since
     // 0.11.33, Ryan 23 Oct), the valve settings being in full steps. HALF to
@@ -661,7 +677,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_DONE:  return "done";
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
-    case STEPPER3_STOP_TIMEOUT: return "F-05 timeout";
+    case STEPPER3_STOP_TIMEOUT: return "F-5 timeout";
     default:                  return "none";
     }
 }
@@ -775,7 +791,9 @@ bool stepper3_command(const char *line)
         stepper3_off();
         link_printf("OK coils off at %ld\r\n", (long)position);
     } else if (lock_why && (strncmp(a, " MOVE", 5) == 0 || strncmp(a, " GOTO", 5) == 0 ||
-                            strncmp(a, " OVERRIDE", 9) == 0 || strcmp(a, " ZERO") == 0)) {
+                            strncmp(a, " OVERRIDE", 9) == 0 || strcmp(a, " ZERO") == 0 ||
+                            strncmp(a, " MODE ", 6) == 0 || strncmp(a, " DIR ", 5) == 0 ||
+                            strncmp(a, " ORDER ", 7) == 0)) {   // DIR, ORDER clear the homing
         link_printf("ERR %s\r\n", lock_why);
     } else if (strncmp(a, " MOVE", 5) == 0) {
         if (!parse_int(a + 5, -STEPPER3_MAX_MOVE, STEPPER3_MAX_MOVE, &v) || v == 0)

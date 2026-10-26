@@ -24,6 +24,10 @@ size_t link_tx_room(void);
 // Non-blocking: true with one complete line (no CR/LF) in buf.
 bool link_getline(char *buf, size_t n);
 
+// True when the line only reads: a first word ending in ?, HELP, DATA ON or
+// OFF, TREND DUMP. With PMC_LINK_WRITE 0 the Ethernet link takes no other.
+bool link_line_reads(const char *line);
+
 // True once after a PC (re)connects, so one-off status lines can be resent.
 bool link_take_new_client(void);
 

@@ -17,8 +17,10 @@
  * does not delay the reading or the fault checks.
  *
  * Once a second, one CSV line on COM3 for logging (tools/logger):
- *   DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok
- * p_mbar and ratio are empty when there is no valid reading (ok = 0).
+ *   DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok,baro_mbar
+ * p_mbar and ratio are empty when there is no valid reading (ok = 0);
+ * baro_mbar (0.11.47, last so the older columns stay put) is empty with no
+ * Pressure 21 reading.
  * Lines not starting with DATA are status text.
  */
 #define STATUS_LINES 6
@@ -43,17 +45,19 @@ bool sense_data_command(const char *line)
 
 static void print_data_line(const clicks_state_t *s)
 {
-    char p[16] = "", r[16] = "", sig[16], die[16];
+    char p[16] = "", r[16] = "", sig[16], die[16], baro[16] = "";
 
     if (s->reading_ok) {
         fixed_fmt(p, sizeof p, s->p_mmbar, 3);
         fixed_fmt(r, sizeof r, s->r_ppb, 6);
     }
-    link_printf("DATA,%lu,%s,%s,%ld,%s,%s,%ld,%d\r\n",
+    if (s->baro_ok)
+        fixed_fmt(baro, sizeof baro, s->baro_mmbar, 3);
+    link_printf("DATA,%lu,%s,%s,%ld,%s,%s,%ld,%d,%s\r\n",
                 (unsigned long)lv_tick_get(), p,
                 fixed_fmt(sig, sizeof sig, s->shunt_nv / 100, 1),   // 0.1 uV
                 (long)s->bus_mv, r, fixed_fmt(die, sizeof die, s->die_mc, 3),
-                (long)s->boost_set_mv, s->reading_ok ? 1 : 0);
+                (long)s->boost_set_mv, s->reading_ok ? 1 : 0, baro);
 }
 
 static void print_changed_lines(void)
@@ -92,10 +96,10 @@ static void hot_check(const clicks_state_t *s)
     char t[16];
     if (!hot && s->die_mc >= SENSE_HOT_MC) {
         hot = true;
-        valve_event("W-03", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+        valve_event("W-3", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
     } else if (hot && s->die_mc < SENSE_COOL_MC) {
         hot = false;
-        valve_event("W-03", "Controller cooled, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
+        valve_event("W-3", "Controller cooled, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
     }
 }
 

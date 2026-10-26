@@ -250,7 +250,7 @@ bool valvepos_offer_moving(int32_t *steps)
 
 bool valvepos_use(const char **why)
 {
-    if (!offer) { *why = "no saved position on offer"; return false; }
+    if (!offer) { *why = "No saved position to use"; return false; }
     if (!valve_restore(boot_count * stepper3_scale(), why))
         return false;
     offer = false;
