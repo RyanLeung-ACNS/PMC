@@ -35,6 +35,7 @@
 #include "valvepos.h"
 #include "trend.h"
 #include "baro.h"
+#include "buzzer.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -134,6 +135,9 @@ static const char *const help_sys[] = {
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
+    "  BUZZ? | BUZZ <sound>|ALL|STOP   buzzer sounds: list, play one, play all, silence",
+    "  BUZZ VOL <0-100> | BUZZ ON|OFF <sound>|ALL   loudness, which sounds the events play (CFG SAVE keeps them)",
+    "  BUZZ TONE <Hz> [ms]        plain tone, 200 to 8000 Hz, to find the buzzer's loudest pitch",
 };
 static const char *const help_cfg[] = {
     "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
@@ -253,6 +257,7 @@ void application_init()
     clicks_init();
     limit_init();
     supply_init();   // motor 12 V on PA3
+    buzzer_init();   // PB8; cfg_init sets the volume and which sounds are on
     valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
@@ -339,7 +344,7 @@ int main(void)
             link_printf("ERR read only over the network, use the screen\r\n");
             got = false;
         }
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
+        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) && !buzzer_command(line) &&
             !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
             link_printf("ERR unknown command\r\n");
@@ -371,6 +376,7 @@ INTERRUPT_ROUTINE
 #if PMC_LINK_ETHERNET
     systemTicks++;
 #endif
+    buzzer_tick_1ms();
 
     if (5 == msCount) {
         msCount = 0;

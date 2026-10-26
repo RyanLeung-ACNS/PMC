@@ -96,6 +96,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 
 ## Operation
 
+- **Buzzer** (0.12.14, `buzzer.c`): the board piezo on PB8 (TIM10 CH1 PWM). A new fault plays FAULT (two sets of three pulses, once, never repeating), a new warning WARN, a refusal on the screen REFUSED, AUTO started or ended by the operator AUTOON / AUTOOFF, homing done HOMED. CLICK and OK are off. `BUZZ VOL` and `BUZZ ON|OFF <sound>` set them and `CFG SAVE` keeps them (settings record version 5; older records load with volume 50 and those defaults). Not benched yet.
 - **Motor supply** (`PMC_MOTOR_SENSE`, 0.11.35): a 0-25 V divider module from the motor 12 V to S2 RX (PA3) is read every 5 ms. Below 6.0 V moves are refused and the strip says "Motor supply off: moves blocked" on every screen; lost during a move, the move stops and the homing is cleared (the count ran on without the valve); off in AUTO, the valve drops to MANUAL. Below 10.5 V or above 14.0 V is a warning only. Diagnostics shows it on the valve motor row.
 - **W-3 controller hot** (0.11.36): the Power Monitor die temperature at or above 55 C shows "W-3 Controller hot" on the strip on every screen until it falls below 50 C. A warning only: not latched, blocks nothing; both changes are logged.
 - **Nothing moves at power-up.** The valve is NOT HOMED until it is homed, or until the operator sets the position: Home and Set position are kept apart on every screen. Home finds the switch and takes 0 % as the back-off above it; Set position takes it from the operator (closed, a typed %, or the position saved before the restart), not checked against the switch. At start-up with a saved position the screen asks "Home / Set position / Use X %"; it is never used on its own. Menu > Valve homing has a Home tab and a Set position tab, and a position set rather than homed shows on the status line ("34.20 %, set by hand").
@@ -170,6 +171,8 @@ Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_
 | `SUP?` | Motor 12 V supply (PA3, x5 divider module): volts, state (ok, LOW below 10.5 V, HIGH above 14.0 V, OFF below 6.0 V), raw ADC and VREFINT counts |
 | `TOUCH?` | Touch controller read and error counters |
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
+| `BUZZ?` / `BUZZ <sound>` / `BUZZ ALL` / `BUZZ STOP` | Buzzer: list the sounds (on/off, volume), play one, play all in turn, silence |
+| `BUZZ VOL <0-100>` / `BUZZ ON\|OFF <sound>\|ALL` / `BUZZ TONE <Hz> [ms]` | Loudness (0 mutes), which sounds the events play (unsaved until `CFG SAVE`), a plain tone to find the loudest pitch |
 
 Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, the cryostat name and the save time, in one record in serial flash; version 3 from 0.10.9, a version 2 record (0.9.0 to 0.10.8) loads with the name CF-11, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 

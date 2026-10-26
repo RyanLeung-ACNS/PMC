@@ -9,6 +9,7 @@
 #include "valve.h"
 #include "trend.h"
 #include "sense.h"
+#include "buzzer.h"
 
 /*
  * Once a second from the main loop (was main_screen.c to 0.8.x): re-read
@@ -154,6 +155,7 @@ static void hot_check(const clicks_state_t *s)
     char t[16];
     if (!hot && s->die_mc >= SENSE_HOT_MC) {
         hot = true;
+        buzzer_event(BUZZ_WARN);
         valve_event("W-3", "Controller hot, %s C", fixed_fmt(t, sizeof t, s->die_mc / 100, 1));
     } else if (hot && s->die_mc < SENSE_COOL_MC) {
         hot = false;

@@ -11,5 +11,5 @@ mkdir -p "$HERE/out"
 gcc -O1 -g -Wall -Wextra -Wno-unused-parameter -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
   -I"$PROJ/lvgl_940" -I"$PROJ/lvgl_940/lv_conf/heavy" -I"$PROJ" \
   -o "$HERE/out/test_cfg" "$HERE/test_cfg.c" \
-  "$PROJ/cfg.c" "$PROJ/cal.c" "$PROJ/valvepos.c" "$PROJ/trend.c" "$PROJ/fixed.c" "$LVGL" -lm
+  "$HERE/buzzer_stub.c" "$PROJ/cfg.c" "$PROJ/cal.c" "$PROJ/valvepos.c" "$PROJ/trend.c" "$PROJ/fixed.c" "$LVGL" -lm
 "$HERE/out/test_cfg" "$@"
