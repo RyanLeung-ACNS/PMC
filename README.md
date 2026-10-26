@@ -62,7 +62,7 @@ Power: the board takes 12 V on its terminal (10.6 to 14 V; priority 12 V, then U
 `main.c` initialises everything (version and reset cause, clock, LVGL and display, calibration, Clicks, limit switch, valve, settings, saved position, screens, PC link), starts the independent watchdog (about 3 to 4 s), then runs one loop with no RTOS:
 
 1. PC link, touch (every 5 ms), clock, limit switch, stepper and valve tasks, saved position.
-2. Once a second: `sense_second()` reads the INA228, converts to pressure, updates the faults and the trend, and sends the DATA and status lines.
+2. Once a second: `sense_second()` reads the INA228, converts to pressure, updates the faults and the trend, and sends the DATA line and any changed status line.
 3. One command line from the PC, if any, offered to each module's `*_command()` in turn.
 4. `lv_timer_handler()` (screens refresh at 2 Hz, the fast parts at 10 Hz), the watchdog kick, 1 ms delay.
 
@@ -152,13 +152,15 @@ The trend and the event log are in RAM and empty after a restart.
 
 Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE` or `HELP MOT`.
 
-Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok,baro_mbar` line once a second (baro_mbar is empty with no Pressure 21 reading) (after `DATA ON`; off at boot), status lines when they change, and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
+Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (`SENSE?` gives the live sensor readings), and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
 | `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
 | `VER?` | Firmware version and build time |
-| `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
+| `DATA OFF` / `DATA ON` | Pause or resume the DATA line; off at boot (the logger sends DATA ON) |
+| `DATA?` | The DATA column names |
+| `SENSE?` | The Power Monitor and Druck readings now (`BARO?` has the Pressure 21) |
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
 | `BARO?` | Room pressure from the Pressure 21 Click (BMP581) in S2: reading, temperature, or why it is not read |

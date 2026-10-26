@@ -99,9 +99,6 @@ bool valve_target(int32_t *mmbar);               // false: no target set yet
 int32_t valve_range_mmbar(void);                 // sensor in use, full scale
 int32_t valve_band_mmbar(void);                  // target band (BAND)
 ctrl_reg_t valve_regulation(void);               // status words, in AUTO
-// "AUTO 4.62 mB, target 4.8, valve 14.20 % to 14.35 %, In band": sent once a
-// second in AUTO (sense.c), in place of the motor and valve status lines.
-const char *valve_auto_line(void);
 
 // Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET (cfg.c).
 #define VALVE_N_SETTINGS 6

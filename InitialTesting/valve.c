@@ -552,22 +552,6 @@ bool valve_auto(void) { return is_auto(); }
 const char *valve_warning(void) { return warn[0] ? warn : NULL; }
 void valve_warning_clear(void) { warn[0] = 0; }
 
-const char *valve_auto_line(void)
-{
-    static char line[128];
-    static const char *const reg[] = { "no reading", "Regulating", "In band", "Stable" };
-    char p[16], sp[16], v[16], to[16];
-    mbar_text(p, sizeof p, pv_mbar, 2);
-    mbar_text(sp, sizeof sp, ctl.sp, 1);
-    fixed_fmt(v, sizeof v, fixed_round(milli_of(stepper3_position()), 1), 2);
-    fixed_fmt(to, sizeof to, fixed_round(milli_of(stepper3_target()), 1), 2);
-    lv_snprintf(line, sizeof line, "%s %s mB, target %s, valve %s %%%s%s%s, %s", valve_mode_name(),
-                pv_ok ? p : "----", sp, v, stepper3_busy() ? " to " : "", stepper3_busy() ? to : "",
-                stepper3_busy() ? " %" : "",
-                reg[valve_regulation()]);
-    return line;
-}
-
 bool valve_start_auto(const char **why)
 {
     if (mode == VALVE_AUTO) return true;
@@ -762,8 +746,8 @@ const char *valve_status(void)
     char p[16], f[40];
     faults_text(f, sizeof f);
     if (is_auto()) {
-        // No position here: it changes every second in AUTO, and the AUTO
-        // line (valve_auto_line) carries it; this one prints on a change of state.
+        // No position here: it changes every second in AUTO, and the DATA
+        // line carries it; this one prints on a change of state.
         char a[16];
         lv_snprintf(status_text, sizeof status_text, "Valve: %s at %s mB%s%s", valve_mode_name(),
                     mbar_text(a, sizeof a, ctl.sp, 1), f[0] ? ", faults " : "", f);

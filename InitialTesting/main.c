@@ -114,7 +114,9 @@ static const char *const help_auto[] = {
 static const char *const help_sys[] = {
     "System:",
     "  VER?                       firmware version and build time",
-    "  DATA ON | DATA OFF         once-a-second DATA and status lines (off at boot)",
+    "  DATA ON | DATA OFF         once-a-second DATA line (off at boot)",
+    "  DATA?                      DATA column names",
+    "  SENSE?                     Power Monitor and Druck readings now",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
     "  BARO?                      room pressure from the Pressure 21 Click (S2)",
     "  TOUCH?                     touch controller counters",
