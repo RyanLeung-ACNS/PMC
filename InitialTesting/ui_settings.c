@@ -1,9 +1,13 @@
+#include <stdint.h>
 #include <string.h>
 
 #include "lvgl.h"
 #include "clicks.h"
 #include "cal.h"
 #include "cfg.h"
+#include "pmc_config.h"
+#include "link.h"
+#include "ethlink.h"
 #include "fixed.h"
 #include "stepper3.h"
 #include "valve.h"
@@ -525,7 +529,8 @@ static void side_refresh(void)
 /* --------------------------------------------------------------------------
  * Settings
  * ------------------------------------------------------------------------ */
-extern const ui_screen_t ui_scr_name, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review;
+extern const ui_screen_t ui_scr_name, ui_scr_namenet, ui_scr_netaddr, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune,
+                         ui_scr_review;
 
 static struct {
     lv_obj_t *tile[5];
@@ -550,9 +555,9 @@ static void motor_cb(lv_event_t *e)
 
 static void settings_build(lv_obj_t *scr)
 {
-    static const char *const names[5] = { "Cryostat name", "Choose sensor", "Valve setup", "Control tuning",
+    static const char *const names[5] = { "Name and network", "Choose sensor", "Valve setup", "Control tuning",
                                           "Review and save" };
-    const ui_screen_t *const to[5] = { &ui_scr_name, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
+    const ui_screen_t *const to[5] = { &ui_scr_namenet, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
                                        &ui_scr_review };
     for (int i = 0; i < 5; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
@@ -574,7 +579,7 @@ static void settings_refresh(void)
         lv_snprintf(t, sizeof t, "In use: %s", sensor_name(p, sizeof p, s.serial));
         ui_btn_text(st.tile[1], "Choose sensor", t);
     }
-    ui_btn_text(st.tile[0], "Cryostat name", cfg_name()[0] ? cfg_name() : "None");
+    ui_btn_text(st.tile[0], "Name and network", cfg_name()[0] ? cfg_name() : "None");
     lv_snprintf(t, sizeof t, "%s turns", value_text(d, sizeof d, CFG_POSMAX, live(CFG_POSMAX)));
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
@@ -678,35 +683,42 @@ static void nm_cancel(lv_event_t *e)
     ui_back();
 }
 
+// A key grid in the card style, keys raised as the buttons.
+static lv_obj_t *key_grid(lv_obj_t *scr, int32_t w, const char *const *map, lv_event_cb_t cb)
+{
+    lv_obj_t *kb = lv_buttonmatrix_create(scr);
+    lv_obj_set_pos(kb, 10, RY[0]);
+    lv_obj_set_size(kb, w, 160);
+    lv_buttonmatrix_set_map(kb, map);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(kb, 0, 0);
+    lv_obj_set_style_radius(kb, 0, 0);
+    lv_obj_set_style_pad_all(kb, 0, 0);
+    lv_obj_set_style_pad_gap(kb, 6, 0);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, UI_CARD, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(0xE3E9EF), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_radius(kb, 6, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(kb, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 2, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(kb, lv_color_hex(0xAEB9C4), LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(kb, &ui_font_16, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, UI_TEXT, LV_PART_ITEMS);
+    lv_obj_add_event_cb(kb, cb, LV_EVENT_VALUE_CHANGED, NULL);
+    return kb;
+}
+
 static void nm_build(lv_obj_t *scr)
 {
     lv_strlcpy(nm.buf, cfg_name(), sizeof nm.buf);
-    nm.kb = lv_buttonmatrix_create(scr);
-    lv_obj_set_pos(nm.kb, 10, RY[0]);
-    lv_obj_set_size(nm.kb, 343, 160);
-    lv_buttonmatrix_set_map(nm.kb, nm_map);
+    nm.kb = key_grid(scr, 343, nm_map, nm_key);
     // Bottom row: Z to M as the keys above, Space and Del wider.
     for (uint32_t i = 30; i < 37; i++)
         lv_buttonmatrix_set_button_width(nm.kb, i, 4);
     lv_buttonmatrix_set_button_width(nm.kb, 37, 7);
     lv_buttonmatrix_set_button_width(nm.kb, 38, 5);
-    lv_obj_set_style_bg_opa(nm.kb, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(nm.kb, 0, 0);
-    lv_obj_set_style_radius(nm.kb, 0, 0);
-    lv_obj_set_style_pad_all(nm.kb, 0, 0);
-    lv_obj_set_style_pad_gap(nm.kb, 6, 0);
-    lv_obj_set_style_bg_opa(nm.kb, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(nm.kb, UI_CARD, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(nm.kb, lv_color_hex(0xE3E9EF), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_radius(nm.kb, 6, LV_PART_ITEMS);
-    lv_obj_set_style_border_side(nm.kb, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(nm.kb, 2, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(nm.kb, 0, LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(nm.kb, lv_color_hex(0xAEB9C4), LV_PART_ITEMS);
-    lv_obj_set_style_shadow_width(nm.kb, 0, LV_PART_ITEMS);
-    lv_obj_set_style_text_font(nm.kb, &ui_font_16, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(nm.kb, UI_TEXT, LV_PART_ITEMS);
-    lv_obj_add_event_cb(nm.kb, nm_key, LV_EVENT_VALUE_CHANGED, NULL);
     nm.text = ui_info(scr, 361, RY[0], 109, RH, "Name");
     nm.use = ui_btn(scr, 361, RY[1], 109, RH, UI_PRIMARY, "Use name", nm_use, NULL);
     ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Cancel", nm_cancel, NULL);
@@ -719,6 +731,155 @@ static void nm_refresh(void)
 }
 
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
+
+/* --------------------------------------------------------------------------
+ * Name and network (Settings, 0.12.13): the cryostat name and the Ethernet
+ * fallback address, the one used when no DHCP server answers (Ryan, 26 Oct).
+ * ------------------------------------------------------------------------ */
+static struct { lv_obj_t *name, *net, *now; } nn;
+
+static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
+
+static void nn_build(lv_obj_t *scr)
+{
+    nn.name = ui_btn(scr, 10, RY[0], 226, RH, UI_NAV, "Cryostat name", nn_go, (void *)&ui_scr_name);
+    nn.net = ui_btn(scr, 244, RY[0], 226, RH, UI_NAV, "Fallback address", nn_go, (void *)&ui_scr_netaddr);
+    nn.now = ui_info(scr, 10, RY[1], 460, RH, "Address in use");
+}
+
+static void nn_refresh(void)
+{
+    char t[48];
+    uint32_t ip, mask;
+    cfg_net(&ip, &mask);
+    ui_btn_text(nn.name, "Cryostat name", cfg_name()[0] ? cfg_name() : "None");
+    cfg_net_text(t, sizeof t, ip, mask);
+    if (ip == 0 && mask == 0)
+        lv_strlcpy(t, "Build default", sizeof t);
+    else
+        *strchr(t, ' ') = '\0';   // the address; the mask is on its page
+    ui_btn_text(nn.net, "Fallback address", t);
+#if PMC_LINK_ETHERNET
+    ui_set_text(nn.now, ethlink_ip()[0] ? ethlink_ip() : link_chip_text());
+#else
+    ui_set_text(nn.now, "None, this build links over USB");
+#endif
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, cfg_net_restart_due()
+                 ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
+}
+
+const ui_screen_t ui_scr_namenet = { "Name and network", nn_build, nn_refresh, NULL };
+
+/* Fallback address: digits and dots for the address and the mask; Use puts
+ * them in use for the next restart, unsaved until Save settings. */
+static struct {
+    lv_obj_t *kb, *box[2], *val[2], *use;
+    char buf[2][16];
+    int sel;
+} na;
+
+static const char *const na_map[] = {
+    "1", "2", "3", "\n",
+    "4", "5", "6", "\n",
+    "7", "8", "9", "\n",
+    ".", "0", "Del", ""
+};
+
+static void na_show(void)
+{
+    for (int i = 0; i < 2; i++) {
+        ui_set_text(na.val[i], na.buf[i][0] ? na.buf[i] : "None");
+        ui_set_color(na.val[i], na.buf[i][0] ? UI_TEXT : UI_MUTED);
+        lv_obj_set_style_border_width(na.box[i], i == na.sel ? 2 : 0, 0);
+    }
+}
+
+static void na_key(lv_event_t *e)
+{
+    (void)e;
+    const char *k = lv_buttonmatrix_get_button_text(na.kb, lv_buttonmatrix_get_selected_button(na.kb));
+    char *b = na.buf[na.sel];
+    size_t n = strlen(b);
+    if (!k)
+        return;
+    if (!strcmp(k, "Del")) {
+        if (n)
+            b[n - 1] = '\0';
+    } else if (n < 15) {
+        b[n] = k[0];
+        b[n + 1] = '\0';
+    }
+    na_show();
+}
+
+static void na_pick(lv_event_t *e)
+{
+    na.sel = (int)(intptr_t)lv_event_get_user_data(e);
+    na_show();
+}
+
+static void na_use(lv_event_t *e)
+{
+    (void)e;
+    uint32_t ip, mask;
+    const char *why;
+    char t[48];
+    if (!cfg_net_parse(na.buf[0], &ip) || !cfg_net_parse(na.buf[1], &mask)) {
+        ui_msg("Type both as four numbers with dots, e.g. 192.168.1.50");
+        return;
+    }
+    if (!cfg_set_net(ip, mask, &why)) {
+        ui_msg(why);
+        return;
+    }
+    cfg_net_text(t, sizeof t, ip, mask);
+    valve_event("CFG", "Fallback address set to %s (screen), not saved", t);
+    ui_back();
+}
+
+static void na_default(lv_event_t *e)
+{
+    (void)e;
+    const char *why;
+    cfg_set_net(0, 0, &why);
+    valve_event("CFG", "Fallback address set to the build default (screen), not saved");
+    ui_back();
+}
+
+static void na_build(lv_obj_t *scr)
+{
+    uint32_t ip, mask;
+    char t[48];
+    cfg_net(&ip, &mask);
+    cfg_net_text(t, sizeof t, ip, mask);   // "a.b.c.d m.m.m.m[ (build default)]"
+    char *sp = strchr(t, ' ');
+    *sp = '\0';
+    lv_strlcpy(na.buf[0], t, sizeof na.buf[0]);
+    char *end = strchr(sp + 1, ' ');
+    if (end)
+        *end = '\0';
+    lv_strlcpy(na.buf[1], sp + 1, sizeof na.buf[1]);
+    na.sel = 0;
+    na.kb = key_grid(scr, 226, na_map, na_key);
+    static const char *const cap[2] = { "Address (tap to type)", "Mask (tap to type)" };
+    for (int i = 0; i < 2; i++) {
+        na.val[i] = ui_info(scr, 244, RY[i], 226, RH, cap[i]);
+        na.box[i] = lv_obj_get_parent(na.val[i]);
+        lv_obj_set_style_border_color(na.box[i], UI_BLUE, 0);
+        lv_obj_add_flag(na.box[i], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(na.box[i], na_pick, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
+    na.use = ui_btn(scr, 244, RY[2], 109, RH, UI_PRIMARY, "Use", na_use, NULL);
+    ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Default", na_default, NULL);
+    na_show();
+}
+
+static void na_refresh(void)
+{
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, "Used if no DHCP server answers, after Save settings and a restart.");
+}
+
+const ui_screen_t ui_scr_netaddr = { "Fallback address", na_build, na_refresh, NULL };
 
 /* --------------------------------------------------------------------------
  * Choose sensor

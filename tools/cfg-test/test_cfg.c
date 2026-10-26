@@ -4,7 +4,7 @@
  *
  * Covers: a version 1 record (0.6.0 to 0.8.x) loading as one sensor; a save
  * from the screens (cfg_save_with) going to the other sector as version 2;
- * a restart; Load settings > Previous save; a combination refused as a
+ * a restart; Load settings > Previous save; the fallback address (version 4); a combination refused as a
  * whole; sensors added, switched and removed with their own cals; a motor
  * direction change clearing the calibration; a spoiled record; and the
  * saved valve position written at standstill, withdrawn by a move, and
@@ -249,7 +249,7 @@ static void test_cfg(void)
     CHECK(cfg_rev(CFG_FROM_PREVIOUS, &rev, &at) && rev == 5);
     uint32_t ver;
     memcpy(&ver, flash + 0x7FE004, 4);
-    CHECK(ver == 3);   // the save went to B, the v1 record in A is kept
+    CHECK(ver == 4);   // the save went to B, the v1 record in A is kept
     memcpy(&ver, flash + 0x7FD004, 4);
     CHECK(ver == 1);
     CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
@@ -388,20 +388,20 @@ static void test_name(void)
     CHECK(strcmp(cfg_name(), "HM-2") == 0);
     // The same record rewritten as version 2 (0.9.x): loads, name "CF-11".
     {
-        uint32_t size3, a3 = 0;
+        uint32_t size4, a3 = 0;
         int sl = 0;
         for (int i = 0; i < 2; i++) {
             uint32_t r3;
             memcpy(&r3, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             uint32_t v3;
             memcpy(&v3, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (v3 == 3 && r3 >= a3) { a3 = r3; sl = i; }
+            if (v3 == 4 && r3 >= a3) { a3 = r3; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000;
-        memcpy(&size3, flash + base + 8, 4);
-        uint32_t size2 = size3 - (CFG_NAME_LEN + 4);
+        memcpy(&size4, flash + base + 8, 4);
+        uint32_t size2 = size4 - 8 - (CFG_NAME_LEN + 4);
         static uint8_t buf[4096];
-        memcpy(buf, flash + base, size3);
+        memcpy(buf, flash + base, size4);
         uint32_t two = 2;
         memcpy(buf + 4, &two, 4);
         memcpy(buf + 8, &size2, 4);
@@ -413,6 +413,70 @@ static void test_name(void)
         CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a3);
         CHECK(strcmp(cfg_name(), "CF-11") == 0 );
     }
+}
+
+// Fallback address (version 4, 0.12.13): parsing, checks, unsaved until a
+// save, used after a restart, and a version 3 record loading with the
+// build default.
+static void test_net(void)
+{
+    int32_t v[CFG_N] = { 0 };
+    bool set[CFG_N] = { 0 };
+    const char *why;
+    uint32_t ip, mask;
+    char a[16], m[16], t[48];
+    reboot();
+    CHECK(cfg_net_parse("192.168.1.50", &ip) && ip == 0xC0A80132UL);
+    CHECK(!cfg_net_parse("192.168.1", &ip) && !cfg_net_parse("192.168.1.256", &ip) &&
+          !cfg_net_parse("192.168.1.50x", &ip) && !cfg_net_parse("1.2.3.0004", &ip) && !cfg_net_parse("", &ip));
+    CHECK(cfg_net_why(0, 0) == NULL && cfg_net_why(0xC0A80132UL, 0xFFFFFF00UL) == NULL);
+    CHECK(cfg_net_why(0xC0A80132UL, 0xFFFF00FFUL) && cfg_net_why(0xC0A80100UL, 0xFFFFFF00UL) &&
+          cfg_net_why(0xC0A801FFUL, 0xFFFFFF00UL) && cfg_net_why(0x7F000001UL, 0xFF000000UL) &&
+          cfg_net_why(0xE0000001UL, 0xFFFFFF00UL) && cfg_net_why(0xC0A80132UL, 0xFFFFFFFFUL));
+    cfg_net_boot(a, m);
+    CHECK(strcmp(a, "169.254.10.50") == 0 && strcmp(m, "255.255.0.0") == 0 && !cfg_net_restart_due());
+    int u0 = cfg_unsaved();
+    CHECK(!cfg_set_net(0xC0A80100UL, 0xFFFFFF00UL, &why) && cfg_unsaved() == u0);
+    CHECK(cfg_command("NET IP 192.168.1.50 255.255.255.0") && cfg_unsaved() == u0 + 1 && cfg_net_restart_due());
+    cfg_net_boot(a, m);
+    CHECK(strcmp(a, "169.254.10.50") == 0);   // not until a restart
+    CHECK(cfg_save_with(v, set, &why) && cfg_unsaved() == 0);
+    reboot();
+    cfg_net(&ip, &mask);
+    cfg_net_boot(a, m);
+    CHECK(ip == 0xC0A80132UL && mask == 0xFFFFFF00UL && strcmp(a, "192.168.1.50") == 0 &&
+          strcmp(m, "255.255.255.0") == 0 && !cfg_net_restart_due());
+    CHECK(strcmp(cfg_net_text(t, sizeof t, ip, mask), "192.168.1.50 255.255.255.0") == 0);
+    // The record rewritten as version 3 (0.10.9 to 0.12.12): the build default.
+    {
+        uint32_t size4, a4 = 0;
+        int sl = 0;
+        for (int i = 0; i < 2; i++) {
+            uint32_t r, ver;
+            memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
+            memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
+            if (ver == 4 && r >= a4) { a4 = r; sl = i; }
+        }
+        uint32_t base = 0x7FD000 + sl * 0x1000, three = 3;
+        memcpy(&size4, flash + base + 8, 4);
+        uint32_t size3 = size4 - 8;
+        static uint8_t buf[4096];
+        memcpy(buf, flash + base, size4);
+        memcpy(buf + 4, &three, 4);
+        memcpy(buf + 8, &size3, 4);
+        uint32_t c = crc32(buf, size3 - 4);
+        memcpy(buf + size3 - 4, &c, 4);
+        extflash_erase_4k(base);
+        extflash_write(base, buf, size3);
+        reboot();
+        uint32_t rev;
+        const char *at;
+        cfg_net(&ip, &mask);
+        cfg_net_boot(a, m);
+        CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a4 && ip == 0 && mask == 0 &&
+              strcmp(a, "169.254.10.50") == 0 && strcmp(cfg_name(), "CF-11") == 0);
+    }
+    CHECK(cfg_command("NET IP DEFAULT") && cfg_command("NET?"));
 }
 
 static void tick(uint32_t ms)
@@ -624,6 +688,7 @@ int main(int argc, char **argv)
     test_cfg();
     test_capture();
     test_name();
+    test_net();
     test_valvepos();
     test_trend();
     test_auto();

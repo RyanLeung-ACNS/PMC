@@ -143,6 +143,9 @@ static const char *const help_cfg[] = {
     "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
     "  CFG LOAD DEFAULTS          factory motor, valve and tuning settings, sensors kept",
     "  CFG NAME? | CFG NAME <text>  cryostat name on the Home screen, up to 12 characters",
+    "  NET?                       Ethernet fallback address (used when no DHCP server answers)",
+    "  NET IP <address> <mask>    set it, e.g. NET IP 192.168.1.50 255.255.255.0; NET IP DEFAULT",
+    "                             USB only (Ethernet: on the screen); CFG SAVE, then restart",
     "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
 };
 static const char *const help_cal[] = {

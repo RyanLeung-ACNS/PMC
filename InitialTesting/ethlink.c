@@ -16,6 +16,7 @@
 #include "ethlink.h"
 #include "link.h"
 #include "modbus.h"
+#include "cfg.h"
 
 /* --------------------------------------------------------------------------
  * One TCP server on PMC_TCP_PORT, one client at a time (a new connection
@@ -67,9 +68,11 @@ void stm32f4xxEthInitGpio(NetInterface *interface)
 static void dhcp_timeout(DhcpClientContext *context, NetInterface *interface)
 {
     Ipv4Addr a, m;
+    char ip[16], mask[16];
     dhcpClientStop(context);
-    ipv4StringToAddr(PMC_FALLBACK_IP, &a);
-    ipv4StringToAddr(PMC_FALLBACK_MASK, &m);
+    cfg_net_boot(ip, mask);   // saved (0.12.13), else PMC_FALLBACK_IP
+    ipv4StringToAddr(ip, &a);
+    ipv4StringToAddr(mask, &m);
     ipv4SetHostAddr(interface, a);
     ipv4SetSubnetMask(interface, m);
     fallback = true;

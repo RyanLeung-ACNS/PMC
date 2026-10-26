@@ -421,8 +421,22 @@ int main(int argc, char **argv)
     if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strncmp(st, "set-add", 7) ||
         !strcmp(st, "set-caldetail")) tap(356, 72);
     if (!strcmp(st, "set-pick")) tap(120, 72);
-    if (!strncmp(st, "set-name", 8)) { tap(120, 72); tap(331, 189); tap(331, 189); tap(24, 65); tap(338, 65); }
-    if (!strcmp(st, "set-named")) { tap(415, 128); tap(24, 20); tap(24, 20); }   // Use name, Settings, Home
+    if (!strncmp(st, "set-name", 8)) { tap(120, 72); tap(120, 72); tap(331, 189); tap(331, 189); tap(24, 65); tap(338, 65); }
+    if (!strcmp(st, "set-named")) { tap(415, 128); tap(24, 20); tap(24, 20); tap(24, 20); }   // Use name, Settings, Home
+    // Name and network, Fallback address (0.12.13): keys at x 45/122/199, y 66/107/149/190.
+    if (!strncmp(st, "set-net", 7)) tap(120, 72);
+    if (!strncmp(st, "set-netaddr", 11) || !strcmp(st, "set-netused")) tap(356, 72);
+    if (!strcmp(st, "set-netaddr2") || !strcmp(st, "set-netused")) {
+        for (int i = 0; i < 13; i++) tap(199, 190);
+        static const int16_t k1[][2] = { {45,66},{122,190},{45,190},{45,66},{45,190},{122,66},{45,190},{122,107},{122,190} };
+        for (size_t i = 0; i < sizeof k1 / sizeof k1[0]; i++) tap(k1[i][0], k1[i][1]);   // 10.1.2.50
+        tap(356, 128);
+        for (int i = 0; i < 11; i++) tap(199, 190);
+        static const int16_t k2[][2] = { {122,66},{122,107},{122,107},{45,190},{122,66},{122,107},{122,107},{45,190},
+                                         {122,66},{122,107},{122,107},{45,190},{122,190} };
+        for (size_t i = 0; i < sizeof k2 / sizeof k2[0]; i++) tap(k2[i][0], k2[i][1]);   // 255.255.255.0
+    }
+    if (!strcmp(st, "set-netused")) tap(298, 184);
     if (!strncmp(st, "set-add", 7)) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
     if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(250, 84);   // 30 psi (second column)
     if (!strcmp(st, "set-addcal")) tap(318, 164);   // Calibrate

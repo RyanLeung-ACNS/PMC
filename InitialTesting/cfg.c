@@ -11,11 +11,15 @@
 #include "fixed.h"
 #include "ctrl.h"
 #include "cfg.h"
+#include "pmc_config.h"
 
 /* --------------------------------------------------------------------------
  * Record. Little-endian, fixed layout, CRC32 (IEEE) over everything before
  * the crc field. One per 4 KB sector, two sectors used in turn, the higher
  * rev is the newest. Below the old cal record at 0x7FF000.
+ *
+ * Version 4 (0.12.13) adds the Ethernet fallback address and mask (0 for
+ * the build's PMC_FALLBACK_IP); version 3 records load with 0.
  *
  * Version 3 (0.10.9) adds the cryostat name; version 2 records load with
  * the default name.
@@ -29,7 +33,7 @@
 #define CFG_ADDR_A   0x7FD000UL
 #define CFG_ADDR_B   0x7FE000UL
 #define CFG_MAGIC    0x47464350UL   // "PCFG"
-#define CFG_VERSION  3
+#define CFG_VERSION  4
 
 enum { M_RATE, M_START, M_ACCEL, M_MODE, M_HOLD, M_DIR, M_ORDER, M_N };
 static const char *const mot_name[M_N] = { "RATE", "START", "ACCEL", "MODE", "HOLD", "DIR", "ORDER" };
@@ -62,8 +66,23 @@ typedef struct {
     cfg_sens_t sens[CFG_SENS_MAX];
     char saved_at[20];           // "YYYY-MM-DD HH:MM:SS", "" if the clock was not set
     char name[CFG_NAME_LEN + 4]; // cryostat name, NUL-terminated (version 3)
+    uint32_t net_ip, net_mask;   // fallback address, a.b.c.d as a << 24 | ...; 0 0 = build default (version 4)
     uint32_t crc;
 } cfg_rec_t;
+
+// Version 3 (0.10.9 to 0.12.12), read only: version 4 without the address.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[VALVE_N_SETTINGS];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t crc;
+} cfg_rec_v3_t;
+_Static_assert(offsetof(cfg_rec_v3_t, crc) == offsetof(cfg_rec_t, net_ip), "v3 is v4 up to the address");
 
 // Version 2 (0.9.0 to 0.10.8), read only: version 3 without the name.
 typedef struct {
@@ -98,6 +117,9 @@ static cfg_sens_t sens[CFG_SENS_MAX] = { { FACTORY_SERIAL, FACTORY_PSI10, 0, { 0
 // Live cryostat name, in the header ("CF-11 pressure controller").
 #define FACTORY_NAME "CF-11"
 static char cname[CFG_NAME_LEN + 1] = FACTORY_NAME;
+// Live fallback address (unsaved until a save, like the name), and the one
+// loaded at start-up, which the Ethernet link uses until the next restart.
+static uint32_t net_ip, net_mask, net_boot_ip, net_boot_mask;
 
 static const uint32_t slot_addr[2] = { CFG_ADDR_A, CFG_ADDR_B };
 static cfg_rec_t slot[2];        // as read from each sector (version 1 converted)
@@ -187,6 +209,8 @@ static void capture(cfg_rec_t *r)
     r->active = active_sens;
     memcpy(r->sens, sens, sizeof r->sens);
     lv_strlcpy(r->name, cname, sizeof r->name);
+    r->net_ip = net_ip;
+    r->net_mask = net_mask;
     cfg_sens_t *a = &r->sens[active_sens];
     a->has_cal = !cal_is_default();
     if (a->has_cal)
@@ -222,6 +246,8 @@ static const char *values_why(const cfg_rec_t *r)
         return "SENSOR";
     if (!cfg_name_ok(r->name))
         return "NAME";
+    if (cfg_net_why(r->net_ip, r->net_mask))
+        return "NET IP";
     for (uint32_t i = 0; i < r->nsens; i++) {
         const cfg_sens_t *q = &r->sens[i];
         if (q->psi10 < 10 || q->psi10 > 10000 || q->has_cal > 1 || (q->has_cal && !cal_record_ok(&q->cal)))
@@ -252,7 +278,7 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
 
-// A version 2 record as version 3: the default name.
+// A version 2 record as version 4: the default name and address.
 static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
@@ -262,12 +288,22 @@ static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
 
+// A version 3 record as version 4: the build's fallback address.
+static void from_v3(const cfg_rec_v3_t *v, cfg_rec_t *r)
+{
+    memset(r, 0, sizeof *r);
+    memcpy(r, v, offsetof(cfg_rec_v3_t, crc));
+    r->version = CFG_VERSION;
+    r->size = sizeof *r;
+}
+
 // Reads one sector into slot[i]; NULL if usable, else why not.
 static const char *read_slot(int i)
 {
     static union {                 // one old version per read
         cfg_rec_v1_t v1;
         cfg_rec_v2_t v2;
+        cfg_rec_v3_t v3;
     } old;
     cfg_rec_t *r = &slot[i];
     extflash_read(slot_addr[i], r, sizeof *r);
@@ -284,6 +320,11 @@ static const char *read_slot(int i)
         if (old.v2.crc != crc32(&old.v2, offsetof(cfg_rec_v2_t, crc)))
             return "CRC mismatch";
         from_v2(&old.v2, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 3 && r->size == sizeof old.v3) {
+        memcpy(&old.v3, r, sizeof old.v3);
+        if (old.v3.crc != crc32(&old.v3, offsetof(cfg_rec_v3_t, crc)))
+            return "CRC mismatch";
+        from_v3(&old.v3, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
         return "not a settings record of this version";
     } else if (r->crc != rec_crc(r)) {
@@ -375,6 +416,16 @@ static int diff(const cfg_rec_t *live, const cfg_rec_t *b, bool print, char *buf
         if (print)
             link_printf("CFG DIFF NAME saved \"%s\", now \"%s\"\r\n", b->name, live->name);
     }
+    if (live->net_ip != b->net_ip || live->net_mask != b->net_mask) {
+        char x[2][48];
+        count++;
+        cfg_net_text(x[0], sizeof x[0], live->net_ip, live->net_mask);
+        LINE("Fallback address: %s\n", x[0]);
+        if (print) {
+            cfg_net_text(x[1], sizeof x[1], b->net_ip, b->net_mask);
+            link_printf("CFG DIFF NET saved %s, now %s\r\n", x[1], x[0]);
+        }
+    }
     if (live->sens[live->active].serial != b->sens[b->active].serial) {
         count++;
         if (print)
@@ -455,6 +506,8 @@ static bool apply(const cfg_rec_t *r, bool with_sensors)
     valve_set_settings(r->valve);
     memcpy(tune, r->tune, sizeof tune);
     lv_strlcpy(cname, r->name, sizeof cname);
+    net_ip = r->net_ip;
+    net_mask = r->net_mask;
     if (with_sensors) {
         nsens = r->nsens;
         active_sens = r->active;
@@ -497,6 +550,7 @@ void cfg_init(void)
     memset(sens, 0, sizeof sens);
     sens[0].serial = FACTORY_SERIAL;
     sens[0].psi10 = FACTORY_PSI10;
+    net_ip = net_mask = 0;
     // The cal found by cal_init() (old record, or nominal) is the factory sensor's.
     tell_cal();
     capture(&factory);
@@ -510,11 +564,14 @@ void cfg_init(void)
         if (slot_why[i] && slot_why[i] != EMPTY)
             valve_event("CFG", "Record in %c not used: %s", slot_letter(i), slot_why[i]);
     if (newest < 0) {
+        net_boot_ip = net_boot_mask = 0;
         valve_event("CFG", "No saved settings, factory defaults%s",
                     cal_from_old_record() ? ", cal from the old record" : "");
         return;
     }
     apply(&slot[newest], true);   // idle at start-up: cannot be refused
+    net_boot_ip = net_ip;
+    net_boot_mask = net_mask;
     loaded = newest;
     loaded_rev = slot[newest].rev;
     valve_event("CFG", "Settings saved %s loaded from %c%s", when(&slot[newest]),
@@ -944,6 +1001,145 @@ bool cfg_set_name(const char *n, const char **why)
     return true;
 }
 
+/* --------------------------------------------------------------------------
+ * Ethernet fallback address (0.12.13, Ryan 26 Oct): used when no DHCP server
+ * answers. Set live and unsaved until a save, like the name; the link takes
+ * the one loaded at start-up, so a change applies after the next restart.
+ * 0 0 is the build's PMC_FALLBACK_IP and PMC_FALLBACK_MASK.
+ * ------------------------------------------------------------------------ */
+bool cfg_net_parse(const char *s, uint32_t *v)
+{
+    uint32_t a = 0;
+    for (int i = 0; i < 4; i++) {
+        if (*s < '0' || *s > '9')
+            return false;
+        uint32_t o = 0;
+        for (int d = 0; *s >= '0' && *s <= '9'; d++, s++) {
+            if (d == 3)
+                return false;
+            o = o * 10 + (uint32_t)(*s - '0');
+        }
+        if (o > 255 || (i < 3 && *s++ != '.'))
+            return false;
+        a = a << 8 | o;
+    }
+    *v = a;
+    return *s == '\0';
+}
+
+const char *cfg_net_why(uint32_t ip, uint32_t mask)
+{
+    if (ip == 0 && mask == 0)
+        return NULL;   // the build default
+    uint32_t inv = ~mask;
+    if ((inv & (inv + 1)) != 0 || mask < 0xFF000000UL || mask > 0xFFFFFFFCUL)
+        return "mask must be 255.0.0.0 to 255.255.255.252, ones then zeros";
+    uint32_t top = ip >> 24;
+    if (top == 0 || top == 127 || top >= 224)
+        return "not a device address";
+    if ((ip & inv) == 0 || (ip & inv) == inv)
+        return "that is the network or broadcast address of the mask";
+    return NULL;
+}
+
+static void net_addr(char *buf, size_t n, uint32_t a)
+{
+    lv_snprintf(buf, n, "%lu.%lu.%lu.%lu", (unsigned long)(a >> 24), (unsigned long)(a >> 16 & 255),
+                (unsigned long)(a >> 8 & 255), (unsigned long)(a & 255));
+}
+
+const char *cfg_net_text(char *buf, size_t n, uint32_t ip, uint32_t mask)
+{
+    char a[16], m[16];
+    if (ip == 0 && mask == 0) {
+        lv_snprintf(buf, n, "%s %s (build default)", PMC_FALLBACK_IP, PMC_FALLBACK_MASK);
+        return buf;
+    }
+    net_addr(a, sizeof a, ip);
+    net_addr(m, sizeof m, mask);
+    lv_snprintf(buf, n, "%s %s", a, m);
+    return buf;
+}
+
+void cfg_net(uint32_t *ip, uint32_t *mask) { *ip = net_ip; *mask = net_mask; }
+
+bool cfg_set_net(uint32_t ip, uint32_t mask, const char **why)
+{
+    if ((*why = cfg_net_why(ip, mask)) != NULL)
+        return false;
+    net_ip = ip;
+    net_mask = mask;
+    return true;
+}
+
+void cfg_net_boot(char ip[16], char mask[16])
+{
+    if (net_boot_ip == 0 && net_boot_mask == 0) {
+        lv_strlcpy(ip, PMC_FALLBACK_IP, 16);
+        lv_strlcpy(mask, PMC_FALLBACK_MASK, 16);
+    } else {
+        net_addr(ip, 16, net_boot_ip);
+        net_addr(mask, 16, net_boot_mask);
+    }
+}
+
+bool cfg_net_restart_due(void) { return net_ip != net_boot_ip || net_mask != net_boot_mask; }
+
+// NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
+// refused, so nobody sets an address that cuts off their own link; the
+// screen (Settings > Name and network) or the USB build sets it.
+static void net_command(const char *a)
+{
+    char t[2][48];
+    if (strcmp(a, "?") == 0) {
+        char ip[16], m[16];
+        cfg_net_boot(ip, m);
+        cfg_net_text(t[0], sizeof t[0], net_ip, net_mask);
+        link_printf("NET fallback %s, used if no DHCP server answers\r\n", t[0]);
+        link_printf("NET in use since start-up %s %s%s\r\n", ip, m,
+                    cfg_net_restart_due() ? "; the change applies after a save and a restart" : "");
+        link_printf("OK\r\n");
+        return;
+    }
+    if (strncmp(a, " IP ", 4) != 0) {
+        link_printf("ERR expected: NET? | NET IP <address> <mask> | NET IP DEFAULT\r\n");
+        return;
+    }
+#if PMC_LINK_ETHERNET
+    link_printf("ERR NET IP is set on the screen (Settings > Name and network), not over the network\r\n");
+#else
+    uint32_t ip = 0, mask = 0;
+    const char *why;
+    a += 4;
+    if (strcmp(a, "DEFAULT") != 0) {
+        char x[20];
+        const char *sp = strchr(a, ' ');
+        size_t n = sp ? (size_t)(sp - a) : 0;
+        if (!sp || n >= sizeof x) {
+            link_printf("ERR expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            return;
+        }
+        memcpy(x, a, n);
+        x[n] = '\0';
+        if (!cfg_net_parse(x, &ip) || !cfg_net_parse(sp + 1, &mask)) {
+            link_printf("ERR expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            return;
+        }
+        if (ip == 0 && mask == 0) {
+            link_printf("ERR use NET IP DEFAULT for the build default\r\n");
+            return;
+        }
+    }
+    if (!cfg_set_net(ip, mask, &why)) {
+        link_printf("ERR %s\r\n", why);
+        return;
+    }
+    cfg_net_text(t[0], sizeof t[0], net_ip, net_mask);
+    valve_event("CFG", "Fallback address set to %s, not saved", t[0]);
+    link_printf("OK fallback %s (unsaved until CFG SAVE, used after a restart)\r\n", t[0]);
+#endif
+}
+
 /* PID? and PID <name> <value>: the simulator's console names. The six
  * tuning values are set live (AUTO picks them up at its next step) and
  * kept by CFG SAVE; the rest are fixed in ctrl.h. */
@@ -1016,6 +1212,10 @@ bool cfg_command(const char *line)
     }
     if (strncmp(line, "PID ", 4) == 0) {
         pid_set(line + 4);
+        return true;
+    }
+    if (strncmp(line, "NET", 3) == 0 && (line[3] == ' ' || line[3] == '?')) {
+        net_command(line + 3);
         return true;
     }
     if (strncmp(line, "CFG", 3) != 0 || (line[3] != ' ' && line[3] != '?' && line[3] != '\0'))
