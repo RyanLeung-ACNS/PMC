@@ -41,8 +41,6 @@ add_executable(InitialTesting
     limit.c
     limit.h
     supply.c
-    buzzer.h
-    buzzer.c
     supply.h
     usb_serial.h
     usb_serial.c

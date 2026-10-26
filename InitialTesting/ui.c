@@ -13,7 +13,6 @@
 #include "fixed.h"
 #include "cfg.h"
 #include "trend.h"
-#include "buzzer.h"
 #include "ui.h"
 
 /* --------------------------------------------------------------------------
@@ -549,11 +548,6 @@ void ui_msg(const char *text)
     // the screen every message starts with a capital (Ryan, 26 Oct).
     if (msg_text[0] >= 'a' && msg_text[0] <= 'z')
         msg_text[0] = (char)(msg_text[0] - 'a' + 'A');
-    // A refusal sounds (0.12.14). Confirmations end with a full stop
-    // ("Set as 0 %.", "Saved, ..."); refusals do not.
-    size_t n = strlen(msg_text);
-    if (n && msg_text[n - 1] != '.')
-        buzzer_event(BUZZ_REFUSED);
     // With a fault latched the message is brief: the fault text is the one to read.
     msg_until = lv_tick_get() + (valve_fault_count() ? 2000 : 5000);
     if (!msg_until)

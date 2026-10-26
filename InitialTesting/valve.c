@@ -13,7 +13,6 @@
 #include "cfg.h"
 #include "ctrl.h"
 #include "tune.h"
-#include "buzzer.h"
 #include "valve.h"
 
 /* --------------------------------------------------------------------------
@@ -227,7 +226,6 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
     lv_vsnprintf(text, sizeof text, fmt, args);
     va_end(args);
     latched[f] = true;
-    buzzer_event(BUZZ_FAULT);
     latched_ms[f] = lv_tick_get();
     latched_mode[f] = mode;
     ev(fault_tag[f], "%s", text);
@@ -353,7 +351,6 @@ static void cal_homed(void)
     cal_done = true;
     cal_took_s = lv_tick_elaps(cal_t0) / 1000;
     lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
-    buzzer_event(BUZZ_HOMED);
     ev("REF", "Homed in %lu s, switch at %ld, 0 %% at %ld", (unsigned long)cal_took_s, (long)seat_count(),
        (long)stepper3_position());
     cal_end(VALVE_MANUAL);
@@ -381,7 +378,6 @@ static void limit_hit(void)
         return;
     question_at = stepper3_position();
     question = true;
-    buzzer_event(BUZZ_WARN);
     char p[16];
     ev("W-1", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)question_at, pct_text(p, sizeof p, question_at));
@@ -483,7 +479,6 @@ static void auto_end(const char *strip)
     stepper3_stop();
     mode = VALVE_MANUAL;
     lv_snprintf(warn, sizeof warn, "%s", strip);
-    buzzer_event(BUZZ_WARN);
     update_lock();
 }
 
@@ -510,12 +505,10 @@ static void warn_checks(void)
         fixed_fmt(v, sizeof v, fixed_round(milli_of(pos), 1), 2);
         char t[72];
         lv_snprintf(t, sizeof t, "W-4 Switch pressed at %s %%: check the switch", v);
-        if (was_auto) {
+        if (was_auto)
             auto_end(t);
-        } else {
+        else
             lv_snprintf(warn, sizeof warn, "%s", t);
-            buzzer_event(BUZZ_WARN);
-        }
         ev("W-4", "Switch pressed at count %ld (%s %%), off the seat: check switch, wiring, position",
            (long)pos, pct_text(pc, sizeof pc, pos));
         if (was_auto)
@@ -767,7 +760,6 @@ bool valve_start_auto(const char **why)
     mode = VALVE_AUTO;
     warn[0] = 0;
     over_n = 0;
-    buzzer_event(BUZZ_AUTO_ON);
     update_lock();
     char a[16], p[16];
     ev("MODE", "%s at target %s mB, valve %s %%", "Auto",
@@ -784,7 +776,6 @@ bool valve_to_manual(const char **why)
     if (stepper3_busy())
         stepper3_stop_ramped();
     mode = VALVE_MANUAL;
-    buzzer_event(BUZZ_AUTO_OFF);
     update_lock();
     char p[16];
     ev("MODE", "Manual, valve stops at its present position (%s %%)", pct_text(p, sizeof p, stepper3_position()));
@@ -995,7 +986,6 @@ void valve_stop(void)
     cal_abort("STOP");
     if (was_auto) {
         mode = VALVE_MANUAL;
-        buzzer_event(BUZZ_AUTO_OFF);
         update_lock();
     }
     ev("STOP", "Operator stop at count %ld%s", (long)stepper3_position(),

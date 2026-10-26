@@ -20,7 +20,6 @@
 #include "lvgl.h"
 #include "cal.h"
 #include "cfg.h"
-#include "buzzer.h"
 #include "clicks.h"
 #include "extflash.h"
 #include "stepper3.h"
@@ -250,7 +249,7 @@ static void test_cfg(void)
     CHECK(cfg_rev(CFG_FROM_PREVIOUS, &rev, &at) && rev == 5);
     uint32_t ver;
     memcpy(&ver, flash + 0x7FE004, 4);
-    CHECK(ver == 5);   // the save went to B, the v1 record in A is kept
+    CHECK(ver == 4);   // the save went to B, the v1 record in A is kept
     memcpy(&ver, flash + 0x7FD004, 4);
     CHECK(ver == 1);
     CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
@@ -396,11 +395,11 @@ static void test_name(void)
             memcpy(&r3, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             uint32_t v3;
             memcpy(&v3, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (v3 == 5 && r3 >= a3) { a3 = r3; sl = i; }
+            if (v3 == 4 && r3 >= a3) { a3 = r3; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000;
         memcpy(&size4, flash + base + 8, 4);
-        uint32_t size2 = size4 - 16 - (CFG_NAME_LEN + 4);   // size4: the version 5 size
+        uint32_t size2 = size4 - 8 - (CFG_NAME_LEN + 4);
         static uint8_t buf[4096];
         memcpy(buf, flash + base, size4);
         uint32_t two = 2;
@@ -456,11 +455,11 @@ static void test_net(void)
             uint32_t r, ver;
             memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (ver == 5 && r >= a4) { a4 = r; sl = i; }
+            if (ver == 4 && r >= a4) { a4 = r; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000, three = 3;
         memcpy(&size4, flash + base + 8, 4);
-        uint32_t size3 = size4 - 16;   // size4: the version 5 size
+        uint32_t size3 = size4 - 8;
         static uint8_t buf[4096];
         memcpy(buf, flash + base, size4);
         memcpy(buf + 4, &three, 4);
@@ -478,49 +477,6 @@ static void test_net(void)
               strcmp(a, "169.254.10.50") == 0 && strcmp(cfg_name(), "CF-11") == 0);
     }
     CHECK(cfg_command("NET IP DEFAULT") && cfg_command("NET?"));
-}
-
-// Buzzer volume and sounds on (version 5, 0.12.14): unsaved until a save,
-// kept over a restart; a version 4 record loads with the buzzer defaults.
-static void test_buzz(void)
-{
-    int32_t v[CFG_N] = { 0 };
-    bool set[CFG_N] = { 0 };
-    const char *why;
-    reboot();
-    CHECK(buzzer_vol() == BUZZ_DEF_VOL && buzzer_mask() == BUZZ_DEF_MASK);
-    int u0 = cfg_unsaved();
-    CHECK(buzzer_set_vol(80) && buzzer_set_mask(1u << BUZZ_FAULT) && cfg_unsaved() == u0 + 2);
-    CHECK(cfg_save_with(v, set, &why) && cfg_unsaved() == 0);
-    buzzer_set_vol(BUZZ_DEF_VOL);
-    buzzer_set_mask(BUZZ_DEF_MASK);
-    reboot();
-    CHECK(buzzer_vol() == 80 && buzzer_mask() == (1u << BUZZ_FAULT));
-    // The record rewritten as version 4 (0.12.13).
-    uint32_t size5, a5 = 0, four = 4;
-    int sl = 0;
-    for (int i = 0; i < 2; i++) {
-        uint32_t r, ver;
-        memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
-        memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-        if (ver == 5 && r >= a5) { a5 = r; sl = i; }
-    }
-    uint32_t base = 0x7FD000 + sl * 0x1000;
-    memcpy(&size5, flash + base + 8, 4);
-    uint32_t size4 = size5 - 8;
-    static uint8_t buf[4096];
-    memcpy(buf, flash + base, size5);
-    memcpy(buf + 4, &four, 4);
-    memcpy(buf + 8, &size4, 4);
-    uint32_t c = crc32(buf, size4 - 4);
-    memcpy(buf + size4 - 4, &c, 4);
-    extflash_erase_4k(base);
-    extflash_write(base, buf, size4);
-    reboot();
-    uint32_t rev;
-    const char *at;
-    CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a5 && buzzer_vol() == BUZZ_DEF_VOL &&
-          buzzer_mask() == BUZZ_DEF_MASK);
 }
 
 static void tick(uint32_t ms)
@@ -733,7 +689,6 @@ int main(int argc, char **argv)
     test_capture();
     test_name();
     test_net();
-    test_buzz();
     test_valvepos();
     test_trend();
     test_auto();
