@@ -12,8 +12,10 @@ reconnects on its own (so running druck_cal.py only leaves a short gap).
 USB: close the NECTO UART Terminal first, only one program can hold the
 COM port. Needs pyserial either way (pip install pyserial).
 
-Columns: pc_time (local, ISO), then the board's fields:
-t_ms, p_mbar, signal_uV, exc_mV, ratio_mV_per_V, die_C, set_mV, ok.
+Columns: pc_time (local, ISO), then the board's fields (firmware 0.11.52
+on; DATA? on the board lists them):
+t_s, p_mbar, target_mbar, valve_pct, mode, alarm, ratio_mV_per_V, exc_mV,
+die_C, baro_mbar. An empty field has no value (no reading, not homed, ...).
 Status lines from the board (anything not starting with DATA) are printed
 to the console only.
 """
@@ -27,9 +29,8 @@ import serial   # pip install pyserial
 
 TCP_PORT = 5000
 
-FIELDS = ["t_ms", "p_mbar", "signal_uV", "exc_mV", "ratio_mV_per_V", "die_C", "set_mV", "ok", "baro_mbar"]
-# Firmware before 0.11.47 sends the first eight only; baro_mbar is then empty.
-OLD_FIELDS = len(FIELDS) - 1
+FIELDS = ["t_s", "p_mbar", "target_mbar", "valve_pct", "mode", "alarm",
+          "ratio_mV_per_V", "exc_mV", "die_C", "baro_mbar"]
 
 
 class Link:
@@ -48,6 +49,8 @@ class Link:
         self.buf = b""
         # In case DATA OFF was left set from a terminal session.
         self.write("DATA ON\n")
+        # Its reply ("DATA t_s,p_mbar,...") is checked against FIELDS.
+        self.write("DATA?\n")
         # Board clock from the PC's local time.
         self.write(time.strftime("TIME SET %Y-%m-%d %H:%M:%S\n"))
 
@@ -111,12 +114,13 @@ def log_rows(port, f, rows):
                 raise ConnectionError("no data for 10 s")
             continue
         last = time.time()
+        if line.startswith("DATA ") and line[5:] != ",".join(FIELDS):
+            print(f"\nThe board sends other columns ({line[5:]}): "
+                  "use the logger from the same firmware version", file=sys.stderr)
         if not line.startswith("DATA,"):
             print(line)
             continue
         vals = line.split(",")[1:]
-        if len(vals) == OLD_FIELDS:
-            vals.append("")
         if len(vals) != len(FIELDS):
             print("skipped malformed line:", line, file=sys.stderr)
             continue
@@ -124,8 +128,8 @@ def log_rows(port, f, rows):
         f.write(now + "," + ",".join(vals) + "\n")
         f.flush()
         rows += 1
-        p, exc = vals[1] or "----", vals[3]
-        print(f"\r{rows:6d}  {p:>10} mbar   exc {exc} mV   ", end="", flush=True)
+        p, v, mode, alarm = vals[1] or "----", vals[3] or "--", vals[4], vals[5]
+        print(f"\r{rows:6d}  {p:>8} mbar   valve {v:>6} %   {mode} {alarm}      ", end="", flush=True)
 
 if __name__ == "__main__":
     main()
