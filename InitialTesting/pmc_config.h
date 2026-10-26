@@ -15,12 +15,13 @@
 
 // Ethernet build only (0.11.46): 0 = read only, the network link answers
 // queries (a first word ending in ?), HELP, DATA ON/OFF and TREND DUMP and
-// refuses every other command; control is from the screen (Ryan, 25 Oct,
-// as Modbus TCP). 1 = every command, as on the USB COM port.
-#define PMC_LINK_WRITE    0
+// refuses every other command. 1 = every command, as on the USB COM port
+// (Ryan, 26 Oct; it was 0 from 25 Oct). Anyone who can reach port 5000 can
+// then change settings, calibrations and the valve.
+#define PMC_LINK_WRITE    1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.12.3"
+#define PMC_FW_VERSION    "0.12.4"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
