@@ -17,12 +17,15 @@ static bool near(double a, double b, double frac) { return fabs(a - b) <= frac *
 static tune_t T;
 
 /* ---- synthetic process: y = y0 + K u through dead time and a lag ------- */
-typedef struct { double k, theta, tau, y, noise; int32_t pos; double hist[4000]; int t; } fopdt_sim_t;
+// slack: drive backlash, steps; the needle (pe) only follows once it is taken up.
+typedef struct { double k, theta, tau, y, noise; int32_t pos, slack; double pe, hist[4000]; int t; } fopdt_sim_t;
 static fopdt_sim_t S;
 static double rnd(void) { static uint32_t a = 1; a = a * 1664525u + 1013904223u; return (double)(a >> 8) / 16777216.0 - 0.5; }
 static double sim_pv(int32_t pos_max)
 {
-    double u = 100.0 * S.pos / pos_max;
+    if (S.pos > S.pe + S.slack / 2.0) S.pe = S.pos - S.slack / 2.0;
+    if (S.pos < S.pe - S.slack / 2.0) S.pe = S.pos + S.slack / 2.0;
+    double u = 100.0 * S.pe / pos_max;
     S.hist[S.t % 4000] = u;
     int d = (int)S.theta;
     double ud = S.t >= d ? S.hist[(S.t - d) % 4000] : S.hist[0];
@@ -32,18 +35,19 @@ static double sim_pv(int32_t pos_max)
 }
 // Runs the test on the synthetic process; k2 != 0 changes the gain after
 // the first fit (something else moves the pressure).
+static int32_t synth_slack;
 static void run_synth(double k, double theta, double tau, double noise, float step, double k2)
 {
     const int32_t pmax = 66048;
     memset(&S, 0, sizeof S);
-    S.k = k; S.theta = theta; S.tau = tau; S.noise = noise; S.pos = 20000;
+    S.k = k; S.theta = theta; S.tau = tau; S.noise = noise; S.pos = 20000; S.pe = S.pos; S.slack = synth_slack;
     for (int i = 0; i < 4000; i++) S.hist[i] = 100.0 * S.pos / pmax;
     S.y = k * 100.0 * S.pos / pmax;
     const char *why = tune_start(&T, S.pos, pmax, step, (float)sim_pv(pmax));
     if (why) { printf("     refused: %s\n", why); return; }
     for (int s = 0; s < 8000 && tune_running(&T); s++) {
         float pv = (float)sim_pv(pmax);
-        if (k2 != 0 && T.phase == TUNE_BACK) S.k = k2;
+        if (k2 != 0 && T.phase == TUNE_AGAIN) S.k = k2;
         tune_step(&T, pv, S.pos, false);
         if (T.move) { S.pos = T.move_to; T.move = false; }
     }
@@ -115,7 +119,7 @@ static void after(float kp, float ti, float sp, double *t_band, double *worst)
 
 static void print_fit(void)
 {
-    printf("     out: K %.4f, theta %.1f s, tau %.1f s; back: K %.4f, theta %.1f s, tau %.1f s; KP %.2f TI %.2f%s%s\n",
+    printf("     first: K %.4f, theta %.1f s, tau %.1f s; second: K %.4f, theta %.1f s, tau %.1f s; KP %.2f TI %.2f%s%s\n",
            T.fit[0].k, T.fit[0].theta, T.fit[0].tau, T.fit[1].k, T.fit[1].theta, T.fit[1].tau, T.kp, T.ti,
            T.phase == TUNE_FAILED ? "; failed: " : "", T.phase == TUNE_FAILED ? T.why : "");
 }
@@ -131,12 +135,23 @@ int main(void)
     CHECK(near(T.kp, 30 / (0.05 * 40), 0.25) && near(T.ti, 0.5, 0.2), "KP near 15 %%/mbar, TI near 0.5 min (lambda = tau)");
     CHECK(S.pos == T.pos0, "valve back where it started");
 
+    // Backlash of 3 % of travel (the bench, 26 Oct: 2 % back gave nothing).
+    synth_slack = 1981;
+    run_synth(0.05, 10, 30, 0.02, 1.0f, 0);
+    print_fit();
+    kk = (T.fit[0].k + T.fit[1].k) / 2;
+    CHECK(T.phase == TUNE_DONE && near(kk, 0.05, 0.1), "3 %% backlash: K %.3f found, both steps the same way", kk);
+    run_synth(0.05, 10, 30, 0.02, -1.0f, 0);
+    kk = (T.fit[0].k + T.fit[1].k) / 2;
+    CHECK(T.phase == TUNE_DONE && near(kk, 0.05, 0.1), "3 %% backlash, closing steps: K %.3f found", kk);
+    synth_slack = 0;
+
     run_synth(-0.3, 5, 20, 0.01, 1.0f, 0);
     CHECK(T.phase == TUNE_DONE && T.fit[0].k < 0 && T.fit[1].k < 0, "opening lowers the pressure: K negative (KDIR -1)");
 
     run_synth(0.05, 10, 30, 0.02, 1.0f, 0.02);
     print_fit();
-    CHECK(T.phase == TUNE_FAILED && strstr(T.why, "disagree") && S.pos == T.pos0,
+    CHECK(T.phase == TUNE_FAILED && (strstr(T.why, "disagree") || strstr(T.why, "opposite")) && S.pos == T.pos0,
           "gain changes during the test: refused, valve back");
 
     run_synth(0.001, 10, 30, 0.02, 1.0f, 0);
@@ -145,14 +160,17 @@ int main(void)
     run_synth(0.5, 10, 30, 0.02, 10.0f, 0);
     CHECK(T.phase == TUNE_FAILED && strstr(T.why, "smaller step") && S.pos == T.pos0, "5 mbar change: %s", T.why);
 
-    // A pressure that never settles: nothing moves, failed after the wait.
-    tune_start(&T, 1000, 66048, 1.0f, 5);
-    bool moved = false;
-    for (int s = 0; s < 700 && tune_running(&T); s++) {
-        tune_step(&T, 5.0f + 0.1f * sinf(s / 10.0f), 1000, false);
-        moved |= T.move;
+    // A pressure that never settles: only the slack take-up moves (away
+    // and back), then failed after the wait.
+    tune_start(&T, 5000, 66048, 1.0f, 5);
+    int moves = 0;
+    int32_t last = 5000;
+    for (int s = 0; s < 700 && (tune_running(&T) || T.move); s++) {
+        if (T.move) { moves++; last = T.move_to; T.move = false; }
+        tune_step(&T, 5.0f + 0.1f * sinf(s / 10.0f), last, false);
     }
-    CHECK(T.phase == TUNE_FAILED && !moved && T.waited == TUNE_WAIT_MAX_S, "unsteady pressure: %s, nothing moved", T.why);
+    CHECK(T.phase == TUNE_FAILED && moves == 2 && last == 5000 && T.waited == TUNE_WAIT_MAX_S,
+          "unsteady pressure: %s; only the take-up moved, back at the start", T.why);
 
     CHECK(tune_start(&T, 60000, 66048, 10.0f, 5) && tune_start(&T, 1000, 66048, -2.0f, 5) &&
           tune_start(&T, 1000, 66048, 30.0f, 5), "steps past 100 %%, past 0 %% or over 20 %% refused");

@@ -546,7 +546,9 @@ static void tune_send(void)
         return;
     }
     tun_target = tun.move_to;
-    if (tune_running(&tun))
+    if (tun.phase == TUNE_WAIT)
+        ev("TUNE", "Taking up the slack: to %s %%", pct_text(b, sizeof b, tun.move_to));
+    else if (tune_running(&tun))
         ev("TUNE", "Step %s%s %% from %s %%", tun.step > 0 ? "+" : "", pct_f(a, sizeof a, tun_pct(tun.step), 1),
            pct_text(b, sizeof b, tun.from));
 }
@@ -615,12 +617,17 @@ static bool tune_begin(float step_pct, const char **why)
     char a[16], p[16];
     ev("TUNE", "Step test started at %s %%, first step %s%s %%", pct_text(p, sizeof p, at), step_pct > 0 ? "+" : "",
        pct_f(a, sizeof a, step_pct, 1));
+    tune_send();
+    if (!tune_running(&tun)) {   // the take-up move was refused
+        *why = tun.why;
+        return false;
+    }
     return true;
 }
 
 static void tune_show(void)
 {
-    static const char *const phase[] = { "idle", "waiting for a steady pressure", "step out", "step back", "done",
+    static const char *const phase[] = { "idle", "waiting for a steady pressure", "first step", "second step", "done",
                                          "stopped" };
     char a[16], b[16], c[16];
     link_printf("TUNE %s", phase[tun.phase]);
@@ -633,8 +640,8 @@ static void tune_show(void)
         link_printf(": %s", tun.why);
     link_printf("\r\n");
     for (int i = 0; i < 2; i++)
-        if (tun.phase == TUNE_DONE || (tun.phase >= TUNE_BACK && i == 0 && tun.fit[0].tau > 0))
-            link_printf("TUNE %s: K %s mB/%%, dead time %s s, time constant %s s\r\n", i ? "back" : "out",
+        if (tun.phase == TUNE_DONE || (tun.phase >= TUNE_AGAIN && i == 0 && tun.fit[0].tau > 0))
+            link_printf("TUNE %s: K %s mB/%%, dead time %s s, time constant %s s\r\n", i ? "second" : "first",
                         fixed_fmt(a, sizeof a, (int64_t)lroundf(tun.fit[i].k * 1000.0f), 3),
                         fixed_fmt(b, sizeof b, (int64_t)lroundf(tun.fit[i].theta * 10.0f), 1),
                         fixed_fmt(c, sizeof c, (int64_t)lroundf(tun.fit[i].tau * 10.0f), 1));

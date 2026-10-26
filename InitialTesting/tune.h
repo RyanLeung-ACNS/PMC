@@ -10,41 +10,49 @@
  * flow-line model; valve.c owns the motor, the mode and the faults and
  * calls tune_step() once a second, after the pressure read, in MANUAL.
  *
- *   1. Wait until the pressure is steady (TUNE_STEADY_MBAR over
- *      TUNE_STEADY_S), then take that window's mean as the baseline.
- *   2. Move the valve by the step and record each second until the
- *      pressure settles. If it moved less than TUNE_DYMIN_MBAR, step again
+ *   1. Take up the drive's slack: move TUNE_PRELOAD_PCT the other way and
+ *      back, so every step after this turns the drive the same way.
+ *      Then wait until the pressure is steady (TUNE_STEADY_MBAR over
+ *      TUNE_STEADY_S) and take that window's mean as the baseline.
+ *   2. Move the valve by the step and record each second for
+ *      TUNE_SETTLE_MIN_S, and on while the mean of the last
+ *      TUNE_SETTLE_CMP_S s still differs from the mean of the
+ *      TUNE_SETTLE_CMP_S s before them. If it moved less than TUNE_DYMIN_MBAR, step again
  *      by twice as much from there, up to TUNE_STEP_MAX_PCT.
  *   3. Fit first order plus dead time to that step by the two-point
  *      method: tau = 1.5 (t63 - t28), theta = t63 - tau, K = dp / dvalve.
- *   4. Step back by the same amount and fit again. If the two fits
+ *   4. Step again by the same amount, the same way, and fit again (0.12.10:
+ *      a step back reversed the drive, and its backlash, 2 % of travel or
+ *      more on the bench, swallowed the step; Ryan 26 Oct). If the two fits
  *      disagree (K by more than TUNE_AGREE_K, tau by more than
  *      TUNE_AGREE_TAU), something else moved the pressure: no result.
  *   5. Suggest PI gains by the Lambda rule with lambda = tau:
  *      KP = tau / (K (tau + theta)), TI = tau. Nothing is applied.
  *
- * The test fails if the pressure leaves the baseline by more than
+ * The test fails if the pressure leaves a step's baseline by more than
  * TUNE_WINDOW_MBAR, or a step does not settle in TUNE_SETTLE_MAX_S.
  * Background: notes/autotune-exploration in the project files.
  */
 
 #define TUNE_STEP_DEF_PCT  1.0f    // first step, % of travel
 #define TUNE_STEP_MAX_PCT  20.0f   // largest step after doubling, %
+#define TUNE_PRELOAD_PCT   5.0f    // slack take-up move, % of travel
 #define TUNE_STEADY_S      60      // steady window, s
 #define TUNE_STEADY_MBAR   0.05f   // largest swing in that window, mbar
 #define TUNE_WAIT_MAX_S    600     // longest wait for a steady pressure, s
 #define TUNE_DYMIN_MBAR    0.20f   // smallest pressure change that is fitted, mbar
-#define TUNE_WINDOW_MBAR   3.0f    // largest change from the starting pressure, mbar
-#define TUNE_SETTLE_MIN_S  150     // shortest record of one step, s
-#define TUNE_SETTLE_MAX_S  1200    // longest record of one step, s
+#define TUNE_WINDOW_MBAR   3.0f    // largest change in one step, from its baseline, mbar
+#define TUNE_SETTLE_MIN_S  60      // shortest record of one step, s (Ryan, 26 Oct: was 150)
+#define TUNE_SETTLE_CMP_S  15      // settled: the last this many s match the ones before
+#define TUNE_SETTLE_MAX_S  600     // longest record of one step, s
 #define TUNE_AGREE_K       0.25f   // the two fits' K may differ by this fraction
 #define TUNE_AGREE_TAU     0.50f   // and tau by this
 
 typedef enum {
     TUNE_IDLE,         // never run, or the result has been read
-    TUNE_WAIT,         // waiting for a steady pressure
-    TUNE_OUT,          // step out recorded
-    TUNE_BACK,         // step back recorded
+    TUNE_WAIT,         // taking up the slack, then waiting for a steady pressure
+    TUNE_OUT,          // first step recorded
+    TUNE_AGAIN,        // second step, the same way, recorded
     TUNE_DONE,         // result ready
     TUNE_FAILED        // stopped, why says what
 } tune_phase_t;
@@ -68,7 +76,8 @@ typedef struct {
     int waited;        // seconds in TUNE_WAIT
     float win[TUNE_STEADY_S];
     int win_n;
-    tune_fit_t fit[2]; // out, back
+    int pre;           // slack take-up: 0 going away, 1 coming back, 2 done
+    tune_fit_t fit[2]; // first step, second step
     float kp, ti;      // suggestion, %/mbar and min
     bool move;         // tune_step asks for a move to move_to
     int32_t move_to;

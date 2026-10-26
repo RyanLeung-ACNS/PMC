@@ -28,7 +28,7 @@ void tune_init(tune_t *t)
 
 bool tune_running(const tune_t *t)
 {
-    return t->phase == TUNE_WAIT || t->phase == TUNE_OUT || t->phase == TUNE_BACK;
+    return t->phase == TUNE_WAIT || t->phase == TUNE_OUT || t->phase == TUNE_AGAIN;
 }
 
 int tune_elapsed(const tune_t *t)
@@ -57,14 +57,24 @@ const char *tune_start(tune_t *t, int32_t pos, int32_t pos_max, float step_pct, 
     if (!(fabsf(step_pct) >= 0.1f && fabsf(step_pct) <= TUNE_STEP_MAX_PCT))
         return "step must be 0.1 to 20 %";
     int32_t step = (int32_t)lroundf(step_pct / 100.0f * (float)pos_max);
-    if (pos + step < 0 || pos + step > pos_max)
-        return step > 0 ? "step would pass 100 %, use a negative step" : "step would pass 0 %, use a positive step";
+    if (pos + 2 * step < 0 || pos + 2 * step > pos_max)
+        return step > 0 ? "two steps would pass 100 %, use a negative step" : "two steps would pass 0 %, use a positive step";
     tune_init(t);
     t->phase = TUNE_WAIT;
     t->pos_max = pos_max;
     t->pos0 = t->from = pos;
     t->step = step;
     t->p_start = pv;
+    // Slack take-up: away from the step direction, clamped to the travel.
+    int32_t pre = (int32_t)lroundf(TUNE_PRELOAD_PCT / 100.0f * (float)pos_max);
+    int32_t away = step > 0 ? pos - pre : pos + pre;
+    away = away < 0 ? 0 : away > pos_max ? pos_max : away;
+    if (away == pos) {
+        t->pre = 2;
+    } else {
+        t->move = true;
+        t->move_to = away;
+    }
     return NULL;
 }
 
@@ -155,18 +165,22 @@ static void step_done(tune_t *t, float dy)
     tune_fit_t *f = &t->fit[t->phase == TUNE_OUT ? 0 : 1];
     if (fabsf(dy) < TUNE_DYMIN_MBAR / 2 || !fit_step(t, dy, f)) {
         snprintf(why, sizeof why, "no clear response to the step %s (%s mbar)",
-                 t->phase == TUNE_OUT ? "out" : "back", fx(x[0], 12, dy, 2));
+                 t->phase == TUNE_OUT ? "first" : "second", fx(x[0], 12, dy, 2));
         fail_back(t, why);
         return;
     }
-    if (t->phase == TUNE_BACK) {
+    if (t->phase == TUNE_AGAIN) {
         result(t);
         return;
     }
-    t->phase = TUNE_BACK;
+    int32_t at = t->from + t->step;
+    if (at + t->step < 0 || at + t->step > t->pos_max) {
+        fail_back(t, t->step > 0 ? "a second step would pass 100 %" : "a second step would pass 0 %");
+        return;
+    }
+    t->phase = TUNE_AGAIN;
     t->y0 += dy;
-    t->from += t->step;
-    t->step = -t->step;
+    t->from = at;
     begin_step(t);
 }
 
@@ -177,7 +191,16 @@ void tune_step(tune_t *t, float pv, int32_t pos, bool moving)
         return;
     if (t->phase == TUNE_WAIT) {
         t->waited++;
-        if (moving) {
+        if (t->pre < 2 && !moving) {
+            if (t->pre == 0) {   // away done: back to the start, the step's way
+                t->move = true;
+                t->move_to = t->pos0;
+            }
+            t->pre++;
+            t->win_n = 0;
+            return;
+        }
+        if (moving || t->pre < 2) {
             t->win_n = 0;
         } else {
             if (t->win_n == TUNE_STEADY_S) {
@@ -208,8 +231,8 @@ void tune_step(tune_t *t, float pv, int32_t pos, bool moving)
         }
         return;
     }
-    if (fabsf(pv - t->p_start) > TUNE_WINDOW_MBAR) {
-        snprintf(why, sizeof why, "pressure moved over %s mbar from the start, use a smaller step",
+    if (fabsf(pv - t->y0) > TUNE_WINDOW_MBAR) {
+        snprintf(why, sizeof why, "pressure moved over %s mbar in one step, use a smaller step",
                  fx(x, sizeof x, TUNE_WINDOW_MBAR, 1));
         fail_back(t, why);
         return;
@@ -217,7 +240,8 @@ void tune_step(tune_t *t, float pv, int32_t pos, bool moving)
     float d = (pv - t->y0) * 1000.0f;
     t->rec[t->n++] = (int16_t)(d > 32767 ? 32767 : d < -32767 ? -32767 : d);
     if (t->n >= TUNE_SETTLE_MIN_S && !moving) {
-        float a = rec_mean(t, t->n - 30, 30), b = rec_mean(t, t->n - 150, 30);
+        float a = rec_mean(t, t->n - TUNE_SETTLE_CMP_S, TUNE_SETTLE_CMP_S),
+              b = rec_mean(t, t->n - 2 * TUNE_SETTLE_CMP_S, TUNE_SETTLE_CMP_S);
         float tol = 0.02f * fabsf(a) > 20.0f ? 0.02f * fabsf(a) : 20.0f;   // 2 %, at least 0.02 mbar
         if (fabsf(a - b) <= tol) {
             step_done(t, a / 1000.0f);
