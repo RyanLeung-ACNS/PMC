@@ -26,7 +26,8 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
 { // Homing from the screen: Home valve, then Home in the question.
   const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
   s.tap(415, 72); s.tap(346, 147); s.run(120000);
-  check('home from the screen', /Homed in/.test(s.out) && s.get(30) === 0, s.out.slice(-400));
+  // The count after homing is the needle's place from the switch: 0, or the final back-off from 0.12.11.
+  check('home from the screen', /Homed in/.test(s.out) && s.get(30) === s.get(5) / 2 && [0, 400].includes(s.get(30)), s.out.slice(-400));
   shot(s, 'homed');
 }
 { // Set position (no homing): VALVE CLOSED takes the count as 0 % where it stands.
@@ -42,10 +43,10 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
 }
 { // Motor supply off: moves refused, said on the screen and the console.
   const s = homed(load());
-  s.set(12, 0); s.run(2000);
+  const n0 = s.get(5); s.set(12, 0); s.run(2000);
   const out = s.cmd('VALVE GOTO 10', 2000);
   check('supply off seen', /SUP OFF/.test(s.out + out) || /supply off/i.test(out), out);
-  check('supply off: no move', s.get(5) === 0);
+  check('supply off: no move', s.get(5) === n0);
   shot(s, 'supply-off');
 }
 { // F-1: Druck unplugged.
