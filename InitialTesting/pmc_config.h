@@ -13,8 +13,14 @@
  */
 #define PMC_LINK_ETHERNET 0
 
+// Ethernet build only (0.11.46): 0 = read only, the network link answers
+// queries (a first word ending in ?), HELP, DATA ON/OFF and TREND DUMP and
+// refuses every other command; control is from the screen (Ryan, 25 Oct,
+// as Modbus TCP). 1 = every command, as on the USB COM port.
+#define PMC_LINK_WRITE    0
+
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.11.45"
+#define PMC_FW_VERSION    "0.11.48"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
@@ -28,8 +34,19 @@
 
 // Motor 12 V sense (0.11.35): a 0-25 V divider module (30k / 7.5k, x5) from
 // the motor supply to S2 RX, PA3 (Adapter Click IDC10 pad 8). 1: read, and
-// moves are refused while it reads off (supply.h); 0: not fitted.
-#define PMC_MOTOR_SENSE   1
+// moves are refused while it reads off (supply.h); 0: not fitted. 0 until
+// the module is wired (0.11.48): an unconnected PA3 floats at about 1 V,
+// which reads as a 5 V supply and refuses every move.
+// The simulator build sets it to 1 (it simulates the supply).
+#ifndef PMC_MOTOR_SENSE
+#define PMC_MOTOR_SENSE   0
+#endif
+
+// Room pressure (0.11.47): a Pressure 21 Click (BMP581, I2C2 0x46) on the
+// Adapter Click in S2. 1: probed at start-up and read once a second
+// (BARO?, DATA baro_mbar, baro.c); nothing changes if it is not fitted.
+// 0: not built in.
+#define PMC_BARO          1
 
 // Serial number of the Druck in use, shown on the Calibration tab.
 #define PMC_DRUCK_SERIAL  "5880156"

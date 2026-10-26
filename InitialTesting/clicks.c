@@ -1,3 +1,4 @@
+#include <string.h>
 #include <stdbool.h>
 
 #include "mcu.h"
@@ -10,6 +11,8 @@
 #include "fixed.h"
 #include "drv_i2c_master.h"
 #include "stepper3.h"
+#include "pmc_config.h"
+#include "baro.h"
 
 #define STATUS_LEN 192
 
@@ -236,6 +239,30 @@ static bool pm_write16(uint8_t reg, uint16_t v)
     return false;
 }
 
+bool clicks_i2c_read(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
+{
+    return pm_read_at(addr, reg, buf, len);
+}
+
+bool clicks_i2c_write(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
+{
+    uint8_t b[8];
+
+    if (len + 1 > sizeof b)
+        return false;
+    if (!pm_open)
+        pm_i2c_open();
+    if (!pm_open)
+        return false;
+    b[0] = reg;
+    memcpy(b + 1, data, len);
+    i2c_master_set_slave_address(&pm_i2c, addr);
+    if (i2c_master_write(&pm_i2c, b, len + 1) == I2C_MASTER_SUCCESS)
+        return true;
+    pm_recover();
+    return false;
+}
+
 static bool pm_read(uint8_t reg, uint8_t *buf, size_t len)
 {
     return pm_read_at(pm_addr, reg, buf, len);
@@ -363,8 +390,9 @@ static void powermonitor_poll(void)
         }
         if (pm_probe(PM_ADDR_FITTED))
             pm_addr = PM_ADDR_FITTED;
+        // 0x46 is the Pressure 21 (baro.c) when PMC_BARO is on.
         for (uint8_t a = 0x40; a <= 0x4F && pm_addr == 0; a++)
-            if (a != PM_ADDR_FITTED && pm_probe(a))
+            if (a != PM_ADDR_FITTED && !(PMC_BARO && a == BARO_ADDR) && pm_probe(a))
                 pm_addr = a;
         // Continuous readings, 128 averages over 600 ms. Default is
         // 0xFB68, no averaging.
@@ -442,6 +470,7 @@ void clicks_init(void)
     stepper3_init();
     powermonitor_init();
     boost10_init();
+    baro_init();
     clicks_poll();
 }
 
@@ -449,6 +478,8 @@ void clicks_poll(void)
 {
     powermonitor_poll();  // may trip the Boost 10, so first
     boost10_poll();
+    baro_poll();
+    state.baro_ok = baro_reading(&state.baro_mmbar, &state.baro_mc);
 }
 
 const char *clicks_stepper3_status(void)     { return stepper3_status(); }

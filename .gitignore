@@ -17,3 +17,4 @@ __pycache__/
 simulator/tests/shots/
 tools/cfg-test/out/
 tools/ctrl-test/out/
+tools/baro-test/out/

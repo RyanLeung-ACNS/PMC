@@ -152,7 +152,7 @@ The trend and the event log are in RAM and empty after a restart.
 
 Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE` or `HELP MOT`.
 
-Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok` line once a second (after `DATA ON`; off at boot), status lines when they change, and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
+Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok,baro_mbar` line once a second (baro_mbar is empty with no Pressure 21 reading) (after `DATA ON`; off at boot), status lines when they change, and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
@@ -161,6 +161,7 @@ Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set
 | `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
+| `BARO?` | Room pressure from the Pressure 21 Click (BMP581) in S2: reading, temperature, or why it is not read |
 | `LIM?` | Valve limit switch: state, raw pin level, change count |
 | `SUP?` | Motor 12 V supply (PA3, x5 divider module): volts, state (ok, LOW below 10.5 V, HIGH above 14.0 V, OFF below 6.0 V), raw ADC and VREFINT counts |
 | `TOUCH?` | Touch controller read and error counters |
