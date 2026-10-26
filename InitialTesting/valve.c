@@ -681,11 +681,11 @@ void valve_uncalibrate(const char *why)
 
 bool valve_restore(int32_t count, const char **why)
 {
-    if (mode == VALVE_CALIBRATING) { *why = "calibrating"; return false; }
+    if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
-    if (calibrated)                 { *why = "already calibrated"; return false; }
-    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
-    if (stepper3_busy() || !stepper3_set_position(count)) { *why = "motor busy"; return false; }
+    if (calibrated)                 { *why = "Position already set"; return false; }
+    if (any_latched())              { *why = "Reset the fault first"; return false; }
+    if (stepper3_busy() || !stepper3_set_position(count)) { *why = "Wait for the valve to stop"; return false; }
     calibrated = true;
     ref_how = VALVE_REF_SAVED;
     mode = VALVE_MANUAL;
