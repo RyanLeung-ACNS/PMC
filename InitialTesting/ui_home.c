@@ -563,7 +563,7 @@ static void home_refresh(void)
     // Mode button.
     int step = valve_cal_step();
         if (m == VALVE_CALIBRATING) {
-        lv_snprintf(buf, sizeof buf, "%d of 3", step < 1 ? 1 : step);
+        lv_snprintf(buf, sizeof buf, "%d of 4", step < 1 ? 1 : step);
         ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
@@ -602,9 +602,10 @@ void ui_status_line(void)
         // A plain info line with the valve icon, as the others (Ryan, 22 Oct).
         ui_strip_set(UI_STRIP_INFO, UI_ICON_VALVE, "Valve not homed");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close",
-                                             "Homing 2 of 3: backing off",
-                                             "Homing 3 of 3: slow close" };
+        static const char *const what[5] = { "Homing: moving off the switch", "Homing 1 of 4: fast close",
+                                             "Homing 2 of 4: backing off",
+                                             "Homing 3 of 4: slow close",
+                                             "Homing 4 of 4: final back-off" };
         ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
     } else if (m == VALVE_MANUAL && valve_warning()) {
         // No PAUSED state (Ryan, 22 Oct): W-2, W-4, W-5 and W-6 drop to

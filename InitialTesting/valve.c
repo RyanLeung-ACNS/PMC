@@ -29,7 +29,7 @@ typedef struct {
 static int32_t pos_max  = 66048;   // steps, 0 % to 100 %
 static int32_t f_home   = 400;     // steps/s, clearance, fast close, back-off
 static int32_t f_creep  = 25;      // steps/s, slow final close
-static int32_t n_backoff = 400;    // steps off the switch before the creep
+static int32_t n_backoff = 400;    // steps off the switch before the creep, and after it
 static int32_t n_clear  = 800;     // steps off the switch if pressed at the start
 static int32_t n_offset = 0;       // count given to the switch point
 static valve_ref_t ref_how;        // how the position was last set (valve_reference)
@@ -122,7 +122,7 @@ static bool sensed;                 // at least one sensor read since boot
 /* --------------------------------------------------------------------------
  * Mode, calibration, limit question
  * ------------------------------------------------------------------------ */
-typedef enum { CAL_NONE, CAL_CLEAR, CAL_FAST, CAL_BACK, CAL_CREEP } cal_stage_t;
+typedef enum { CAL_NONE, CAL_CLEAR, CAL_FAST, CAL_BACK, CAL_CREEP, CAL_PARK } cal_stage_t;
 
 static valve_mode_t mode = VALVE_NOT_CAL;
 static bool calibrated;
@@ -299,6 +299,7 @@ static void cal_move_ended(stepper3_stop_t why)
     switch (cal_stage) {
     case CAL_CLEAR:
     case CAL_BACK:
+    case CAL_PARK:
         if (why != STEPPER3_STOP_DONE)
             cal_abort(stepper3_stop_name(why));
         else {
@@ -323,14 +324,11 @@ static void cal_move_ended(stepper3_stop_t why)
                 cal_abort("count not set");
                 break;
             }
-            calibrated = true;
-            ref_how = VALVE_REF_HOMED;
-            cal_done_ms = lv_tick_get();
-            cal_done = true;
-            cal_took_s = lv_tick_elaps(cal_t0) / 1000;
-            lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
-            ev("REF", "Homed in %lu s, position %ld", (unsigned long)cal_took_s, (long)sc(n_offset));
-            cal_end(VALVE_MANUAL);
+            // Then off the switch by the back-off, so it is not left
+            // pressed against the seat (Ryan, 26 Oct).
+            cal_stage = CAL_PARK;
+            if (!cal_move(sc(n_offset + n_backoff), f_rate(f_home)))
+                raise(F03, true, "Homing: final back-off refused at count %ld", (long)stepper3_position());
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
         } else {
@@ -342,17 +340,32 @@ static void cal_move_ended(stepper3_stop_t why)
     }
 }
 
+static void cal_homed(void)
+{
+    calibrated = true;
+    ref_how = VALVE_REF_HOMED;
+    cal_done_ms = lv_tick_get();
+    cal_done = true;
+    cal_took_s = lv_tick_elaps(cal_t0) / 1000;
+    lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
+    ev("REF", "Homed in %lu s, switch at %ld, now at %ld", (unsigned long)cal_took_s, (long)sc(n_offset),
+       (long)stepper3_position());
+    cal_end(VALVE_MANUAL);
+}
+
 static void cal_settled(void)
 {
     cal_settling = false;
     int32_t moved = sc(cal_stage == CAL_CLEAR ? n_clear : n_backoff);
     if (limit_open_now()) {
         raise(F04, true, "Switch still active after %ld-step %s", (long)moved,
-              cal_stage == CAL_CLEAR ? "clearance move" : "back-off");
+              cal_stage == CAL_CLEAR ? "clearance move" : cal_stage == CAL_PARK ? "final back-off" : "back-off");
     } else if (cal_stage == CAL_CLEAR) {
         cal_fast();
-    } else {
+    } else if (cal_stage == CAL_BACK) {
         cal_creep();
+    } else {
+        cal_homed();
     }
 }
 
@@ -899,8 +912,9 @@ const char *valve_mode_name(void)
 
 static const char *cal_stage_name(void)
 {
-    static const char *const names[] = { "", "moving off the switch", "1 of 3 closing to the switch",
-                                         "2 of 3 backing off", "3 of 3 slow close" };
+    static const char *const names[] = { "", "moving off the switch", "1 of 4 closing to the switch",
+                                         "2 of 4 backing off", "3 of 4 slow close",
+                                         "4 of 4 final back-off" };
     return names[cal_stage];
 }
 
@@ -1219,7 +1233,7 @@ uint32_t valve_cal_elapsed_s(void) { return mode == VALVE_CALIBRATING ? lv_tick_
 
 uint32_t valve_cal_budget_s(void)
 {
-    return (uint32_t)(((int64_t)pm() * 11 / 10 + sc(n_clear + 2 * n_backoff)) / f_rate(f_home)
+    return (uint32_t)(((int64_t)pm() * 11 / 10 + sc(n_clear + 3 * n_backoff)) / f_rate(f_home)
                       + sc(n_backoff + CREEP_EXTRA) / f_rate(f_creep) + 1);
 }
 
@@ -1230,6 +1244,7 @@ int valve_cal_step(void)
     case CAL_FAST:  return 1;
     case CAL_BACK:  return 2;
     case CAL_CREEP: return 3;
+    case CAL_PARK:  return 4;
     default:        return -1;
     }
 }

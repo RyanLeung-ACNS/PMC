@@ -296,7 +296,8 @@ static struct {
  * position. */
 static const char *const calib_help =
     "Home valve finds 0 % on the limit switch: a fast close to the switch, a back-off, "
-    "then a slow close onto it. Takes up to a few minutes. STOP cancels it.\n\n"
+    "a slow close onto it, then the back-off again so the switch is left released. "
+    "Takes up to a few minutes. STOP cancels it.\n\n"
     "Set as 0 %, Set as other % and Use last saved record a position without moving the valve. "
     "They are not verified against the limit switch.\n"
     "Set as 0 %: use only when the valve is known to be seated.\n"
@@ -382,15 +383,16 @@ static void calib_refresh(void)
     int step = valve_cal_step();
     valve_ref_t how = valve_reference();
     // While homing the caption says Homing and the box the stage, the
-    // strip's "Homing 2 of 3: backing off" in two parts (too long for 226).
-    static const char *const doing[4] = { "Off the switch", "1 of 3: fast close",
-                                          "2 of 3: backing off", "3 of 3: slow close" };
+    // strip's "Homing 2 of 4: backing off" in two parts (too long for 226).
+    static const char *const doing[5] = { "Off the switch", "1 of 4: fast close",
+                                          "2 of 4: backing off", "3 of 4: slow close",
+                                          "4 of 4: final back-off" };
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     const char *iso = valve_last_cal_iso();
     const char *when = !ran ? NULL : iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age);
     if (calib)
-        lv_strlcpy(st, doing[step < 0 ? 0 : step > 3 ? 3 : step], sizeof st);
+        lv_strlcpy(st, doing[step < 0 ? 0 : step > 4 ? 4 : step], sizeof st);
     else if (how == VALVE_REF_HOMED && when)
         lv_snprintf(st, sizeof st, "Homed %s", when);
     else if (how == VALVE_REF_HAND)

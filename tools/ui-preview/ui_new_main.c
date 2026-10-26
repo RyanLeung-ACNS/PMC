@@ -282,7 +282,7 @@ int main(int argc, char **argv)
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
     }
     if (!strcmp(st, "moving")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 500; }
-    if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
+    if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 4; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     // AUTO (stage 8).
     bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strncmp(st, "warn", 4) || !strcmp(st, "f08") || !strcmp(st, "trendauto");
