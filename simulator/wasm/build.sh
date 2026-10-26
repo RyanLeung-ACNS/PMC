@@ -46,6 +46,8 @@ SRC=""
 # tune.c (TUNE STEP) from 0.12.7; taken when it is there.
 [ -f "$PROJ/tune.c" ] && FW="$FW tune.c"
 for f in $FW; do SRC="$SRC $PROJ/$f"; done
+# The buzzer (from 0.12.14) is silent here: the no-op stub the host tests use.
+[ -f "$PROJ/buzzer.c" ] && SRC="$SRC $PROJ/../tools/cfg-test/buzzer_stub.c"
 
 $ZIG cc $CFLAGS -mexec-model=reactor -o "$OUT/pmc.wasm" \
   "$HERE/sim_main.c" "$HERE/sim_clicks.c" "$HERE/bench.c" \
