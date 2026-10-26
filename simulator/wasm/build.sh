@@ -43,6 +43,8 @@ FW="limit.c rtclock.c sysinfo.c link.c cal.c cfg.c valve.c ctrl.c valvepos.c tre
     ui.c ui_home.c ui_valve.c ui_settings.c ui_trend.c motor_screen.c \
     ui_font_12.c ui_font_16.c ui_font_26.c ui_font_40.c"
 SRC=""
+# tune.c (TUNE STEP) from 0.12.7; taken when it is there.
+[ -f "$PROJ/tune.c" ] && FW="$FW tune.c"
 for f in $FW; do SRC="$SRC $PROJ/$f"; done
 
 $ZIG cc $CFLAGS -mexec-model=reactor -o "$OUT/pmc.wasm" \
