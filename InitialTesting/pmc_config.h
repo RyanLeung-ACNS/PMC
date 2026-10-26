@@ -21,7 +21,7 @@
 #define PMC_LINK_WRITE    1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.12.13"
+#define PMC_FW_VERSION    "0.12.11-buzz"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).

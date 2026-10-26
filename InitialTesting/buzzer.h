@@ -9,7 +9,7 @@
  * the board's pre-biased transistor. Pitch is the PWM frequency, loudness
  * the duty cycle (Mikromedia 4 manual, 6.1).
  *
- * Bench build (0.12.12): the sounds play only from the BUZZ commands. Nothing
+ * Bench build (0.12.11-buzz): the sounds play only from the BUZZ commands. Nothing
  * in the firmware calls buzzer_event() yet; wiring the sounds to events is
  * a later step. Settings are live and not saved.
  *
