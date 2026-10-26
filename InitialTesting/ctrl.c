@@ -80,6 +80,12 @@ void ctrl_sent(ctrl_t *c)
     c->move = false;
 }
 
+uint32_t ctrl_move_rate(int32_t dist, uint32_t run, uint32_t min)
+{
+    uint32_t r = (uint32_t)(dist < 0 ? -(int64_t)dist : dist) / CTRL_MOVE_S;
+    return r < min ? min : r > run ? run : r;
+}
+
 void ctrl_idle(ctrl_t *c)
 {
     c->in_band = false;

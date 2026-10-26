@@ -32,6 +32,9 @@ static double fault_t;
 
 static uint32_t ms(void) { return (uint32_t)llround(M.t * 1000); }
 
+// true: every move at MOT RATE, as the simulator v63 (the reference cases).
+static bool full_rate;
+
 // The simulator's requestMove(target, quiet) in AUTO.
 static bool request_move(int32_t target)
 {
@@ -39,7 +42,8 @@ static bool request_move(int32_t target)
     if (target < 0) target = 0;
     if (target > K.pos_max) target = K.pos_max;
     if (!M.moving && target < M.pos && M.lim_active) return false;
-    return model_start_move(target);
+    // valve.c: the rate from the distance (ctrl_move_rate).
+    return model_start_move_rate(target, full_rate ? M.run : ctrl_move_rate(target - M.pos, (uint32_t)M.run, 16));
 }
 
 static void ctrl_tick(void)
@@ -163,7 +167,14 @@ int main(int argc, char **argv)
     to_auto();
     CHECK(C.pos_cmd == at && C.last_sent == at, "bumpless: command %ld = position %ld", (long)C.pos_cmd, (long)at);
 
-    // The reference sequence (also run in the simulator, sim_ref.js).
+    // Move speed from the distance (0.12.5).
+    CHECK(ctrl_move_rate(100, 400, 16) == 50 && ctrl_move_rate(-100, 400, 16) == 50 &&
+          ctrl_move_rate(5000, 400, 16) == 400 && ctrl_move_rate(8, 400, 16) == 16 && ctrl_move_rate(0, 400, 16) == 16,
+          "move rate: 100 steps 50 sps, 5000 steps 400 (MOT RATE), 8 steps 16 (the minimum)");
+
+    // The reference sequence (also run in the simulator, sim_ref.js), with
+    // every move at MOT RATE as there.
+    full_rate = true;
     fresh();
     set_sp(5);
     to_auto();
@@ -189,12 +200,34 @@ int main(int argc, char **argv)
         settle &= m.t_band > 0 && fabs(m.end - seq[i]) <= K.band;
     }
     CHECK(!trip && settle, "targets 5, 7, 3, 5: settled, no false trip");
+    full_rate = false;
     M.he = false;
     double t0 = M.t;
     run(2000, 5);
     // No wrong-way fault: with the valve pinned open and the pressure flat,
     // the response monitor catches it instead.
     CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-6 after %.0f s, MANUAL, valve idle", fault_t - t0);
+
+    // The same targets with the move speed from the distance, as the
+    // firmware runs: in band no later than 10 s after the reference.
+    {
+        fresh();
+        set_sp(5);
+        to_auto();
+        const float sp[] = { 5, 4.5f, 10, 5, 7, 3, 5 };
+        const double len[] = { 1500, 900, 1200, 900, 900, 900, 900 };
+        const ref_t *ref[] = { &REF_5, &REF_45, &REF_10, &REF_SEQ[0], &REF_SEQ[1], &REF_SEQ[2], &REF_SEQ[3] };
+        bool ok = true;
+        for (int i = 0; i < 7; i++) {
+            set_sp(sp[i]);
+            met_t m = run(len[i], sp[i]);
+            printf("     slow moves, target %.1f: in band at %.0f s (full rate %.0f), then %+.3f / %+.3f mB, end %.3f\n",
+                   sp[i], m.t_band, ref[i]->t_band, m.over, m.under, m.end);
+            ok &= m.t_band > 0 && m.t_band <= ref[i]->t_band + 10 && fabs(m.end - sp[i]) <= K.band &&
+                  fault == CTRL_RUN && mode == AUTO && (i || m.step <= 0.05);
+        }
+        CHECK(ok, "slow moves: targets 5, 4.5, 10, 5, 7, 3, 5 settle as fast, no overshoot closing to 5, no trip");
+    }
 
     // Pump off at 5 mB.
     fresh();

@@ -29,6 +29,10 @@
  *     with the pressure below the target band, or fully open above it, for
  *     CTRL_TWRONG s. Opening raises this pressure, so AUTO is driving the
  *     wrong way (KDIR the wrong way round); AUTO ends, MANUAL, valve idle.
+ *   - Move speed (0.12.5, Ryan 26 Oct): an AUTO move runs at its distance
+ *     / CTRL_MOVE_S, between STEPPER3_RATE_MIN and MOT RATE, so the valve
+ *     moves slower the closer the new command is to where it is. A command
+ *     that arrives during a move sets the rate from where the valve is then.
  */
 
 // Fixed for now (the simulator's DEF_P); the tuning in cfg.c is KP, TI,
@@ -45,6 +49,9 @@
 #define CTRL_TLAG_S     40      // process lag for the response monitor, s
 #define CTRL_STABLE_S   60      // in band this long reads Stable, s
 #define CTRL_SP_CONFIRM 5.0f    // target changes larger than this ask first, mbar
+#ifndef CTRL_MOVE_S
+#define CTRL_MOVE_S     2       // AUTO moves shorter than MOT RATE x this take this long, s
+#endif
 
 typedef struct {
     float kp;          // gain, % of POS_MAX per mbar of error
@@ -110,6 +117,8 @@ bool ctrl_set_sp(ctrl_t *c, float sp, float fs, uint32_t t_ms);
 // call ctrl_sent() once the motor has taken it.
 ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in);
 void ctrl_sent(ctrl_t *c);
+// Rate for an AUTO move of dist steps: dist / CTRL_MOVE_S, from min to run.
+uint32_t ctrl_move_rate(int32_t dist, uint32_t run, uint32_t min);
 // Regulation words for the status line, in AUTO.
 ctrl_reg_t ctrl_regulation(const ctrl_t *c, const ctrl_tune_t *k, uint32_t t_ms, bool pv_ok, float pv);
 // Leaves the band timing; called outside AUTO.

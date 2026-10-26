@@ -529,7 +529,8 @@ static void auto_step(void)
     case CTRL_RUN:
         // The closed switch blocks closing from rest (stepper3 refuses it);
         // ctrl.c holds the integral meanwhile.
-        if (ctl.move && stepper3_goto(ctl.move_to))
+        if (ctl.move && stepper3_goto_rate(ctl.move_to, ctrl_move_rate(ctl.move_to - stepper3_position(),
+                                                                        stepper3_rate(), STEPPER3_RATE_MIN)))
             ctrl_sent(&ctl);
         break;
     case CTRL_W02:
