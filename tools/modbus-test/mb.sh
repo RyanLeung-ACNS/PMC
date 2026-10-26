@@ -2,12 +2,16 @@
 # Modbus TCP client for Git Bash (or any bash with /dev/tcp): no Python, no
 # installs. Uses only bash, printf, dd, od, awk and timeout.
 #   mb.sh <ip> [port]            read the whole map and print it decoded
-#   mb.sh <ip> [port] writetest  try a target write and the AUTO coil:
-#                                read-only firmware answers exception 1
+#   mb.sh <ip> [port] target <mbar>   write the pressure target
+#   mb.sh <ip> [port] valve <pct>     move the valve (MANUAL only)
+#   mb.sh <ip> [port] auto | manual | stop | reset | ok
+#                                     the command coils 0-3
+#   mb.sh <ip> [port] writetest  write target 4.8 and the AUTO coil, then an
+#                                unsupported code and a read past the map
 #   mb.sh <ip> [port] raw <pdu>  send one PDU in hex (e.g. 03 00 0a 00 02)
 #                                and print the reply PDU in hex
 # Register map: docs/modbus-register-map.md.
-IP=${1:?usage: mb.sh <ip> [port] [writetest | raw <hex bytes>]}
+IP=${1:?usage: mb.sh <ip> [port] [target <mbar> | valve <pct> | auto | manual | stop | reset | ok | writetest | raw <hex bytes>]}
 shift
 PORT=502
 if [[ $1 =~ ^[0-9]+$ ]]; then PORT=$1; shift; fi
@@ -42,7 +46,38 @@ ex() {
     return 0
 }
 
+# f32 <number>: the IEEE 754 single as four hex bytes, high byte first.
+f32() {
+    awk -v x="$1" 'BEGIN {
+        s = 0; if (x < 0) { s = 1; x = -x }
+        if (x == 0) { u = 0 } else {
+            e = 0; while (x >= 2) { x /= 2; e++ } while (x < 1) { x *= 2; e-- }
+            m = int((x - 1) * 8388608 + 0.5); if (m == 8388608) { m = 0; e++ }
+            u = (e + 127) * 8388608 + m
+        }
+        u += s * 2147483648
+        printf "%02x %02x %02x %02x", int(u / 16777216), int(u / 65536) % 256, int(u / 256) % 256, u % 256 }'
+}
+
+# One write: prints the reply and "accepted" or the exception.
+wr() {
+    local r
+    r=$(req "$@") || exit 1
+    printf '%s  ' "$r"; ex "$r" && echo "accepted"
+}
+
 case $CMD in
+target)
+    wr 10 00 0c 00 02 04 $(f32 "${1:?target <mbar>}")
+    ;;
+valve)
+    wr 10 00 10 00 02 04 $(f32 "${1:?valve <pct>}")
+    ;;
+auto)   wr 05 00 00 ff 00 ;;
+manual) wr 05 00 00 00 00 ;;
+stop)   wr 05 00 01 ff 00 ;;
+reset)  wr 05 00 02 ff 00 ;;
+ok)     wr 05 00 03 ff 00 ;;
 raw)
     req "$@"
     ;;

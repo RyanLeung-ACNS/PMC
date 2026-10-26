@@ -4,7 +4,7 @@
  *   test_modbus            runs the frame tests
  *   test_modbus serve N    also answers Modbus TCP on 127.0.0.1:N, for
  *                          client.py (a real client library on the other end)
- * run.sh builds it twice: writes off (the default) and writes on.
+ * run.sh builds it twice: writes off and writes on (the default).
  */
 #include <arpa/inet.h>
 #include <math.h>

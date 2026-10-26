@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds and runs the host test of the Modbus TCP server (modbus.c, mbmap.c)
-# twice: remote writes off (the default) and on. Needs gcc only.
+# twice: remote writes off and on (the default). Needs gcc only.
 # mb.sh (bash only) then talks to it over TCP, and client.py too when
 # python3 and pymodbus are installed.
 set -e
@@ -27,6 +27,24 @@ for W in 0 1; do
   echo "$OUT" | grep -q "$WANT" || { echo "mb.sh FAIL: writes $W"; echo "$OUT"; exit 1; }
   echo "mb.sh, writes $W: ok"
 done
+# The write commands, writes on: AUTO refuses a valve write, MANUAL takes it.
+"$HERE/out/test_modbus_w1" serve 15031 > "$HERE/out/serve.log" &
+PID=$!
+sleep 0.3
+OUT=$(for c in "target 4.8" "target 5000" auto "valve 20" manual "valve 20" stop reset ok; do
+  echo "$c: $("$HERE/mb.sh" 127.0.0.1 15031 $c)"; done)
+kill $PID
+WANT="target 4.8:  10 00 0c 00 02   accepted
+target 5000:  90 03   exception 3
+auto:  05 00 00 ff 00   accepted
+valve 20:  90 04   exception 4
+manual:  05 00 00 00 00   accepted
+valve 20:  10 00 10 00 02   accepted
+stop:  05 00 01 ff 00   accepted
+reset:  05 00 02 ff 00   accepted
+ok:  05 00 03 ff 00   accepted"
+[ "$OUT" = "$WANT" ] || { echo "mb.sh FAIL: write commands"; echo "$OUT"; exit 1; }
+echo "mb.sh write commands: ok"
 if python3 -c "import pymodbus" 2>/dev/null; then
   for W in 0 1; do
     "$HERE/out/test_modbus_w$W" serve 15020 > "$HERE/out/serve.log" &
