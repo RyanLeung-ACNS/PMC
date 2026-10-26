@@ -205,6 +205,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `VALVE?` | Mode, count and % open, settings, latched faults, any waiting switch question |
 | `VALVE CAL` | Home: off the switch if pressed, fast close to the switch, back off, slow close, back off again; that last point is 0 % |
 | `VALVE GOTO <0-100>` | Go to % open (one decimal), once homed |
+| `VALVE STOP` | Stop now; in AUTO it drops to MANUAL, nothing latched. Cancels homing and a step test. The one stop command (was `CTRL STOP` to 0.12.16) |
 | `VALVE CLOSED` | Take the valve as seated where it stands (the seat count, the back-off below 0 %), without the switch: only when you know it is seated (Home valve > Set position > Closed on the screen; Enter % takes a typed % the same way) |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-1) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The last saved valve position, whether it was saved at standstill or while moving, and whether it is on offer |
@@ -218,7 +219,6 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `PID KDIR +1\|-1` | Pressure response: +1 when opening the valve raises the pressure |
 | `TUNE STEP [<+-%>]` | Step test for KP and TI, in MANUAL with the valve homed: takes up the drive's slack (5 % the other way and back), waits for a steady pressure, steps the valve (default +1.0 % of travel, doubled until the pressure moves 0.2 mbar, up to 20 %), steps again the same way, records each step for 60 s or until settled, fits dead time and time constant, and suggests KP and TI by the Lambda rule. Applies nothing; the valve returns to where it started. Any other valve command, STOP, AUTO or a fault ends it (`InitialTesting/tune.h`) |
 | `TUNE?` \| `TUNE STOP` | Progress and the result / end the test, valve back to the start |
-| `CTRL STOP` | Stop now; in AUTO it drops to MANUAL, nothing latched. Cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
 | `CTRL OK` | Acknowledge the warning on the strip, as the screen OK and the Modbus OK coil do |
@@ -235,7 +235,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 | `MOT GOTO <pos> [sps]` | Move to an absolute position, at its own rate if given (16 to 1000). During a move it retargets: a target further on extends the move, one behind ramps down and turns round |
 | `MOT STOP` | Stop at once (coils stay on if hold is on) |
 | `MOT STOP RAMP` | Ramp down at the normal deceleration, then stop |
-| `MOT OFF` | Stop and de-energise the coils. In AUTO, `MOT STOP`, `MOT STOP RAMP` and `MOT OFF` end AUTO first (MANUAL, as `CTRL STOP`) |
+| `MOT OFF` | Stop and de-energise the coils. In AUTO, `MOT STOP`, `MOT STOP RAMP` and `MOT OFF` end AUTO first (MANUAL, as `VALVE STOP`) |
 | `MOT ZERO` | Call the current position 0 |
 | `MOT OVERRIDE` | Let the next move close past an open limit switch (one move, not saved); `MOT OVERRIDE OFF` cancels |
 | `MOT RATE <16-1000>` | Run rate, steps/s |

@@ -57,7 +57,7 @@
  *   CTRL AUTO                    start AUTO, after the entry checks
  *   CTRL MAN [<0-100>]           to MANUAL (ramped stop), then optionally go to %
  *   CTRL SP <mbar>               target, 0.1 mbar, 0 to the sensor range
- *   CTRL STOP                    stop now, cancel calibration (AUTO ends)
+ *   VALVE STOP                   stop now, cancel calibration (AUTO ends)
  *   CTRL RESET                   clear latches whose cause has gone
  *   CTRL?                        latched faults, highest priority first
  *   EVT? [n]                     the last n events (default 20, 100 kept)
@@ -131,7 +131,7 @@ bool valve_move_steps(int32_t steps, const char **why);
 int32_t valve_target_pct10(void);                // where the valve is going
 int32_t valve_pct_milli(void);                   // position in 0.001 % (for 2 dp on screen)
 int32_t valve_target_pct_milli(void);
-void valve_stop(void);                           // CTRL STOP (in AUTO: MANUAL, nothing latched)
+void valve_stop(void);                           // VALVE STOP (in AUTO: MANUAL, nothing latched)
 bool valve_stop_latches(void);                   // STOP would end AUTO now (red STOP button)
 // CTRL RESET; returns the number latched before, left = those kept.
 int valve_reset(char *left, size_t n);

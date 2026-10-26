@@ -82,8 +82,8 @@ static bool perf_command(const char *line)
 // 26 Oct); HELP AUTO and HELP PID still work, for CTRL and TUNE.
 static const char *const help_top[] = {
     "Commands (upper case, one per line, CR or LF ends a line). Groups:",
-    "  HELP CTRL    target, AUTO and MANUAL, STOP, faults, events",
-    "  HELP VALVE   valve homing, % position, valve settings",
+    "  HELP CTRL    target, AUTO and MANUAL, faults, events",
+    "  HELP VALVE   valve homing, % position, STOP, valve settings",
     "  HELP TUNE    control parameters and the step test",
     "  HELP MOT     valve motor and limit switch (engineering)",
     "  HELP CAL     pressure calibration",
@@ -96,7 +96,6 @@ static const char *const help_ctrl[] = {
     "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
     "  CTRL AUTO                  start AUTO, bumpless",
     "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
-    "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
     "  CTRL OK                    acknowledge the warning (as the screen OK)",
     "  EVT? [1-100]               last events (default 20)",
@@ -108,6 +107,7 @@ static const char *const help_valve[] = {
     "  VALVE CAL                  calibrate to the closed switch (0 %)",
     "  VALVE CLOSED               take the valve as closed (0 %) where it stands",
     "  VALVE GOTO <0-100>         go to % open, one decimal",
+    "  VALVE STOP                 stop now; in AUTO: MANUAL, nothing latched; cancels homing",
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",

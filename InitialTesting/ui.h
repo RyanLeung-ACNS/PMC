@@ -13,7 +13,7 @@
  * Built once on lv_layer_top(), over every screen:
  *   header  0,0 480x40    Back (one screen back; not on Home), title, mode word and dot
  *   strip   10,216 343x48 status: fault, message (with OK), prompt or info
- *   STOP    361,216 109x48 CTRL STOP (in AUTO: MANUAL), on every screen
+ *   STOP    361,216 109x48 VALVE STOP (in AUTO: MANUAL), on every screen
  * Home is kept; other screens are created on open and deleted on leave.
  * A keypad or confirm dialog covers 0,40 480x232 except the STOP slot.
  *

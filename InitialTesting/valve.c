@@ -188,7 +188,7 @@ static bool any_latched(void)
 
 static void update_lock(void)
 {
-    stepper3_lock(mode == VALVE_CALIBRATING ? "calibrating, CTRL STOP to cancel"
+    stepper3_lock(mode == VALVE_CALIBRATING ? "calibrating, VALVE STOP to cancel"
                   : any_latched() ? "fault latched, CTRL RESET first"
                   : is_auto() ? "Switch to MANUAL first" : NULL);
 }
@@ -1165,7 +1165,7 @@ static void setting_command(const char *a)
         else if (is_auto())
             link_printf("ERR Switch to MANUAL first\r\n");
         else if (mode == VALVE_CALIBRATING || stepper3_busy())
-            link_printf("ERR Busy, CTRL STOP first\r\n");
+            link_printf("ERR Busy, VALVE STOP first\r\n");
         else {
             *settings[i].v = (int32_t)v;
             ev("CFG", "VALVE %s set to %ld", settings[i].name, v);
@@ -1212,7 +1212,7 @@ bool valve_goto_pct10(int32_t pct10, const char **why)
 
 bool valve_goto_pct100(int32_t pct100, const char **why)
 {
-    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
+    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, VALVE STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (!calibrated)                { *why = "Home the valve first"; return false; }
@@ -1225,7 +1225,7 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
 
 bool valve_move_steps(int32_t steps, const char **why)
 {
-    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
+    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, VALVE STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
@@ -1366,7 +1366,7 @@ bool valve_command(const char *line)
     const char *err;
     char p[16];
 
-    if (strcmp(line, "CTRL STOP") == 0) {
+    if (strcmp(line, "VALVE STOP") == 0) {   // CTRL STOP to 0.12.16
         stop_command();
     } else if (strcmp(line, "CTRL AUTO") == 0) {
         if (valve_start_auto(&err))
