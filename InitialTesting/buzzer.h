@@ -14,9 +14,9 @@
  * a later step. Settings are live and not saved.
  *
  *   BUZZ?                  sounds, which are on, volume, what is playing
- *   BUZZ <name>            play one (even if it is off), FAULT repeats
+ *   BUZZ <name>            play one (even if it is off)
  *   BUZZ ALL               play every sound once, in turn
- *   BUZZ STOP              silence (acknowledges a repeating FAULT)
+ *   BUZZ STOP              silence
  *   BUZZ VOL <0-100>       loudness, 0 mutes everything
  *   BUZZ ON|OFF <name>     which sounds buzzer_event() lets through
  *   BUZZ TONE <Hz> [ms]    plain tone, 200-8000 Hz, default 300 ms
@@ -26,7 +26,7 @@ typedef enum {
     BUZZ_OK,          // command accepted
     BUZZ_REFUSED,     // command refused
     BUZZ_WARN,        // new warning W-x
-    BUZZ_FAULT,       // new fault F-x, repeats until buzzer_silence()
+    BUZZ_FAULT,       // new fault F-x, plays once (no repeat: Ryan, 26 Oct)
     BUZZ_AUTO_ON,     // AUTO started
     BUZZ_AUTO_OFF,    // AUTO stopped by the operator
     BUZZ_HOMED,       // valve homing finished

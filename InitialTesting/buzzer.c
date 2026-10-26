@@ -48,7 +48,6 @@ typedef struct {
     const char *what;
     const step_t *steps;
     uint8_t rank;      // buzzer_event() does not cut off a higher rank
-    bool repeat;
     bool on;           // default for buzzer_event(): abnormal events only
 } sound_t;
 
@@ -60,20 +59,20 @@ static const step_t s_click[]    = { { 4000, 6 }, { 0, 0 } };
 static const step_t s_ok[]       = { { 2000, 40 }, { 0, 15 }, { 3000, 60 }, { 0, 0 } };
 static const step_t s_refused[]  = { { 1300, 80 }, { 0, 50 }, { 1300, 80 }, { 0, 0 } };
 static const step_t s_warn[]     = { { 2500, 100 }, { 0, 100 }, { 2500, 100 }, { 0, 100 }, { 2500, 100 }, { 0, 0 } };
-static const step_t s_fault[]    = { { 3000, 150 }, { 2000, 150 }, { 3000, 150 }, { 2000, 150 }, { 0, 1400 }, { 0, 0 } };
+static const step_t s_fault[]    = { { 3000, 150 }, { 2000, 150 }, { 3000, 150 }, { 2000, 150 }, { 0, 0 } };
 static const step_t s_auto_on[]  = { { 2000, 60 }, { 2500, 60 }, { 3000, 90 }, { 0, 0 } };
 static const step_t s_auto_off[] = { { 3000, 60 }, { 2500, 60 }, { 2000, 90 }, { 0, 0 } };
 static const step_t s_homed[]    = { { 2700, 250 }, { 0, 0 } };
 
 static sound_t sounds[BUZZ_COUNT] = {
-    [BUZZ_CLICK]    = { "CLICK",   "key press, 6 ms tick",                 s_click,    0, false, false },
-    [BUZZ_OK]       = { "OK",      "accepted, low-high chirp",             s_ok,       1, false, false },
-    [BUZZ_REFUSED]  = { "REFUSED", "refused, two low buzzes",              s_refused,  2, false, true  },
-    [BUZZ_WARN]     = { "WARN",    "new warning W-x, three beeps once",    s_warn,     3, false, true  },
-    [BUZZ_FAULT]    = { "FAULT",   "new fault F-x, hi-lo every 2 s until BUZZ STOP", s_fault, 4, true, true },
-    [BUZZ_AUTO_ON]  = { "AUTOON",  "AUTO started, three notes rising",     s_auto_on,  1, false, false },
-    [BUZZ_AUTO_OFF] = { "AUTOOFF", "AUTO stopped, three notes falling",    s_auto_off, 1, false, false },
-    [BUZZ_HOMED]    = { "HOMED",   "valve homing finished, one long beep", s_homed,    1, false, false },
+    [BUZZ_CLICK]    = { "CLICK",   "key press, 6 ms tick",                 s_click,    0, false },
+    [BUZZ_OK]       = { "OK",      "accepted, low-high chirp",             s_ok,       1, false },
+    [BUZZ_REFUSED]  = { "REFUSED", "refused, two low buzzes",              s_refused,  2, true  },
+    [BUZZ_WARN]     = { "WARN",    "new warning W-x, three beeps once",    s_warn,     3, true  },
+    [BUZZ_FAULT]    = { "FAULT",   "new fault F-x, hi-lo twice, once",     s_fault,    4, true  },
+    [BUZZ_AUTO_ON]  = { "AUTOON",  "AUTO started, three notes rising",     s_auto_on,  1, false },
+    [BUZZ_AUTO_OFF] = { "AUTOOFF", "AUTO stopped, three notes falling",    s_auto_off, 1, false },
+    [BUZZ_HOMED]    = { "HOMED",   "valve homing finished, one long beep", s_homed,    1, false },
 };
 
 static const step_t demo_gap[] = { { 0, DEMO_GAP_MS }, { 0, 0 } };
@@ -99,7 +98,6 @@ static volatile int8_t demo = -1;      // sound BUZZ ALL is on, -1 when not
 static const step_t *seq;
 static uint8_t seq_i;
 static uint16_t left_ms;
-static bool cur_repeat;
 static step_t tone_steps[2];
 static uint16_t psc;
 static uint32_t cnt_hz = CNT_HZ;
@@ -193,22 +191,17 @@ static void start_seq(const step_t *steps)
     play_step();
 }
 
-static void start_sound(int8_t i, bool repeat)
+static void start_sound(int8_t i)
 {
     cur = i;
-    cur_repeat = repeat;
     start_seq(sounds[i].steps);
 }
 
 static void end_of_seq(void)
 {
-    if (cur_repeat) {
-        start_seq(seq);
-        return;
-    }
     if (demo >= 0) {
         if (seq == demo_gap) {
-            start_sound(demo, false);
+            start_sound(demo);
             return;
         }
         if (++demo < BUZZ_COUNT) {
@@ -227,11 +220,10 @@ static void take(uint8_t r)
         stop_all();
     } else if (r == REQ_ALL) {
         demo = 0;
-        start_sound(0, false);
+        start_sound(0);
     } else if (r == REQ_TONE) {
         demo = -1;
         cur = CUR_TONE;
-        cur_repeat = false;
         tone_steps[0].hz = req_hz;
         tone_steps[0].ms = req_ms;
         tone_steps[1].hz = 0;
@@ -239,7 +231,7 @@ static void take(uint8_t r)
         start_seq(tone_steps);
     } else if (r >= REQ_SOUND && r < REQ_SOUND + BUZZ_COUNT) {
         demo = -1;
-        start_sound((int8_t)(r - REQ_SOUND), sounds[r - REQ_SOUND].repeat);
+        start_sound((int8_t)(r - REQ_SOUND));
     }
 }
 
@@ -337,7 +329,7 @@ static void list_sounds(void)
     int8_t c = cur;
     const char *now = c == CUR_IDLE ? "nothing" : c == CUR_TONE ? "TONE" : sounds[c].name;
     link_printf("BUZZ vol %u%s, playing %s%s\r\n", vol, vol == 0 ? " (muted)" : "", now,
-                demo >= 0 ? " (BUZZ ALL)" : (c == BUZZ_FAULT ? " (repeats, BUZZ STOP)" : ""));
+                demo >= 0 ? " (BUZZ ALL)" : "");
     for (int i = 0; i < BUZZ_COUNT; i++)
         link_printf("  %-8s %-3s  %s\r\n", sounds[i].name, sounds[i].on ? "on" : "off", sounds[i].what);
     link_printf("on/off: which sounds events may play (no events wired yet); not saved\r\n");
@@ -402,8 +394,7 @@ bool buzzer_command(const char *line)
             link_printf("ERR expected: BUZZ <sound>|ALL|STOP|VOL|ON|OFF|TONE, BUZZ? lists the sounds\r\n");
         } else {
             buzzer_play((buzz_t)i);
-            link_printf("OK %s%s%s\r\n", sounds[i].name, sounds[i].repeat ? ", repeats until BUZZ STOP" : "",
-                        vol == 0 ? " (vol 0: silent)" : "");
+            link_printf("OK %s%s\r\n", sounds[i].name, vol == 0 ? " (vol 0: silent)" : "");
         }
     }
     return true;
