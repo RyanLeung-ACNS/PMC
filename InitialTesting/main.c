@@ -78,15 +78,28 @@ static bool perf_command(const char *line)
 
 // HELP (or ?): every command the link takes. Keep in step with README.md.
 // HELP prints the groups; HELP <group> prints one group, short enough to
-// read in the terminal without scrolling.
+// read in the terminal without scrolling. Grouped by job (0.12.8, Ryan
+// 26 Oct); HELP AUTO and HELP PID still work, for CTRL and TUNE.
 static const char *const help_top[] = {
     "Commands (upper case, one per line, CR or LF ends a line). Groups:",
-    "  HELP SYS     version, data lines, time, timing, diagnostics",
-    "  HELP CFG     save and load settings",
-    "  HELP CAL     pressure calibration",
-    "  HELP VALVE   valve calibration, % position, STOP, faults, events",
-    "  HELP AUTO    AUTO, target and PID tuning",
+    "  HELP CTRL    target, AUTO and MANUAL, STOP, faults, events",
+    "  HELP VALVE   valve homing, % position, valve settings",
+    "  HELP TUNE    control parameters and the step test",
     "  HELP MOT     valve motor and limit switch (engineering)",
+    "  HELP CAL     pressure calibration",
+    "  HELP CFG     save and load settings",
+    "  HELP DATA    readings, the DATA line, trend",
+    "  HELP SYS     version, identity, time, diagnostics",
+};
+static const char *const help_ctrl[] = {
+    "Control (AUTO needs the valve homed, no fault, a target set):",
+    "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
+    "  CTRL AUTO                  start AUTO, bumpless",
+    "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
+    "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
+    "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
+    "  EVT? [1-100]               last events (default 20)",
+    "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
 };
 static const char *const help_valve[] = {
     "Valve (nothing moves at boot; VALVE CAL first):",
@@ -97,34 +110,30 @@ static const char *const help_valve[] = {
     "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
     "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
     "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
-    "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
-    "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
-    "  EVT? [1-100]               last events (default 20)",
 };
-static const char *const help_auto[] = {
-    "AUTO (pressure control; the valve homed, no fault, a target set):",
-    "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
-    "  CTRL AUTO                  start AUTO, bumpless",
-    "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
+static const char *const help_tune[] = {
+    "Tuning (engineering; live, CFG SAVE keeps):",
     "  PID?                       all control parameters",
-    "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
+    "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
     "  TUNE STEP [<+-%>]          step test in MANUAL (default +1.0 %), suggests KP and TI",
     "  TUNE? | TUNE STOP          progress and result / stop, valve back to the start",
-    "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
+};
+static const char *const help_data[] = {
+    "Readings and logging:",
+    "  SENSE?                     Power Monitor and Druck readings now",
+    "  BARO?                      room pressure from the Pressure 21 Click (S2)",
+    "  DATA ON | DATA OFF         once-a-second DATA line (off at boot)",
+    "  DATA?                      DATA column names",
+    "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
 };
 static const char *const help_sys[] = {
     "System:",
     "  VER?                       firmware version and build time",
     "  *IDN?                      identity, one line: PMC,MM4,<chip id>,<version> (no echo, no OK)",
-    "  DATA ON | DATA OFF         once-a-second DATA line (off at boot)",
-    "  DATA?                      DATA column names",
-    "  SENSE?                     Power Monitor and Druck readings now",
     "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-    "  BARO?                      room pressure from the Pressure 21 Click (S2)",
     "  TOUCH?                     touch controller counters",
     "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
-    "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
 };
 static const char *const help_cfg[] = {
     "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
@@ -133,6 +142,7 @@ static const char *const help_cfg[] = {
     "  CFG SAVE                   save everything (CAL SAVE does the same)",
     "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
     "  CFG LOAD DEFAULTS          factory motor, valve and tuning settings, sensors kept",
+    "  CFG NAME? | CFG NAME <text>  cryostat name on the Home screen, up to 12 characters",
     "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
 };
 static const char *const help_cal[] = {
@@ -148,7 +158,7 @@ static const char *const help_mot[] = {
     "Valve motor (+ opens, - closes):",
     "  MOT?                       position, target, settings, limit",
     "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
-    "  MOT MOVE <steps>           relative, 1 to 400000",
+    "  MOT MOVE <steps>           relative, 1 to 700000 either way",
     "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
@@ -173,20 +183,24 @@ static bool help_command(const char *line)
 {
     if (strcmp(line, "HELP") == 0 || strcmp(line, "?") == 0)
         HELP_PRINT(help_top);
-    else if (strcmp(line, "HELP SYS") == 0)
-        HELP_PRINT(help_sys);
-    else if (strcmp(line, "HELP CFG") == 0)
-        HELP_PRINT(help_cfg);
-    else if (strcmp(line, "HELP CAL") == 0)
-        HELP_PRINT(help_cal);
-    else if (strcmp(line, "HELP VALVE") == 0 || strcmp(line, "HELP CTRL") == 0)
+    else if (strcmp(line, "HELP CTRL") == 0 || strcmp(line, "HELP AUTO") == 0)
+        HELP_PRINT(help_ctrl);
+    else if (strcmp(line, "HELP VALVE") == 0)
         HELP_PRINT(help_valve);
-    else if (strcmp(line, "HELP AUTO") == 0 || strcmp(line, "HELP PID") == 0)
-        HELP_PRINT(help_auto);
+    else if (strcmp(line, "HELP TUNE") == 0 || strcmp(line, "HELP PID") == 0)
+        HELP_PRINT(help_tune);
     else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
         HELP_PRINT(help_mot);
+    else if (strcmp(line, "HELP CAL") == 0)
+        HELP_PRINT(help_cal);
+    else if (strcmp(line, "HELP CFG") == 0)
+        HELP_PRINT(help_cfg);
+    else if (strcmp(line, "HELP DATA") == 0)
+        HELP_PRINT(help_data);
+    else if (strcmp(line, "HELP SYS") == 0)
+        HELP_PRINT(help_sys);
     else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR expected: HELP, HELP SYS, HELP CFG, HELP CAL, HELP VALVE, HELP AUTO or HELP MOT\r\n");
+        link_printf("ERR expected: HELP, or HELP CTRL, VALVE, TUNE, MOT, CAL, CFG, DATA or SYS\r\n");
     else
         return false;
     return true;

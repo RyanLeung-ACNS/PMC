@@ -151,13 +151,13 @@ The trend and the event log are in RAM and empty after a restart.
 
 ## PC link commands
 
-Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE` or `HELP MOT`.
+Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA` or `HELP SYS` (`HELP AUTO` and `HELP PID` still work, for CTRL and TUNE).
 
 Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (`SENSE?` gives the live sensor readings), and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
-| `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
+| `HELP` or `?` | List the command groups; `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA`, `HELP SYS` list one group each |
 | `VER?` | Firmware version and build time |
 | `*IDN?` | Identity in one line, `PMC,MM4,<chip id>,<version>`, as instrument software expects: no echo and no `OK` |
 | `DATA OFF` / `DATA ON` | Pause or resume the DATA line; off at boot (the logger sends DATA ON) |
@@ -228,7 +228,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 | Command | What it does |
 | --- | --- |
 | `MOT?` | Position, rates, mode, coils, limit |
-| `MOT MOVE <steps>` | Move relative, 1 to 400000 steps; positive opens, negative closes. Closing is refused while the limit reads open. During a move, relative to where that move ends |
+| `MOT MOVE <steps>` | Move relative, 1 to 700000 steps; positive opens, negative closes. Closing is refused while the limit reads open. During a move, relative to where that move ends |
 | `MOT GOTO <pos> [sps]` | Move to an absolute position, at its own rate if given (16 to 1000). During a move it retargets: a target further on extends the move, one behind ramps down and turns round |
 | `MOT STOP` | Stop at once (coils stay on if hold is on) |
 | `MOT STOP RAMP` | Ramp down at the normal deceleration, then stop |
