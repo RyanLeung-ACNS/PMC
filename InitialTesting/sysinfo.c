@@ -48,7 +48,11 @@ static bool idn_command(const char *cmd)
 {
     if (strcmp(cmd, "*IDN?") != 0)
         return false;
+#ifdef __wasm__
+    static const uint8_t uid[12] = { 0 };   // the simulator: no chip ID to read
+#else
     const volatile uint8_t *uid = (const volatile uint8_t *)0x1FFF7A10UL;
+#endif
     char id[25];
     for (int i = 0; i < 12; i++)
         lv_snprintf(id + 2 * i, 3, "%02X", uid[i]);

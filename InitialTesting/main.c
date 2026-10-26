@@ -109,6 +109,8 @@ static const char *const help_auto[] = {
     "  PID?                       all control parameters",
     "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar (live; CFG SAVE keeps)",
     "  PID KDIR +1|-1             +1 opening raises the pressure",
+    "  TUNE STEP [<+-%>]          step test in MANUAL (default +1.0 %), suggests KP and TI",
+    "  TUNE? | TUNE STOP          progress and result / stop, valve back to the start",
     "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
 };
 static const char *const help_sys[] = {

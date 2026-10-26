@@ -214,6 +214,8 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `PID?` | The control parameters: KP, TI, OUTMIN, DB, KDIR and BAND can be set, the rest are fixed in `ctrl.h` |
 | `PID KP\|TI\|OUTMIN\|DB\|BAND <v>` | Gain (%/mbar, 4.00), integral time (min, 0.25; 0 off), AUTO min (%, 0.0), deadband (steps, 8), target band (mbar, 0.10). Live, AUTO included; `CFG SAVE` keeps them |
 | `PID KDIR +1\|-1` | Pressure response: +1 when opening the valve raises the pressure |
+| `TUNE STEP [<+-%>]` | Step test for KP and TI, in MANUAL with the valve homed: waits for a steady pressure, steps the valve (default +1.0 % of travel, doubled until the pressure moves 0.2 mbar, up to 20 %), steps back, fits dead time and time constant, and suggests KP and TI by the Lambda rule. Applies nothing; the valve returns to where it started. Any other valve command, STOP, AUTO or a fault ends it (`InitialTesting/tune.h`) |
+| `TUNE?` \| `TUNE STOP` | Progress and the result / end the test, valve back to the start |
 | `CTRL STOP` | Stop now; in AUTO it drops to MANUAL, nothing latched. Cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
