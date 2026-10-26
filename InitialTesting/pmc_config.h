@@ -15,12 +15,13 @@
 
 // Ethernet build only (0.11.46): 0 = read only, the network link answers
 // queries (a first word ending in ?), HELP, DATA ON/OFF and TREND DUMP and
-// refuses every other command; control is from the screen (Ryan, 25 Oct,
-// as Modbus TCP). 1 = every command, as on the USB COM port.
-#define PMC_LINK_WRITE    0
+// refuses every other command. 1 = every command, as on the USB COM port
+// (Ryan, 26 Oct; it was 0 from 25 Oct). Anyone who can reach port 5000 can
+// then change settings, calibrations and the valve.
+#define PMC_LINK_WRITE    1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.11.50"
+#define PMC_FW_VERSION    "0.12.4"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
@@ -53,6 +54,19 @@
 
 #define PMC_TCP_PORT      5000
 #define PMC_HOSTNAME      "pmc"
+// Modbus TCP server (0.12.0, Ethernet build only): FC1, FC3, FC5 and FC16,
+// register map in docs/modbus-register-map.md. A new client past
+// PMC_MODBUS_CLIENTS replaces the one idle longest; one that stops in the
+// middle of a request is dropped after PMC_MODBUS_IDLE_MS.
+#define PMC_MODBUS_PORT    502
+#define PMC_MODBUS_CLIENTS 2
+#define PMC_MODBUS_IDLE_MS 5000
+// 0: read only, every write answers exception 1 (the default until the
+// remote access setting is decided). 1: target, valve % and the command
+// coils can be written, with the same checks as the screen.
+#ifndef PMC_MODBUS_WRITE
+#define PMC_MODBUS_WRITE   0
+#endif
 
 // Address used if no DHCP server answers within PMC_DHCP_TIMEOUT_MS.
 // Link-local (169.254.0.0/16), the range Windows gives itself on a direct

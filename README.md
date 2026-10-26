@@ -62,7 +62,7 @@ Power: the board takes 12 V on its terminal (10.6 to 14 V; priority 12 V, then U
 `main.c` initialises everything (version and reset cause, clock, LVGL and display, calibration, Clicks, limit switch, valve, settings, saved position, screens, PC link), starts the independent watchdog (about 3 to 4 s), then runs one loop with no RTOS:
 
 1. PC link, touch (every 5 ms), clock, limit switch, stepper and valve tasks, saved position.
-2. Once a second: `sense_second()` reads the INA228, converts to pressure, updates the faults and the trend, and sends the DATA and status lines.
+2. Once a second: `sense_second()` reads the INA228, converts to pressure, updates the faults and the trend, and sends the DATA line and any changed status line.
 3. One command line from the PC, if any, offered to each module's `*_command()` in turn.
 4. `lv_timer_handler()` (screens refresh at 2 Hz, the fast parts at 10 Hz), the watchdog kick, 1 ms delay.
 
@@ -84,6 +84,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `extflash.c` | SST26 serial flash driver |
 | `rtclock.c`, `sysinfo.c` | Clock (`TIME?`, `TIME SET`); version and reset cause (`VER?`) |
 | `link.c`, `usb_serial.c`, `ethlink.c`, `eth_hw.c` | PC text link over USB CDC or TCP |
+| `modbus.c`, `mbmap.c` | Modbus TCP server on port 502 in the Ethernet build: the protocol (FC1, FC3, FC5, FC16) and the register map (`docs/modbus-register-map.md`; `tools/modbus-test` runs both on a PC) |
 | `ui.c` | Screen framework: header, status strip, STOP, buttons, cards, keypad, pick lists, dialogs, text view |
 | `ui_home.c` | Home and Menu |
 | `ui_valve.c` | Valve, Home valve, Faults and log, Diagnostics |
@@ -141,7 +142,7 @@ The trend and the event log are in RAM and empty after a restart.
 
 ## Build and flash
 
-- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. The two can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
+- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. Port 5000 takes every command, as USB does; `PMC_LINK_WRITE 0` makes it read only (queries, HELP, DATA ON/OFF, TREND DUMP). The Ethernet build also runs a Modbus TCP server on port 502 (`docs/modbus-register-map.md`), read only unless `PMC_MODBUS_WRITE` is 1. The two links can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
 - The linker script `.meproject/setup/FileLinker/stm32f407zg.ld` is patched so `.ccmram` is `(NOLOAD)`, which keeps the LVGL heap that lives there out of the flash image. If NECTO ever regenerates this file, re-apply the patch.
 - Build Debug in NECTO. Release leaves the display blank: MikroE's prebuilt Release `lib_ssd1963.a` was compiled with a non-volatile GPIO register struct, so `ssd1963_write_command` loses its WR low and the SSD1963 never latches a command (bench, 0.3.33; disassembly, 0.8.9). From 0.8.10 (pixel loop from 0.8.11) the Debug build keeps the Debug SDK libraries and the hardware drivers at -O0 but compiles LVGL, the pixel loop `driver/display_px.c` and `ui*.c` at -O2 (`driver/display_lvgl.c` must stay -O0: it inlines the SDK's WR_LOW/WR_HIGH) (`InitialTesting/CMakeLists.txt`), so screens draw faster. About 630 KB of flash (0.10.4).
 - NECTO's build folders (`build-MM4/`, `build-Default Configuration/`, ...), `compile_commands.json` and the clangd index in `.cache/` are not tracked, so a NECTO build no longer blocks `git pull`. The one exception is `build-MM4/generated/` (screen code from `main_screen.mscr`), which `tools/ui-preview` compiles. NECTO also rewrites `.meproject/config.json` (it holds machine paths, but also the board and MCU selection, so it stays tracked): before a pull, `git stash` or `git checkout -- InitialTesting/.meproject/config.json`.
@@ -152,13 +153,16 @@ The trend and the event log are in RAM and empty after a restart.
 
 Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE` or `HELP MOT`.
 
-Unprompted output: a `DATA,t_ms,p_mbar,signal_uV,exc_mV,ratio_mV_per_V,die_C,set_mV,ok,baro_mbar` line once a second (baro_mbar is empty with no Pressure 21 reading) (after `DATA ON`; off at boot), status lines when they change, and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
+Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (`SENSE?` gives the live sensor readings), and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
 | `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
 | `VER?` | Firmware version and build time |
-| `DATA OFF` / `DATA ON` | Pause or resume the DATA and status lines; off at boot (the logger sends DATA ON) |
+| `*IDN?` | Identity in one line, `PMC,MM4,<chip id>,<version>`, as instrument software expects: no echo and no `OK` |
+| `DATA OFF` / `DATA ON` | Pause or resume the DATA line; off at boot (the logger sends DATA ON) |
+| `DATA?` | The DATA column names |
+| `SENSE?` | The Power Monitor and Druck readings now (`BARO?` has the Pressure 21) |
 | `TIME?` | Read the real-time clock |
 | `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
 | `BARO?` | Room pressure from the Pressure 21 Click (BMP581) in S2: reading, temperature, or why it is not read |
