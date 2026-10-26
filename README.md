@@ -84,6 +84,7 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 | `extflash.c` | SST26 serial flash driver |
 | `rtclock.c`, `sysinfo.c` | Clock (`TIME?`, `TIME SET`); version and reset cause (`VER?`) |
 | `link.c`, `usb_serial.c`, `ethlink.c`, `eth_hw.c` | PC text link over USB CDC or TCP |
+| `modbus.c`, `mbmap.c` | Modbus TCP server on port 502 in the Ethernet build: the protocol (FC1, FC3, FC5, FC16) and the register map (`docs/modbus-register-map.md`; `tools/modbus-test` runs both on a PC) |
 | `ui.c` | Screen framework: header, status strip, STOP, buttons, cards, keypad, pick lists, dialogs, text view |
 | `ui_home.c` | Home and Menu |
 | `ui_valve.c` | Valve, Home valve, Faults and log, Diagnostics |
@@ -141,7 +142,7 @@ The trend and the event log are in RAM and empty after a restart.
 
 ## Build and flash
 
-- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. The two can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
+- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` gives TCP port 5000 (DHCP, or 169.254.10.50 if no DHCP server answers), and `0` gives the USB COM port. The Ethernet build also runs a Modbus TCP server on port 502 (`docs/modbus-register-map.md`), read only unless `PMC_MODBUS_WRITE` is 1. The two links can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
 - The linker script `.meproject/setup/FileLinker/stm32f407zg.ld` is patched so `.ccmram` is `(NOLOAD)`, which keeps the LVGL heap that lives there out of the flash image. If NECTO ever regenerates this file, re-apply the patch.
 - Build Debug in NECTO. Release leaves the display blank: MikroE's prebuilt Release `lib_ssd1963.a` was compiled with a non-volatile GPIO register struct, so `ssd1963_write_command` loses its WR low and the SSD1963 never latches a command (bench, 0.3.33; disassembly, 0.8.9). From 0.8.10 (pixel loop from 0.8.11) the Debug build keeps the Debug SDK libraries and the hardware drivers at -O0 but compiles LVGL, the pixel loop `driver/display_px.c` and `ui*.c` at -O2 (`driver/display_lvgl.c` must stay -O0: it inlines the SDK's WR_LOW/WR_HIGH) (`InitialTesting/CMakeLists.txt`), so screens draw faster. About 630 KB of flash (0.10.4).
 - NECTO's build folders (`build-MM4/`, `build-Default Configuration/`, ...), `compile_commands.json` and the clangd index in `.cache/` are not tracked, so a NECTO build no longer blocks `git pull`. The one exception is `build-MM4/generated/` (screen code from `main_screen.mscr`), which `tools/ui-preview` compiles. NECTO also rewrites `.meproject/config.json` (it holds machine paths, but also the board and MCU selection, so it stays tracked): before a pull, `git stash` or `git checkout -- InitialTesting/.meproject/config.json`.
@@ -158,6 +159,7 @@ Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_
 | --- | --- |
 | `HELP` or `?` | List the command groups; `HELP SYS`, `HELP CFG`, `HELP CAL`, `HELP VALVE`, `HELP MOT` list one group each |
 | `VER?` | Firmware version and build time |
+| `*IDN?` | Identity in one line, `PMC,MM4,<chip id>,<version>`, as instrument software expects: no echo and no `OK` |
 | `DATA OFF` / `DATA ON` | Pause or resume the DATA line; off at boot (the logger sends DATA ON) |
 | `DATA?` | The DATA column names |
 | `SENSE?` | The Power Monitor and Druck readings now (`BARO?` has the Pressure 21) |

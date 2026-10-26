@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 #include "pmc_config.h"
+#include "ethlink.h"
 #include "clicks.h"
 #include "limit.h"
 #include "stepper3.h"
@@ -841,12 +842,12 @@ static void diag_refresh(void)
     ui_set_text(dp.sup, buf);
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
-    char t[16], info[80];
+    char t[16], info[96];
 #if PMC_LINK_ETHERNET
     // The address, or why there is none (NO CABLE, DHCP..., NET NO CLK,
-    // NET NO PHY): the only place on screen the network shows (0.11.51).
-    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C.\nEthernet %s", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc), link_chip_text());
+    // NET NO PHY) (0.11.51), and the MAC for a DHCP reservation (0.12.1).
+    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C.\nEthernet %s, MAC %s", PMC_FW_VERSION,
+                ui_fmt1(t, sizeof t, s->die_mc), link_chip_text(), ethlink_mac()[0] ? ethlink_mac() : "none");
 #else
     lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C. Link USB.", PMC_FW_VERSION,
                 ui_fmt1(t, sizeof t, s->die_mc));
