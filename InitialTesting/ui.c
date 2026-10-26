@@ -544,6 +544,10 @@ static void show(lv_obj_t *o, bool on)
 void ui_msg(const char *text)
 {
     lv_strlcpy(msg_text, text, sizeof msg_text);
+    // Refusal reasons shared with the link start in lower case there; on
+    // the screen every message starts with a capital (Ryan, 26 Oct).
+    if (msg_text[0] >= 'a' && msg_text[0] <= 'z')
+        msg_text[0] = (char)(msg_text[0] - 'a' + 'A');
     // With a fault latched the message is brief: the fault text is the one to read.
     msg_until = lv_tick_get() + (valve_fault_count() ? 2000 : 5000);
     if (!msg_until)
