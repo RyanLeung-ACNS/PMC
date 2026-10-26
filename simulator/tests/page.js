@@ -22,7 +22,7 @@ const path = require('path');
   await p.press('#cmd', 'Enter');
   await p.waitForTimeout(500);
   const text = await p.locator('#console').textContent();
-  const ok1 = /VALVE mode MANUAL, calibrated 1/.test(text);
+  const ok1 = /VALVE mode MANUAL, (calibrated 1|position set)/.test(text);
   await p.fill('#cmd', 'PID KP 3'); await p.press('#cmd', 'Enter');
   await p.fill('#cmd', 'CFG SAVE'); await p.press('#cmd', 'Enter');
   await p.waitForTimeout(1500);

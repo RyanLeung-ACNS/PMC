@@ -80,7 +80,7 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   // The once-a-second AUTO line goes in 0.11.52 (PR #19); VALVE? says it from then on.
   const line = s.out.split('\n').filter(l => l.startsWith('AUTO')).pop() || '';
   const v = s.cmd('VALVE?');
-  check('AUTO 5 mbar stable', /Stable/.test(line) || /target 5\.0 mB, band [0-9.]+ mB, stable/.test(v), line + '\n' + v);
+  check('AUTO 5 mbar stable', /Stable/.test(line) || /target 5\.0 m(B|bar), band [0-9.]+ m(B|bar), stable/.test(v), line + '\n' + v);
   shot(s, 'auto');
 }
 { // F-6: the needle slips in AUTO, so the pressure does not follow.
