@@ -52,27 +52,40 @@ typedef struct {
 } sound_t;
 
 /* --------------------------------------------------------------------------
- * Sounds (a proposal, not decided). Each one has its own rhythm, not only
- * its own pitch, so it can be told apart if the resonance favours one pitch.
+ * Sounds: the "industrial" set Ryan picked on 26 Oct from the browser player
+ * (8-bit and RPG-menu shapes kept plain). Fixed pitches in the 2 to 5 kHz
+ * range. A short chirp a minor third above starts some notes. Nothing
+ * repeats: FAULT plays once.
  * ------------------------------------------------------------------------ */
-static const step_t s_click[]    = { { 4000, 6 }, { 0, 0 } };
-static const step_t s_ok[]       = { { 2000, 40 }, { 0, 15 }, { 3000, 60 }, { 0, 0 } };
-static const step_t s_refused[]  = { { 1300, 80 }, { 0, 50 }, { 1300, 80 }, { 0, 0 } };
-static const step_t s_warn[]     = { { 2500, 100 }, { 0, 100 }, { 2500, 100 }, { 0, 100 }, { 2500, 100 }, { 0, 0 } };
-static const step_t s_fault[]    = { { 3000, 150 }, { 2000, 150 }, { 3000, 150 }, { 2000, 150 }, { 0, 0 } };
-static const step_t s_auto_on[]  = { { 2000, 60 }, { 2500, 60 }, { 3000, 90 }, { 0, 0 } };
-static const step_t s_auto_off[] = { { 3000, 60 }, { 2500, 60 }, { 2000, 90 }, { 0, 0 } };
-static const step_t s_homed[]    = { { 2700, 250 }, { 0, 0 } };
+static const step_t s_click[]    = { { 3136, 8 }, { 0, 0 } };
+static const step_t s_ok[]       = { { 2093, 40 }, { 0, 25 }, { 3136, 70 }, { 0, 0 } };
+static const step_t s_refused[]  = { { 1568, 60 }, { 1480, 120 }, { 0, 0 } };   // G down to F sharp
+static const step_t s_warn[]     = { { 3136, 15 }, { 2637, 135 }, { 0, 100 },
+                                     { 3136, 15 }, { 2637, 135 }, { 0, 100 },
+                                     { 3136, 15 }, { 2637, 135 }, { 0, 0 } };
+static const step_t s_fault[]    = { { 3520, 15 }, { 3136, 95 }, { 0, 60 },
+                                     { 3520, 15 }, { 3136, 95 }, { 0, 60 },
+                                     { 3520, 15 }, { 3136, 95 }, { 0, 250 },
+                                     { 3520, 15 }, { 3136, 95 }, { 0, 60 },
+                                     { 3520, 15 }, { 3136, 95 }, { 0, 60 },
+                                     { 3520, 15 }, { 3136, 95 }, { 0, 0 } };
+static const step_t s_auto_on[]  = { { 2491, 12 }, { 2093, 38 }, { 0, 30 },
+                                     { 3732, 12 }, { 3136, 38 }, { 0, 30 },
+                                     { 4981, 12 }, { 4186, 108 }, { 0, 0 } };
+static const step_t s_auto_off[] = { { 4981, 12 }, { 4186, 38 }, { 0, 30 },
+                                     { 3732, 12 }, { 3136, 38 }, { 0, 30 },
+                                     { 2491, 12 }, { 2093, 108 }, { 0, 0 } };
+static const step_t s_homed[]    = { { 4186, 80 }, { 0, 60 }, { 4186, 80 }, { 0, 0 } };
 
 static sound_t sounds[BUZZ_COUNT] = {
-    [BUZZ_CLICK]    = { "CLICK",   "key press, 6 ms tick",                 s_click,    0, false },
-    [BUZZ_OK]       = { "OK",      "accepted, low-high chirp",             s_ok,       1, false },
-    [BUZZ_REFUSED]  = { "REFUSED", "refused, two low buzzes",              s_refused,  2, true  },
-    [BUZZ_WARN]     = { "WARN",    "new warning W-x, three beeps once",    s_warn,     3, true  },
-    [BUZZ_FAULT]    = { "FAULT",   "new fault F-x, hi-lo twice, once",     s_fault,    4, true  },
-    [BUZZ_AUTO_ON]  = { "AUTOON",  "AUTO started, three notes rising",     s_auto_on,  1, false },
-    [BUZZ_AUTO_OFF] = { "AUTOOFF", "AUTO stopped, three notes falling",    s_auto_off, 1, false },
-    [BUZZ_HOMED]    = { "HOMED",   "valve homing finished, one long beep", s_homed,    1, false },
+    [BUZZ_CLICK]    = { "CLICK",   "key press, 8 ms tick",                         s_click,    0, false },
+    [BUZZ_OK]       = { "OK",      "accepted, two steps up",                       s_ok,       1, false },
+    [BUZZ_REFUSED]  = { "REFUSED", "refused, G down to F sharp",                   s_refused,  2, true  },
+    [BUZZ_WARN]     = { "WARN",    "new warning W-x, three chirped pulses",        s_warn,     3, true  },
+    [BUZZ_FAULT]    = { "FAULT",   "new fault F-x, two sets of three higher pulses", s_fault,  4, true  },
+    [BUZZ_AUTO_ON]  = { "AUTOON",  "AUTO started, beep boop ding up",              s_auto_on,  1, false },
+    [BUZZ_AUTO_OFF] = { "AUTOOFF", "AUTO stopped, ding boop beep down",            s_auto_off, 1, false },
+    [BUZZ_HOMED]    = { "HOMED",   "valve homing finished, two short high pulses", s_homed,    1, false },
 };
 
 static const step_t demo_gap[] = { { 0, DEMO_GAP_MS }, { 0, 0 } };
