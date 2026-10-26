@@ -66,7 +66,7 @@ static void model_read(void)
     if (autom) {
         ctrl_in_t in = { ms(), (float)M.pv, M.pos, M.moving, M.lim_active, FS };
         if (ctrl_step(&C, &K, &in) == CTRL_RUN && C.move &&
-            model_start_move_rate(C.move_to, ctrl_move_rate(C.move_to - M.pos, (uint32_t)M.run, 16)))
+            model_start_move(C.move_to))
             ctrl_sent(&C);
         return;
     }

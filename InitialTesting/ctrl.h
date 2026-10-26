@@ -29,10 +29,13 @@
  *     with the pressure below the target band, or fully open above it, for
  *     CTRL_TWRONG s. Opening raises this pressure, so AUTO is driving the
  *     wrong way (KDIR the wrong way round); AUTO ends, MANUAL, valve idle.
- *   - Move speed (0.12.5, Ryan 26 Oct): an AUTO move runs at its distance
- *     / CTRL_MOVE_S, between STEPPER3_RATE_MIN and MOT RATE, so the valve
- *     moves slower the closer the new command is to where it is. A command
- *     that arrives during a move sets the rate from where the valve is then.
+ *   - Less hunting (0.12.12, Ryan 26 Oct): the PI works on the pressure
+ *     through a CTRL_PV_TAU_S first-order filter (the band, Stable, W-2,
+ *     W-6 and F-6 still use the reading itself), and a move the opposite
+ *     way to the last one is only sent once the command is CTRL_REV_PCT of
+ *     travel from the valve. Before, the reading's noise turned the motor
+ *     round about every 2 s, inside the drive's backlash. AUTO moves run at
+ *     MOT RATE (the distance-based speed of 0.12.5 was taken out, Ryan 26 Oct).
  */
 
 // Fixed for now (the simulator's DEF_P); the tuning in cfg.c is KP, TI,
@@ -49,8 +52,11 @@
 #define CTRL_TLAG_S     40      // process lag for the response monitor, s
 #define CTRL_STABLE_S   60      // in band this long reads Stable, s
 #define CTRL_SP_CONFIRM 5.0f    // target changes larger than this ask first, mbar
-#ifndef CTRL_MOVE_S
-#define CTRL_MOVE_S     2       // AUTO moves shorter than MOT RATE x this take this long, s
+#ifndef CTRL_PV_TAU_S
+#define CTRL_PV_TAU_S   0.0f    // pressure filter for the PI, s (ctrl_t pv_tau); off, see below
+#endif
+#ifndef CTRL_REV_PCT
+#define CTRL_REV_PCT    0.10f   // a reversal waits until the command is this far away, % of travel (rev_pct)
 #endif
 
 typedef struct {
@@ -99,6 +105,11 @@ typedef struct {
     int32_t move_to;
     float kp_used;     // gain (steps per mbar) and response sign of the last
     int kdir_used;     // step: a change in AUTO re-bases the integral
+    float pv_f;        // pressure through pv_tau, mbar
+    int last_dir;      // way of the last move sent: +1 opening, -1 closing, 0 none yet
+    int move_dir;      // way of the move asked for
+    float pv_tau;      // CTRL_PV_TAU_S from ctrl_init; 0 off (the host test's reference runs)
+    float rev_pct;     // CTRL_REV_PCT from ctrl_init; 0 off
 } ctrl_t;
 
 void ctrl_init(ctrl_t *c);
@@ -117,8 +128,6 @@ bool ctrl_set_sp(ctrl_t *c, float sp, float fs, uint32_t t_ms);
 // call ctrl_sent() once the motor has taken it.
 ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in);
 void ctrl_sent(ctrl_t *c);
-// Rate for an AUTO move of dist steps: dist / CTRL_MOVE_S, from min to run.
-uint32_t ctrl_move_rate(int32_t dist, uint32_t run, uint32_t min);
 // Regulation words for the status line, in AUTO.
 ctrl_reg_t ctrl_regulation(const ctrl_t *c, const ctrl_tune_t *k, uint32_t t_ms, bool pv_ok, float pv);
 // Leaves the band timing; called outside AUTO.

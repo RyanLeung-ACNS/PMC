@@ -119,7 +119,7 @@ typedef struct {
 static const field_t F[CFG_N] = {
     [CFG_POSMAX]  = { "100 % travel", "turns", 2, K_TURNS, "Output turns from closed to fully open" },
     [CFG_REVERSE] = { "Motor direction", NULL, 0, K_TOGGLE, "Reversed if Open drives the valve closed; saving it clears the zero" },
-    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count set at the closed limit" },
+    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count at 0 %, the back-off above the switch" },
     [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing steps 2 and 4: off the switch" },
     [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Homing step 1: closing fast to the switch" },
     [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Homing step 3: closing slowly onto the switch" },

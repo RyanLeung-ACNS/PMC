@@ -31,7 +31,7 @@ static int32_t f_home   = 400;     // steps/s, clearance, fast close, back-off
 static int32_t f_creep  = 25;      // steps/s, slow final close
 static int32_t n_backoff = 400;    // steps off the switch before the creep, and after it
 static int32_t n_clear  = 800;     // steps off the switch if pressed at the start
-static int32_t n_offset = 0;       // count given to the switch point
+static int32_t n_offset = 0;       // count given to 0 %, the back-off above the switch (0.12.12)
 static valve_ref_t ref_how;        // how the position was last set (valve_reference)
 
 static const setting_t settings[] = {
@@ -51,6 +51,9 @@ _Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
  * (Ryan, 23 Oct: "just recalculate"). */
 static int32_t sc(int32_t full) { return full * stepper3_scale(); }
 static int32_t pm(void) { return sc(pos_max); }
+// The count of the seat (the switch point): 0 % is the back-off above it
+// (Ryan, 26 Oct), so a seated valve reads about -0.6 % with the defaults.
+static int32_t seat_count(void) { return sc(n_offset - n_backoff); }
 static int32_t f_rate(int32_t full)
 {
     int32_t r = sc(full);
@@ -320,14 +323,14 @@ static void cal_move_ended(stepper3_stop_t why)
         break;
     case CAL_CREEP:
         if (why == STEPPER3_STOP_LIMIT) {
-            if (!stepper3_set_position(sc(n_offset))) {
+            if (!stepper3_set_position(seat_count())) {
                 cal_abort("count not set");
                 break;
             }
             // Then off the switch by the back-off, so it is not left
-            // pressed against the seat (Ryan, 26 Oct).
+            // pressed against the seat; that point is 0 % (Ryan, 26 Oct).
             cal_stage = CAL_PARK;
-            if (!cal_move(sc(n_offset + n_backoff), f_rate(f_home)))
+            if (!cal_move(sc(n_offset), f_rate(f_home)))
                 raise(F03, true, "Homing: final back-off refused at count %ld", (long)stepper3_position());
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
@@ -348,7 +351,7 @@ static void cal_homed(void)
     cal_done = true;
     cal_took_s = lv_tick_elaps(cal_t0) / 1000;
     lv_strlcpy(cal_done_iso, rtclock_iso(), sizeof cal_done_iso);
-    ev("REF", "Homed in %lu s, switch at %ld, now at %ld", (unsigned long)cal_took_s, (long)sc(n_offset),
+    ev("REF", "Homed in %lu s, switch at %ld, 0 %% at %ld", (unsigned long)cal_took_s, (long)seat_count(),
        (long)stepper3_position());
     cal_end(VALVE_MANUAL);
 }
@@ -715,8 +718,7 @@ static void auto_step(void)
     case CTRL_RUN:
         // The closed switch blocks closing from rest (stepper3 refuses it);
         // ctrl.c holds the integral meanwhile.
-        if (ctl.move && stepper3_goto_rate(ctl.move_to, ctrl_move_rate(ctl.move_to - stepper3_position(),
-                                                                        stepper3_rate(), STEPPER3_RATE_MIN)))
+        if (ctl.move && stepper3_goto(ctl.move_to))
             ctrl_sent(&ctl);
         break;
     case CTRL_W02:
@@ -867,30 +869,31 @@ bool valve_restore(int32_t count, const char **why)
     return true;
 }
 
-bool valve_set_closed(const char **why)
-{
-    return valve_set_position(0, why);
-}
-
-bool valve_set_position(int32_t pct100, const char **why)
+// The operator's position: seated (closed), or a typed %.
+static bool set_by_hand(bool seated, int32_t pct100, const char **why)
 {
     if (pct100 < 0 || pct100 > 10000) { *why = "outside 0 to 100 %"; return false; }
     if (mode == VALVE_CALIBRATING) { *why = "homing, STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
-    int32_t c = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
+    int32_t c = seated ? seat_count() : (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (stepper3_busy() || !stepper3_set_position(c)) { *why = "moving, wait for it to stop"; return false; }
     calibrated = true;
     ref_how = VALVE_REF_HAND;
     mode = VALVE_MANUAL;
-    if (c == 0)
-        ev("REF", "Set as closed by the operator: count 0 (0 %%), not verified by homing");
+    char p[16];
+    if (seated)
+        ev("REF", "Set as seated by the operator: count %ld (%s %%), not verified by homing", (long)c,
+           pct_text(p, sizeof p, c));
     else
         ev("REF", "Position set by the operator: count %ld (%ld.%02ld %%), not verified by homing",
            (long)c, (long)(pct100 / 100), (long)(pct100 % 100));
     update_lock();
     return true;
 }
+
+bool valve_set_closed(const char **why) { return set_by_hand(true, 0, why); }
+bool valve_set_position(int32_t pct100, const char **why) { return set_by_hand(false, pct100, why); }
 
 valve_mode_t valve_mode(void)   { return mode; }
 bool valve_calibrated(void)     { return calibrated; }
@@ -1301,8 +1304,8 @@ bool valve_answer(bool set_zero, const char **why)
     question = false;
     if (set_zero) {
         int32_t d = stepper3_position() - question_at;
-        stepper3_set_position(sc(n_offset) + d);
-        ev("W-1", "Point set as 0 %%, count %ld", (long)sc(n_offset));
+        stepper3_set_position(seat_count() + d);
+        ev("W-1", "Point set as the seat, count %ld (0 %% is the back-off above it)", (long)seat_count());
         if (!strncmp(warn, "W-4", 3))
             warn[0] = 0;   // the switch was right, the count was not
     } else {
@@ -1403,7 +1406,7 @@ bool valve_command(const char *line)
             link_printf("ERR %s\r\n", err);
     } else if (strcmp(line, "VALVE CLOSED") == 0) {
         if (valve_set_closed(&err))
-            link_printf("OK closed, count 0\r\n");
+            link_printf("OK seated, count %ld\r\n", (long)stepper3_position());
         else
             link_printf("ERR %s\r\n", err);
     } else if (strncmp(line, "VALVE GOTO", 10) == 0) {

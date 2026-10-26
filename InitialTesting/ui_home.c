@@ -377,7 +377,7 @@ static bool set_position(int32_t v100, const char **why)
 }
 
 /* Home and Set position are two jobs, kept apart on every screen (Ryan,
- * 23 Oct): Home finds 0 % on the limit switch; Set position takes the
+ * 23 Oct): Home finds the limit switch (0 % is the back-off above it); Set position takes the
  * position from the operator (closed, a typed %, or the saved position),
  * not verified by homing. */
 static void set_position_ask(void)

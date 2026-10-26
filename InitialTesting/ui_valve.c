@@ -295,12 +295,14 @@ static struct {
  * state, turns and Help; then Home valve and the three ways to set the
  * position. */
 static const char *const calib_help =
-    "Home valve finds 0 % on the limit switch: a fast close to the switch, a back-off, "
-    "a slow close onto it, then the back-off again so the switch is left released. "
+    "Home valve finds the limit switch: a fast close to the switch, a back-off, "
+    "a slow close onto it, then the back-off again. 0 % is that last point, just off the seat, "
+    "so a seated valve reads about -0.6 %. "
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "Set as 0 %, Set as other % and Use last saved record a position without moving the valve. "
     "They are not verified against the limit switch.\n"
-    "Set as 0 %: use only when the valve is known to be seated.\n"
+    "Set as 0 %: use only when the valve is known to be seated. It then reads the seat, "
+    "about -0.6 %, as after homing.\n"
     "Set as other %: use when the position is known, for example from the previous run.\n"
     "Use last saved: the position stored before power was lost. Available after start-up "
     "until the valve moves or is homed.\n\n"
