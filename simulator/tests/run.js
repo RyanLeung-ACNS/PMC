@@ -26,8 +26,10 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
 { // Homing from the screen: Home valve, then Home in the question.
   const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
   s.tap(415, 72); s.tap(346, 147); s.run(120000);
-  // The count after homing is the needle's place from the switch: 0, or the final back-off from 0.12.11.
-  check('home from the screen', /Homed in/.test(s.out) && s.get(30) === s.get(5) / 2 && [0, 400].includes(s.get(30)), s.out.slice(-400));
+  // After homing the needle sits 0 or 400 full steps (the final back-off) above the switch. The count is
+  // that distance up to 0.12.11 and 0 from 0.12.12 (0 % is the point after the back-off).
+  const off = s.get(5) / 2 - s.get(30);
+  check('home from the screen', /Homed in/.test(s.out) && [0, 400].includes(s.get(5) / 2) && [0, 400].includes(off), s.out.slice(-400));
   shot(s, 'homed');
 }
 { // Set position (no homing): VALVE CLOSED takes the count as 0 % where it stands.
@@ -39,7 +41,8 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   const s = homed(load());
   s.cmd('VALVE GOTO 25', 60000);
   const full = s.get(5) / 2;
-  check('GOTO 25 % moves the needle 25 % of 66048', Math.abs(full - 16512) <= 1, 'needle ' + full);
+  // The needle is the count plus the back-off when 0 % is above the switch (0.12.12).
+  check('GOTO 25 % moves the needle 25 % of 66048', Math.abs(s.get(30) - 16512) <= 1 && [0, 400].includes(full - s.get(30)), 'needle ' + full + ', count ' + s.get(30));
 }
 { // Motor supply off: moves refused, said on the screen and the console.
   const s = homed(load());
