@@ -98,6 +98,7 @@ static const char *const help_ctrl[] = {
     "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
     "  CTRL STOP                  stop now (in AUTO: MANUAL, nothing latched)",
     "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
+    "  CTRL OK                    acknowledge the warning (as the screen OK)",
     "  EVT? [1-100]               last events (default 20)",
     "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
 };
@@ -118,6 +119,7 @@ static const char *const help_tune[] = {
     "  PID KDIR +1|-1             +1 opening raises the pressure",
     "  TUNE STEP [<+-%>]          step test in MANUAL (default +1.0 %), suggests KP and TI",
     "  TUNE? | TUNE STOP          progress and result / stop, valve back to the start",
+    "KP TI OUTMIN DB KDIR BAND can be set; KD TS STABLE TCHECK NRESP DPMIN TCONV CHECKMIN LEAD TLAG are fixed",
 };
 static const char *const help_data[] = {
     "Readings and logging:",
@@ -139,7 +141,7 @@ static const char *const help_cfg[] = {
     "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
     "  CFG?                       saved records, what was loaded, unsaved count",
     "  CFG DIFF?                  settings that differ from the newest save",
-    "  CFG SAVE                   save everything (CAL SAVE does the same)",
+    "  CFG SAVE                   save everything (CAL SAVE does the same; refused in AUTO)",
     "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
     "  CFG LOAD DEFAULTS          factory motor, valve and tuning settings, sensors kept",
     "  CFG NAME? | CFG NAME <text>  cryostat name on the Home screen, up to 12 characters",
@@ -162,7 +164,7 @@ static const char *const help_mot[] = {
     "  MOT?                       position, target, settings, limit",
     "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
     "  MOT MOVE <steps>           relative, 1 to 700000 either way",
-    "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise",
+    "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise (in AUTO: MANUAL)",
     "  MOT ZERO                   call this position 0",
     "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
     "  LIM?                       limit switch state",
@@ -203,7 +205,7 @@ static bool help_command(const char *line)
     else if (strcmp(line, "HELP SYS") == 0)
         HELP_PRINT(help_sys);
     else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR expected: HELP, or HELP CTRL, VALVE, TUNE, MOT, CAL, CFG, DATA or SYS\r\n");
+        link_printf("ERR Expected: HELP, or HELP CTRL, VALVE, TUNE, MOT, CAL, CFG, DATA or SYS\r\n");
     else
         return false;
     return true;
@@ -336,13 +338,13 @@ int main(void)
         if (got && strcmp(line, "*IDN?") != 0)
             link_printf("> %s\r\n", line);
         if (got && PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !link_line_reads(line)) {
-            link_printf("ERR read only over the network, use the screen\r\n");
+            link_printf("ERR Read only over the network, use the screen\r\n");
             got = false;
         }
         if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
             !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
             !sense_data_command(line))
-            link_printf("ERR unknown command\r\n");
+            link_printf("ERR Unknown command\r\n");
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();
         perf_note(t0);

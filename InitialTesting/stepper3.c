@@ -554,8 +554,8 @@ const char *stepper3_status(void)
                 st, (long)position, to, stepper3_mode_name(mode),
                 (unsigned long)(run_state == ST_MOVING ? move_rate : rate_run),
                 !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)"
-                : stepper3_override() ? (limit_open_now() ? "OPEN, override" : "ok, override armed")
-                : stepper3_limit_open() ? "OPEN" : "ok");
+                : stepper3_override() ? (limit_open_now() ? "pressed, override" : "free, override armed")
+                : stepper3_limit_open() ? "pressed" : "free");
     return status_text;
 }
 
@@ -722,15 +722,15 @@ static void goto_command(const char *s)
         ok = ok && !*s;
     }
     if (!ok || to < -10 * STEPPER3_MAX_MOVE || to > 10 * STEPPER3_MAX_MOVE) {
-        link_printf("ERR expected: MOT GOTO <position> [rate %d-%d]\r\n", RATE_MIN, RATE_MAX);
+        link_printf("ERR Expected: MOT GOTO <position> [rate %d-%d]\r\n", RATE_MIN, RATE_MAX);
         return;
     }
     bool moving = run_state == ST_MOVING;
     if (!stepper3_goto_rate((int32_t)to, (uint32_t)sps)) {
         if (to - position > STEPPER3_MAX_MOVE || position - to > STEPPER3_MAX_MOVE)
-            link_printf("ERR more than %d steps from %ld\r\n", STEPPER3_MAX_MOVE, (long)position);
+            link_printf("ERR More than %d steps from %ld\r\n", STEPPER3_MAX_MOVE, (long)position);
         else
-            link_printf("ERR %s\r\n", stepper3_refusal());
+            link_err(stepper3_refusal());
         return;
     }
     if (moving)
@@ -754,7 +754,7 @@ static void show(void)
                 hold, reverse, order[0], order[1], order[2], order[3],
                 energised ? "on" : "off",
                 !LIMIT_FITTED ? "stop off (PMC_LIMIT_STOP 0)" : stepper3_override() ? "OVERRIDE (next close ignores it)" :
-                stepper3_limit_open() ? "OPEN" : "closed (ok)");
+                stepper3_limit_open() ? "pressed" : "free");
     link_printf("OK\r\n");
 }
 
@@ -794,54 +794,54 @@ bool stepper3_command(const char *line)
                             strncmp(a, " OVERRIDE", 9) == 0 || strcmp(a, " ZERO") == 0 ||
                             strncmp(a, " MODE ", 6) == 0 || strncmp(a, " DIR ", 5) == 0 ||
                             strncmp(a, " ORDER ", 7) == 0)) {   // DIR, ORDER clear the homing
-        link_printf("ERR %s\r\n", lock_why);
+        link_err(lock_why);
     } else if (strncmp(a, " MOVE", 5) == 0) {
         if (!parse_int(a + 5, -STEPPER3_MAX_MOVE, STEPPER3_MAX_MOVE, &v) || v == 0)
-            link_printf("ERR expected: MOT MOVE <steps>, 1 to %d either way\r\n", STEPPER3_MAX_MOVE);
+            link_printf("ERR Expected: MOT MOVE <steps>, 1 to %d either way\r\n", STEPPER3_MAX_MOVE);
         else if (!stepper3_move((int32_t)v))
-            link_printf("ERR %s\r\n", stepper3_refusal());
+            link_err(stepper3_refusal());
         else
             link_printf("OK moving to %ld from %ld\r\n", (long)stepper3_target(), (long)position);
     } else if (strncmp(a, " GOTO", 5) == 0) {
         goto_command(a + 5);
     } else if (strcmp(a, " OVERRIDE") == 0) {
         if (!LIMIT_FITTED) {
-            link_printf("ERR limit stop is off (PMC_LIMIT_STOP 0), nothing to override\r\n");
+            link_printf("ERR Limit stop is off (PMC_LIMIT_STOP 0), nothing to override\r\n");
         } else if (run_state != ST_IDLE) {
-            link_printf("ERR busy, MOT STOP first\r\n");
+            link_printf("ERR Busy, MOT STOP first\r\n");
         } else {
             stepper3_override_arm();
-            link_printf("OK\r\n");
+            link_printf("OK override armed for the next close\r\n");
         }
     } else if (strcmp(a, " OVERRIDE OFF") == 0) {
         stepper3_override_cancel();
         link_printf("OK override cleared\r\n");
     } else if (run_state != ST_IDLE && is_setting(a)) {
         // Settings below change the step timing or sequence mid-move.
-        link_printf("ERR busy, MOT STOP first\r\n");
+        link_printf("ERR Busy, MOT STOP first\r\n");
     } else if (strcmp(a, " ZERO") == 0) {
         stepper3_zero();
-        link_printf("OK\r\n");
+        link_printf("OK pos 0\r\n");
     } else if (strncmp(a, " RATE", 5) == 0) {
         if (!parse_int(a + 5, RATE_MIN, RATE_MAX, &v)) {
-            link_printf("ERR expected: MOT RATE <%d-%d>\r\n", RATE_MIN, RATE_MAX);
+            link_printf("ERR Expected: MOT RATE <%d-%d>\r\n", RATE_MIN, RATE_MAX);
         } else {
             stepper3_set_rate((uint32_t)v);
-            link_printf("OK\r\n");
+            link_printf("OK MOT RATE %ld sps, unsaved\r\n", v);
         }
     } else if (strncmp(a, " START", 6) == 0) {
         if (!parse_int(a + 6, RATE_MIN, RATE_MAX, &v)) {
-            link_printf("ERR expected: MOT START <%d-%d>\r\n", RATE_MIN, RATE_MAX);
+            link_printf("ERR Expected: MOT START <%d-%d>\r\n", RATE_MIN, RATE_MAX);
         } else {
             stepper3_set_start((uint32_t)v);
-            link_printf("OK\r\n");
+            link_printf("OK MOT START %ld sps, unsaved\r\n", v);
         }
     } else if (strncmp(a, " ACCEL", 6) == 0) {
         if (!parse_int(a + 6, ACCEL_MIN, ACCEL_MAX, &v)) {
-            link_printf("ERR expected: MOT ACCEL <%d-%d>\r\n", ACCEL_MIN, ACCEL_MAX);
+            link_printf("ERR Expected: MOT ACCEL <%d-%d>\r\n", ACCEL_MIN, ACCEL_MAX);
         } else {
             stepper3_set_accel((uint32_t)v);
-            link_printf("OK\r\n");
+            link_printf("OK MOT ACCEL %ld sps/s, unsaved\r\n", v);
         }
     } else if (strncmp(a, " MODE ", 6) == 0) {
         const char *m = a + 6;
@@ -849,22 +849,22 @@ bool stepper3_command(const char *line)
         if (strcmp(m, "WAVE") == 0)      nm = STEPPER3_WAVE;
         else if (strcmp(m, "FULL") == 0) nm = STEPPER3_FULL;
         else if (strcmp(m, "HALF") == 0) nm = STEPPER3_HALF;
-        else { link_printf("ERR expected: MOT MODE WAVE|FULL|HALF\r\n"); return true; }
+        else { link_printf("ERR Expected: MOT MODE WAVE|FULL|HALF\r\n"); return true; }
         stepper3_set_mode(nm);
-        link_printf("OK pos %ld\r\n", (long)position);
+        link_printf("OK MOT MODE %s, unsaved, pos %ld\r\n", stepper3_mode_name(nm), (long)position);
     } else if (strncmp(a, " HOLD", 5) == 0) {
         if (!parse_int(a + 5, 0, 1, &v)) {
-            link_printf("ERR expected: MOT HOLD 0|1\r\n");
+            link_printf("ERR Expected: MOT HOLD 0|1\r\n");
         } else {
             stepper3_set_hold(v);
-            link_printf("OK\r\n");
+            link_printf("OK MOT HOLD %ld, unsaved\r\n", v);
         }
     } else if (strncmp(a, " DIR", 4) == 0) {
         if (!parse_int(a + 4, 0, 1, &v)) {
-            link_printf("ERR expected: MOT DIR 0|1\r\n");
+            link_printf("ERR Expected: MOT DIR 0|1\r\n");
         } else {
             stepper3_set_reverse(v);
-            link_printf("OK\r\n");
+            link_printf("OK MOT DIR %ld, unsaved\r\n", v);
         }
     } else if (strncmp(a, " ORDER ", 7) == 0) {
         const char *o = a + 7;
@@ -878,13 +878,13 @@ bool stepper3_command(const char *line)
             }
         }
         if (!ok) {
-            link_printf("ERR expected: MOT ORDER <abcd>, digits 0-3 once each\r\n");
+            link_printf("ERR Expected: MOT ORDER <abcd>, digits 0-3 once each\r\n");
         } else {
             stepper3_set_order(n);
-            link_printf("OK\r\n");
+            link_printf("OK MOT ORDER %s, unsaved\r\n", o);
         }
     } else {
-        link_printf("ERR unknown MOT command\r\n");
+        link_printf("ERR Unknown MOT command\r\n");
     }
     return true;
 }

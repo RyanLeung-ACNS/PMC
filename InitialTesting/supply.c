@@ -125,5 +125,6 @@ bool supply_command(const char *line)
         link_printf("SUP %ld mV %s, raw %u, VREFINT raw %u cal %u, VDDA %ld mV, off <%d low <%d high >%d mV\r\n",
                     (long)avg_mv, name[state], raw_in, raw_ref, VREFINT_CAL, (long)vdda_mv,
                     SUPPLY_OFF_MV, SUPPLY_LOW_MV, SUPPLY_HIGH_MV);
+    link_printf("OK\r\n");
     return true;
 }

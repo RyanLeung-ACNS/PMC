@@ -45,6 +45,24 @@ static const int32_t tune_def[T_N] = { 400, 25, 0, 8, 1, 10 };
 static const int32_t tune_lo[T_N]  = { 1,     0,     0,   0,    -1, 10 };
 static const int32_t tune_hi[T_N]  = { 10000, 10000, 500, 2000,  1, 1000 };
 static int32_t tune[T_N] = { 400, 25, 0, 8, 1, 10 };
+// Fixed point: 0.01 %/mbar, 0.01 min, 0.1 %, steps, +-1, 0.01 mbar.
+static const int tune_dec[T_N] = { 2, 2, 1, 0, 0, 2 };
+static const char *const tune_unit[T_N] = { " %/mbar", " min", " %", " steps", "", " mbar" };
+
+// One tuning value as PID? prints it, without the unit.
+static const char *tune_fmt(char *buf, size_t n, int i, int32_t v)
+{
+    if (i == T_KDIR) {
+        lv_snprintf(buf, n, "%s", v > 0 ? "+1" : "-1");
+        return buf;
+    }
+    return fixed_fmt(buf, n, v, tune_dec[i]);
+}
+
+static const char *tune_text(char *buf, size_t n, int i)
+{
+    return tune_fmt(buf, n, i, tune[i]);
+}
 
 typedef struct {
     uint32_t serial;
@@ -406,9 +424,12 @@ static int diff(const cfg_rec_t *live, const cfg_rec_t *b, bool print, char *buf
         if (live->tune[i] == b->tune[i])
             continue;
         count++;
-        if (print)
-            link_printf("CFG DIFF TUNE %s saved %ld, now %ld\r\n", tune_name[i], (long)b->tune[i],
-                        (long)live->tune[i]);
+        if (print) {
+            char x[2][16];
+            link_printf("CFG DIFF TUNE %s saved %s, now %s%s\r\n", tune_name[i],
+                        tune_fmt(x[0], sizeof x[0], i, b->tune[i]), tune_fmt(x[1], sizeof x[1], i, live->tune[i]),
+                        tune_unit[i]);
+        }
     }
     if (strcmp(live->name, b->name) != 0) {
         count++;
@@ -585,7 +606,7 @@ static bool write_scratch(const char **why)
 {
     const char *bad;
     if (!flash_ok) {
-        link_printf("ERR serial flash not found, nothing saved\r\n");
+        link_printf("ERR Serial flash not found, nothing saved\r\n");
         *why = "serial flash not found, nothing saved";
         return false;
     }
@@ -607,10 +628,10 @@ static bool write_scratch(const char **why)
         scan();
         valve_event("CFG", "Save failed in %c, nothing saved", slot_letter(t));
         if (newest >= 0)
-            link_printf("ERR flash write or read-back failed in %c, nothing saved, rev %lu in %c kept\r\n",
+            link_printf("ERR Flash write or read-back failed in %c, nothing saved, rev %lu in %c kept\r\n",
                         slot_letter(t), (unsigned long)slot[newest].rev, slot_letter(newest));
         else
-            link_printf("ERR flash write or read-back failed in %c, nothing saved\r\n", slot_letter(t));
+            link_printf("ERR Flash write or read-back failed in %c, nothing saved\r\n", slot_letter(t));
         *why = "flash write failed, nothing saved";
         return false;
     }
@@ -908,10 +929,11 @@ static void show(void)
                     slot_letter(loaded));
     else
         link_printf("CFG start-up: factory defaults, no saved record\r\n");
-    link_printf("CFG TUNE KP %ld TI %ld OUTMIN %ld DB %ld KDIR %ld BAND %ld"
-                " (0.01 %%/mbar, 0.01 min, 0.1 %%, steps, +-1, 0.01 mbar)\r\n",
-                (long)tune[T_KP], (long)tune[T_TI], (long)tune[T_OUTMIN], (long)tune[T_DB],
-                (long)tune[T_KDIR], (long)tune[T_BAND]);
+    char t[T_N][16];
+    for (int i = 0; i < T_N; i++)
+        tune_text(t[i], sizeof t[i], i);
+    link_printf("CFG TUNE KP %s %%/mbar, TI %s min, OUTMIN %s %%, DB %s steps, KDIR %s, BAND %s mbar\r\n",
+                t[T_KP], t[T_TI], t[T_OUTMIN], t[T_DB], t[T_KDIR], t[T_BAND]);
     for (uint32_t i = 0; i < nsens; i++)
         link_printf("CFG SENSOR s/n %lu, %ld.%ld psi%s\r\n", (unsigned long)sens[i].serial,
                     (long)(sens[i].psi10 / 10), (long)(sens[i].psi10 % 10), i == active_sens ? ", in use" : "");
@@ -933,16 +955,16 @@ static void load(const char *what)
     else if (strcmp(what, "PREVIOUS") == 0) from = CFG_FROM_PREVIOUS;
     else if (strcmp(what, "DEFAULTS") == 0) from = CFG_FROM_DEFAULTS;
     else {
-        link_printf("ERR expected: CFG LOAD LAST|PREVIOUS|DEFAULTS\r\n");
+        link_printf("ERR Expected: CFG LOAD LAST|PREVIOUS|DEFAULTS\r\n");
         return;
     }
     if (!source(from)) {
-        link_printf(from == CFG_FROM_SAVED ? "ERR nothing saved\r\n" : "ERR no previous record\r\n");
+        link_printf(from == CFG_FROM_SAVED ? "ERR Nothing saved\r\n" : "ERR No previous record\r\n");
         return;
     }
     const cfg_rec_t *src = source(from);
     if (!cfg_load_live(from, &why)) {
-        link_printf("ERR %s\r\n", why);
+        link_err(why);
         return;
     }
     if (from == CFG_FROM_DEFAULTS)
@@ -955,9 +977,9 @@ static void load(const char *what)
 
 static void test(const char *what)
 {
-    if (!flash_ok) { link_printf("ERR serial flash not found\r\n"); return; }
+    if (!flash_ok) { link_printf("ERR Serial flash not found\r\n"); return; }
     if (strcmp(what, "CORRUPT") == 0) {
-        if (newest < 0) { link_printf("ERR nothing saved\r\n"); return; }
+        if (newest < 0) { link_printf("ERR Nothing saved\r\n"); return; }
         static const uint8_t zero[4];
         int was = newest;
         // Programming clears bits without an erase: the CRC no longer matches.
@@ -972,9 +994,9 @@ static void test(const char *what)
         scan();
         valve_event("CFG", "Test: both settings sectors erased");
         link_printf(ok ? "OK both erased, restart for factory defaults (old cal record kept)\r\n"
-                       : "ERR erase timed out\r\n");
+                       : "ERR Erase timed out\r\n");
     } else {
-        link_printf("ERR expected: CFG TEST CORRUPT|ERASE\r\n");
+        link_printf("ERR Expected: CFG TEST CORRUPT|ERASE\r\n");
     }
 }
 
@@ -1102,7 +1124,7 @@ static void net_command(const char *a)
         return;
     }
     if (strncmp(a, " IP ", 4) != 0) {
-        link_printf("ERR expected: NET? | NET IP <address> <mask> | NET IP DEFAULT\r\n");
+        link_printf("ERR Expected: NET? | NET IP <address> <mask> | NET IP DEFAULT\r\n");
         return;
     }
 #if PMC_LINK_ETHERNET
@@ -1116,43 +1138,33 @@ static void net_command(const char *a)
         const char *sp = strchr(a, ' ');
         size_t n = sp ? (size_t)(sp - a) : 0;
         if (!sp || n >= sizeof x) {
-            link_printf("ERR expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            link_printf("ERR Expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
             return;
         }
         memcpy(x, a, n);
         x[n] = '\0';
         if (!cfg_net_parse(x, &ip) || !cfg_net_parse(sp + 1, &mask)) {
-            link_printf("ERR expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            link_printf("ERR Expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
             return;
         }
         if (ip == 0 && mask == 0) {
-            link_printf("ERR use NET IP DEFAULT for the build default\r\n");
+            link_printf("ERR Use NET IP DEFAULT for the build default\r\n");
             return;
         }
     }
     if (!cfg_set_net(ip, mask, &why)) {
-        link_printf("ERR %s\r\n", why);
+        link_err(why);
         return;
     }
     cfg_net_text(t[0], sizeof t[0], net_ip, net_mask);
     valve_event("CFG", "Fallback address set to %s, not saved", t[0]);
-    link_printf("OK fallback %s (unsaved until CFG SAVE, used after a restart)\r\n", t[0]);
+    link_printf("OK NET fallback %s, unsaved, used after a restart\r\n", t[0]);
 #endif
 }
 
 /* PID? and PID <name> <value>: the simulator's console names. The six
  * tuning values are set live (AUTO picks them up at its next step) and
  * kept by CFG SAVE; the rest are fixed in ctrl.h. */
-static const int tune_dec[T_N] = { 2, 2, 1, 0, 0, 2 };
-
-static const char *tune_text(char *buf, size_t n, int i)
-{
-    if (i == T_KDIR) {
-        lv_snprintf(buf, n, "%s", tune[i] > 0 ? "+1" : "-1");
-        return buf;
-    }
-    return fixed_fmt(buf, n, tune[i], tune_dec[i]);
-}
 
 static void pid_show(void)
 {
@@ -1165,7 +1177,7 @@ static void pid_show(void)
     link_printf("PID TCHECK %d s, NRESP %d, DPMIN 0.05 mbar, TCONV %d s, CHECKMIN %d steps\r\n", CTRL_TCHECK_S,
                 CTRL_NRESP, CTRL_TCONV_S, CTRL_CHECKMIN);
     link_printf("PID LEAD %d steps, TLAG %d s\r\n", CTRL_LEAD_MAX, CTRL_TLAG_S);
-    link_printf("OK KP TI OUTMIN DB KDIR BAND can be set; KD TS STABLE TCHECK NRESP DPMIN TCONV CHECKMIN LEAD TLAG are fixed\r\n");
+    link_printf("OK\r\n");
 }
 
 static void pid_set(const char *a)
@@ -1182,16 +1194,16 @@ static void pid_set(const char *a)
         if (!fixed_parse(&s, tune_dec[i], &v) || *s || v < tune_lo[i] || v > tune_hi[i] ||
             (i == T_KDIR && v == 0)) {
             if (i == T_KDIR)
-                link_printf("ERR expected: PID KDIR +1|-1\r\n");
+                link_printf("ERR Expected: PID KDIR +1|-1\r\n");
             else
-                link_printf("ERR expected: PID %s <%s-%s>\r\n", tune_name[i],
+                link_printf("ERR Expected: PID %s <%s-%s>\r\n", tune_name[i],
                             fixed_fmt(lo, sizeof lo, tune_lo[i], tune_dec[i]),
                             fixed_fmt(hi, sizeof hi, tune_hi[i], tune_dec[i]));
             return;
         }
         tune[i] = (int32_t)v;
         valve_event("CFG", "PID %s set to %s, not saved", tune_name[i], tune_text(t, sizeof t, i));
-        link_printf("OK PID %s %s (unsaved until CFG SAVE)\r\n", tune_name[i], t);
+        link_printf("OK PID %s %s%s, unsaved\r\n", tune_name[i], t, tune_unit[i]);
         return;
     }
     for (size_t i = 0; i < sizeof fixed_names / sizeof fixed_names[0]; i++) {
@@ -1201,7 +1213,7 @@ static void pid_set(const char *a)
             return;
         }
     }
-    link_printf("ERR expected: PID KP|TI|OUTMIN|DB|KDIR|BAND <value>\r\n");
+    link_printf("ERR Expected: PID KP|TI|OUTMIN|DB|KDIR|BAND <value>\r\n");
 }
 
 bool cfg_command(const char *line)
@@ -1227,10 +1239,16 @@ bool cfg_command(const char *line)
     } else if (strcmp(a, " DIFF?") == 0) {
         capture(&scratch);
         int n = diff(&scratch, base(), true, NULL, 0);
-        link_printf("OK %d difference%s from %s\r\n", n, n == 1 ? "" : "s",
-                    newest >= 0 ? "the newest save" : "the start-up values");
+        const char *from = newest >= 0 ? "the newest save" : "the start-up values";
+        if (n)
+            link_printf("CFG DIFF %d difference%s from %s\r\nOK\r\n", n, n == 1 ? "" : "s", from);
+        else
+            link_printf("CFG DIFF none from %s\r\nOK\r\n", from);
     } else if (strcmp(a, " SAVE") == 0) {
-        cfg_save();
+        if (valve_auto())
+            link_printf("ERR Switch to MANUAL first\r\n");   // as CAL SAVE
+        else
+            cfg_save();
     } else if (strncmp(a, " LOAD ", 6) == 0) {
         load(a + 6);
     } else if (strcmp(a, " NAME?") == 0) {
@@ -1238,13 +1256,13 @@ bool cfg_command(const char *line)
     } else if (strncmp(a, " NAME", 5) == 0 && (a[5] == ' ' || a[5] == '\0')) {
         const char *why;
         if (cfg_set_name(a[5] ? a + 6 : "", &why))
-            link_printf("OK name \"%s\" (unsaved until CFG SAVE)\r\n", cname);
+            link_printf("OK NAME \"%s\", unsaved\r\n", cname);
         else
-            link_printf("ERR %s\r\n", why);
+            link_err(why);
     } else if (strncmp(a, " TEST ", 6) == 0) {
         test(a + 6);
     } else {
-        link_printf("ERR unknown CFG command\r\n");
+        link_printf("ERR Unknown CFG command\r\n");
     }
     return true;
 }

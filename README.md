@@ -151,9 +151,9 @@ The trend and the event log are in RAM and empty after a restart.
 
 ## PC link commands
 
-Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Each reply ends with `OK`, or is one `ERR ...` line saying what was expected. Type `HELP` (or `?`) on the board for the groups, then `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA` or `HELP SYS` (`HELP AUTO` and `HELP PID` still work, for CTRL and TUNE).
+Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Every command ends with exactly one final line, `OK` (alone for a query, or with a short result) or `ERR ...` (sentence case, saying what was expected or why not), after any data lines, which start with the group word (`VALVE`, `MOT`, `CFG`, ...). Anything that finishes later comes as an `EVT` line, so a program can read to the first `OK` or `ERR` (0.12.16). Settings answer `OK <NAME> <value> <unit>, unsaved`, e.g. `OK MOT RATE 300 sps, unsaved`. Pressures are in mbar and the limit switch is `pressed` or `free`. Type `HELP` (or `?`) on the board for the groups, then `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA` or `HELP SYS` (`HELP AUTO` and `HELP PID` still work, for CTRL and TUNE).
 
-Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (`SENSE?` gives the live sensor readings), and `LIM closed` / `LIM OPEN` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
+Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (the motor and valve lines when a move starts or ends or a homing stage changes, not as the count runs; `SENSE?` gives the live sensor readings), `LIM free` / `LIM pressed` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
 
 | Command | What it does |
 | --- | --- |
@@ -177,7 +177,7 @@ Settings store (motor, valve, control tuning, up to four pressure sensors each w
 | --- | --- |
 | `CFG?` | Both flash sectors (revision, valid or why not), what was loaded at power-up, number of unsaved settings |
 | `CFG DIFF?` | Each setting that differs from the newest save |
-| `CFG SAVE` | Save everything. Two sectors are used in turn; a save is read back before it counts, so a failed save keeps the last good record |
+| `CFG SAVE` | Save everything (refused in AUTO, as `CAL SAVE`). Two sectors are used in turn; a save is read back before it counts, so a failed save keeps the last good record |
 | `CFG LOAD LAST` / `CFG LOAD PREVIOUS` | Load the newest / the other saved record (shows as unsaved until saved). Refused while moving or homing |
 | `CFG LOAD DEFAULTS` | Factory motor, valve and tuning settings; the sensors and their cals are kept |
 | `CFG NAME <text>` / `CFG NAME?` | Set / show the cryostat name in the Home title (up to 12 characters; unsaved until `CFG SAVE`) |
@@ -190,8 +190,8 @@ Calibration (Druck, through the INA228):
 | Command | What it does |
 | --- | --- |
 | `CAL?` | Active cal, whether it is saved, and the bench points held |
-| `CAL VAC [mbar]` | Capture the vacuum point over 5 readings. Default 0 mbar, range 0 to 50 mbar |
-| `CAL AIR <mbar>` | Capture the air point at the reference reading, 500 to 1100 mbar |
+| `CAL VAC [mbar]` | Capture the vacuum point over 5 readings. Default 0 mbar, range 0 to 50 mbar. Answers `OK capturing ...` at once; the result is a `CAL` event (`EVT ... CAL Vacuum point ... mV/V`) |
+| `CAL AIR <mbar>` | Capture the air point at the reference reading, 500 to 1100 mbar. As `CAL VAC`, the result is a `CAL` event, then `Bench cal applied` once both points are held |
 | `CAL SAVE` | Same as `CFG SAVE`: saves all settings, the active cal included (it is only in RAM until then) |
 | `CAL ERASE` | Go back to nominal, erase the old 0.5.x cal record and save |
 | `CAL NEW [id]`, `CAL PT <mV/V> <mbar>`, `CAL APPLY` | Enter a table by hand (up to 32 points), then make it active |
@@ -213,7 +213,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `CTRL SP <mbar>` | Target, kept to 0.1 mbar, 0 to the sensor range (not saved: none at start-up) |
 | `CTRL AUTO` | Start AUTO after the entry checks. In AUTO the DATA line carries the pressure, target and valve position, and `VALVE?` the regulation state; the motor status line is held back |
 | `CTRL MAN [<0-100>]` | To MANUAL: the valve ramps down and holds where it stops, then goes to % if given |
-| `PID?` | The control parameters: KP, TI, OUTMIN, DB, KDIR and BAND can be set, the rest are fixed in `ctrl.h` |
+| `PID?` | The control parameters (`HELP TUNE` says which can be set: KP, TI, OUTMIN, DB, KDIR and BAND; the rest are fixed in `ctrl.h`) |
 | `PID KP\|TI\|OUTMIN\|DB\|BAND <v>` | Gain (%/mbar, 4.00), integral time (min, 0.25; 0 off), AUTO min (%, 0.0), deadband (steps, 8), target band (mbar, 0.10). Live, AUTO included; `CFG SAVE` keeps them |
 | `PID KDIR +1\|-1` | Pressure response: +1 when opening the valve raises the pressure |
 | `TUNE STEP [<+-%>]` | Step test for KP and TI, in MANUAL with the valve homed: takes up the drive's slack (5 % the other way and back), waits for a steady pressure, steps the valve (default +1.0 % of travel, doubled until the pressure moves 0.2 mbar, up to 20 %), steps again the same way, records each step for 60 s or until settled, fits dead time and time constant, and suggests KP and TI by the Lambda rule. Applies nothing; the valve returns to where it started. Any other valve command, STOP, AUTO or a fault ends it (`InitialTesting/tune.h`) |
@@ -221,6 +221,7 @@ Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is 
 | `CTRL STOP` | Stop now; in AUTO it drops to MANUAL, nothing latched. Cancels homing |
 | `CTRL RESET` | Clear the latched faults whose cause has gone |
 | `CTRL?` | Latched faults, highest priority first |
+| `CTRL OK` | Acknowledge the warning on the strip, as the screen OK and the Modbus OK coil do |
 | `EVT? [1-100]` | The last events (default 20), sent a line at a time as the link has room. Each event is also sent as it happens: `EVT <s> <tag> <text>` |
 
 Faults latch until `CTRL RESET`: F-1 no pressure signal, F-2 excitation outside 9.5 to 10.5 V, F-3 switch not found while homing, F-4 switch still pressed after moving off it, F-5 motion timeout, F-6 no pressure response (AUTO only). F-3 to F-6 stop the motor and refuse VALVE and MOT moves; from 0.9.10 the sensor faults do not, so the valve can be moved and homed with no Druck connected. F-1 and F-2 only reset once the cause has gone. In AUTO, VALVE and MOT moves, homing and the valve settings answer "Switch to MANUAL first" (`CTRL MAN`).
@@ -234,7 +235,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 | `MOT GOTO <pos> [sps]` | Move to an absolute position, at its own rate if given (16 to 1000). During a move it retargets: a target further on extends the move, one behind ramps down and turns round |
 | `MOT STOP` | Stop at once (coils stay on if hold is on) |
 | `MOT STOP RAMP` | Ramp down at the normal deceleration, then stop |
-| `MOT OFF` | Stop and de-energise the coils |
+| `MOT OFF` | Stop and de-energise the coils. In AUTO, `MOT STOP`, `MOT STOP RAMP` and `MOT OFF` end AUTO first (MANUAL, as `CTRL STOP`) |
 | `MOT ZERO` | Call the current position 0 |
 | `MOT OVERRIDE` | Let the next move close past an open limit switch (one move, not saved); `MOT OVERRIDE OFF` cancels |
 | `MOT RATE <16-1000>` | Run rate, steps/s |
@@ -247,7 +248,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 
 `CFG SAVE` keeps the motor settings (`RATE` to `ORDER`).
 
-The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR busy, MOT STOP first` during a move.
+The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR Busy, MOT STOP first` during a move.
 
 ## Tools
 

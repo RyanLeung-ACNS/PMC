@@ -194,7 +194,7 @@ static void tests(void)
 #if PMC_MODBUS_WRITE
     CHECK(rlen == 12 && rsp[7] == 0x10 && rsp[9] == 12 && rsp[11] == 2);
     CHECK(sp_set && sp == 4800);
-    CHECK(strstr(last_event, "target 4.8 mB") != NULL);
+    CHECK(strstr(last_event, "target 4.8 mbar") != NULL);
     REQ(0x03, 0, 12, 0, 2);   CHECK(fabsf(rf(0) - 4.8f) < 1e-5f);
     // Half a float, a read-only register, out of range, NaN.
     REQ(0x10, 0, 12, 0, 1, 2, 0x40, 0x99);       CHECK(is_ex(0x10, MODBUS_EX_ADDRESS));

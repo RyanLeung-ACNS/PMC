@@ -190,7 +190,7 @@ static void update_lock(void)
 {
     stepper3_lock(mode == VALVE_CALIBRATING ? "calibrating, CTRL STOP to cancel"
                   : any_latched() ? "fault latched, CTRL RESET first"
-                  : is_auto() ? "in AUTO, CTRL MAN first" : NULL);
+                  : is_auto() ? "Switch to MANUAL first" : NULL);
 }
 
 static void cal_end(valve_mode_t m)
@@ -519,7 +519,7 @@ static void warn_checks(void)
     } else if (++over_n >= 2) {
         over_n = 0;
         auto_end("W-5 Pressure above the sensor range: switched to MANUAL");
-        ev("W-5", "Pressure %s mB above the sensor range (%s mB), AUTO ended, MANUAL, valve idle",
+        ev("W-5", "Pressure %s mbar above the sensor range (%s mbar), AUTO ended, MANUAL, valve idle",
            mbar_text(pc, sizeof pc, pv_mbar, 1), mbar_text(v, sizeof v, range_mbar(), 1));
     }
 }
@@ -575,11 +575,11 @@ static void tune_result_event(void)
     float kk = (tun.fit[0].k + tun.fit[1].k) / 2;
     bool wrong = (kk > 0) != (cfg_tune(CFG_KDIR) > 0);
     // Two events: the log holds 89 characters of text each.
-    ev("TUNE", "Fit K %s mB/%%, dead time %s s, time constant %s s",
+    ev("TUNE", "Fit K %s mbar/%%, dead time %s s, time constant %s s",
        fixed_fmt(k, sizeof k, (int64_t)lroundf(kk * 1000.0f), 3),
        fixed_fmt(th, sizeof th, (int64_t)lroundf((tun.fit[0].theta + tun.fit[1].theta) * 5.0f), 1),
        fixed_fmt(ta, sizeof ta, (int64_t)lroundf((tun.fit[0].tau + tun.fit[1].tau) * 5.0f), 1));
-    ev("TUNE", "Suggest KP %s %%/mB, TI %s min (not applied)%s",
+    ev("TUNE", "Suggest KP %s %%/mbar, TI %s min (not applied)%s",
        fixed_fmt(kp, sizeof kp, (int64_t)lroundf(tun.kp * 100.0f), 2),
        fixed_fmt(ti, sizeof ti, (int64_t)lroundf(tun.ti * 100.0f), 2),
        wrong ? kk > 0 ? "; opening raises the pressure: KDIR +1" : "; opening lowers the pressure: KDIR -1" : "");
@@ -612,7 +612,7 @@ static void tune_tick(void)
     } else if (tun.phase == TUNE_DONE)
         tune_result_event();
     else if (was == TUNE_WAIT && tun.phase == TUNE_OUT)
-        ev("TUNE", "Pressure steady at %s mB", mbar_text(p, sizeof p, tun.y0, 2));
+        ev("TUNE", "Pressure steady at %s mbar", mbar_text(p, sizeof p, tun.y0, 2));
     tune_send();
 }
 
@@ -657,12 +657,12 @@ static void tune_show(void)
     link_printf("\r\n");
     for (int i = 0; i < 2; i++)
         if (tun.phase == TUNE_DONE || (tun.phase >= TUNE_AGAIN && i == 0 && tun.fit[0].tau > 0))
-            link_printf("TUNE %s: K %s mB/%%, dead time %s s, time constant %s s\r\n", i ? "second" : "first",
+            link_printf("TUNE %s: K %s mbar/%%, dead time %s s, time constant %s s\r\n", i ? "second" : "first",
                         fixed_fmt(a, sizeof a, (int64_t)lroundf(tun.fit[i].k * 1000.0f), 3),
                         fixed_fmt(b, sizeof b, (int64_t)lroundf(tun.fit[i].theta * 10.0f), 1),
                         fixed_fmt(c, sizeof c, (int64_t)lroundf(tun.fit[i].tau * 10.0f), 1));
     if (tun.phase == TUNE_DONE)
-        link_printf("TUNE suggest KP %s %%/mB, TI %s min (PID KP, PID TI, then CFG SAVE to use them)\r\n",
+        link_printf("TUNE suggest KP %s %%/mbar, TI %s min (PID KP, PID TI, then CFG SAVE to use them)\r\n",
                     fixed_fmt(a, sizeof a, (int64_t)lroundf(tun.kp * 100.0f), 2),
                     fixed_fmt(b, sizeof b, (int64_t)lroundf(tun.ti * 100.0f), 2));
     link_printf("OK\r\n");
@@ -689,15 +689,15 @@ static void tune_command(const char *a)
         if (neg || *s == '+')
             s++;
         if (*s && (!fixed_parse(&s, 1, &v) || *s)) {
-            link_printf("ERR expected: TUNE STEP [<+-0.1 to 20.0>], %% of travel\r\n");
+            link_printf("ERR Expected: TUNE STEP [<+-0.1 to 20.0>], %% of travel\r\n");
             return;
         }
         if (!tune_begin((neg ? -1.0f : 1.0f) * (float)v / 10.0f, &err))
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
         else
             link_printf("OK step test started, TUNE? for progress\r\n");
     } else {
-        link_printf("ERR expected: TUNE STEP [<%%>] | TUNE STOP | TUNE?\r\n");
+        link_printf("ERR Expected: TUNE STEP [<%%>] | TUNE STOP | TUNE?\r\n");
     }
 }
 
@@ -762,7 +762,7 @@ bool valve_start_auto(const char **why)
     over_n = 0;
     update_lock();
     char a[16], p[16];
-    ev("MODE", "%s at target %s mB, valve %s %%", "Auto",
+    ev("MODE", "%s at target %s mbar, valve %s %%", "Auto",
        mbar_text(a, sizeof a, ctl.sp, 1), pct_text(p, sizeof p, now));
     return true;
 }
@@ -787,14 +787,14 @@ bool valve_set_target(int32_t mmbar, const char **why)
     int32_t fs = valve_range_mmbar();
     char a[16], b[16];
     if (mmbar < 0 || mmbar > fs) {
-        ev("TARGET", "Setpoint %s rejected, allowed 0 to %s mB", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
+        ev("SP", "Target %s rejected, allowed 0 to %s mbar", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
            fixed_fmt(b, sizeof b, fixed_round(fs, 2), 1));
         *why = "Target outside the sensor range";
         return false;
     }
     int32_t v = (int32_t)fixed_round(mmbar, 2);   // 0.1 mbar
     ctrl_set_sp(&ctl, (float)v / 10.0f, range_mbar(), lv_tick_get());
-    ev("TARGET", "Set to %s mB", fixed_fmt(a, sizeof a, v, 1));
+    ev("SP", "Target %s mbar", fixed_fmt(a, sizeof a, v, 1));
     return true;
 }
 
@@ -940,7 +940,7 @@ const char *valve_status(void)
         // No position here: it changes every second in AUTO, and the DATA
         // line carries it; this one prints on a change of state.
         char a[16];
-        lv_snprintf(status_text, sizeof status_text, "Valve: %s at %s mB%s%s", valve_mode_name(),
+        lv_snprintf(status_text, sizeof status_text, "Valve: %s at %s mbar%s%s", valve_mode_name(),
                     mbar_text(a, sizeof a, ctl.sp, 1), f[0] ? ", faults " : "", f);
     } else if (calibrated)
         lv_snprintf(status_text, sizeof status_text, "Valve: %s, calibrated, %s %% (count %ld of %ld)%s%s%s",
@@ -1027,9 +1027,9 @@ static void reset_command(void)
     if (!any)
         link_printf("OK no fault to reset\r\n");
     else if (kept)
-        link_printf("ERR not reset, cause still present: %s\r\n", left);
+        link_printf("ERR Not reset, cause still present: %s\r\n", left);
     else
-        link_printf("OK reset%s\r\n", calibrated ? "" : ", valve not calibrated");
+        link_printf("OK reset%s\r\n", calibrated ? "" : ", valve position not set");
 }
 
 static void faults_command(void)
@@ -1056,7 +1056,7 @@ static void events_command(const char *a)
         char *end;
         n = strtol(a, &end, 10);
         if (end == a || *end || n < 1 || n > EVT_N) {
-            link_printf("ERR expected: EVT? [1-%d]\r\n", EVT_N);
+            link_printf("ERR Expected: EVT? [1-%d]\r\n", EVT_N);
             return;
         }
     }
@@ -1083,7 +1083,7 @@ static void evt_dump_task(void)
         }
         edump.since = lv_tick_get();
         if (edump.next >= edump.end) {
-            link_printf("OK %lu events since boot\r\n", (unsigned long)evt_count);
+            link_printf("EVT %lu since boot\r\nOK\r\n", (unsigned long)evt_count);
             edump.active = false;
             return;
         }
@@ -1126,17 +1126,19 @@ static void show(void)
 {
     char p[16], f[40];
     faults_text(f, sizeof f);
-    link_printf("VALVE mode %s%s%s, calibrated %d, count %ld (%s %%), target %ld\r\n",
-                valve_mode_name(), cal_stage ? ", " : "", cal_stage_name(), calibrated ? 1 : 0,
-                (long)stepper3_position(), pct_text(p, sizeof p, stepper3_position()),
-                (long)stepper3_target());
+    char to[32] = "";
+    if (stepper3_busy())
+        lv_snprintf(to, sizeof to, ", going to count %ld", (long)stepper3_target());
+    link_printf("VALVE mode %s%s%s, position %s, count %ld (%s %%)%s\r\n",
+                valve_mode_name(), cal_stage ? ", " : "", cal_stage_name(), calibrated ? "set" : "not set",
+                (long)stepper3_position(), pct_text(p, sizeof p, stepper3_position()), to);
     link_printf("VALVE POSMAX %ld, FHOME %ld, FCREEP %ld, BACKOFF %ld, CLEAR %ld, OFFSET %ld\r\n",
                 (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_clear, (long)n_offset);
-    link_printf("VALVE faults %s, limit %s\r\n", f[0] ? f : "none", limit_text());
+    link_printf("VALVE faults %s, switch %s\r\n", f[0] ? f : "none", limit_text());
     if (ctl.sp_set) {
         static const char *const reg[] = { "", ", regulating", ", in band", ", stable" };
         char a[16], b[16];
-        link_printf("VALVE target %s mB, band %s mB%s\r\n", mbar_text(a, sizeof a, ctl.sp, 1),
+        link_printf("VALVE target %s mbar, band %s mbar%s\r\n", mbar_text(a, sizeof a, ctl.sp, 1),
                     fixed_fmt(b, sizeof b, cfg_tune(CFG_BAND), 2), reg[valve_regulation()]);
     } else {
         link_printf("VALVE target not set (CTRL SP)\r\n");
@@ -1158,20 +1160,21 @@ static void setting_command(const char *a)
         while (*end == ' ')
             end++;
         if (end == a + len || *end || v < settings[i].lo || v > settings[i].hi)
-            link_printf("ERR expected: VALVE %s <%ld-%ld>\r\n", settings[i].name,
+            link_printf("ERR Expected: VALVE %s <%ld-%ld>\r\n", settings[i].name,
                         (long)settings[i].lo, (long)settings[i].hi);
         else if (is_auto())
-            link_printf("ERR in AUTO, CTRL MAN first\r\n");
+            link_printf("ERR Switch to MANUAL first\r\n");
         else if (mode == VALVE_CALIBRATING || stepper3_busy())
-            link_printf("ERR busy, CTRL STOP first\r\n");
+            link_printf("ERR Busy, CTRL STOP first\r\n");
         else {
             *settings[i].v = (int32_t)v;
             ev("CFG", "VALVE %s set to %ld", settings[i].name, v);
-            link_printf("OK\r\n");
+            link_printf("OK VALVE %s %ld %s, unsaved\r\n", settings[i].name, v,
+                        settings[i].v == &f_home || settings[i].v == &f_creep ? "steps/s" : "steps");
         }
         return;
     }
-    link_printf("ERR unknown VALVE command\r\n");
+    link_printf("ERR Unknown VALVE command\r\n");
 }
 
 const char *valve_setting_name(int i)
@@ -1212,7 +1215,7 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     if (mode == VALVE_CALIBRATING)  { *why = "calibrating, CTRL STOP to cancel"; return false; }
     if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
-    if (!calibrated)                { *why = "valve not calibrated, VALVE CAL first"; return false; }
+    if (!calibrated)                { *why = "Home the valve first"; return false; }
     int32_t to = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (to < 0) to = 0;
     if (to > pm()) to = pm();
@@ -1367,15 +1370,15 @@ bool valve_command(const char *line)
         stop_command();
     } else if (strcmp(line, "CTRL AUTO") == 0) {
         if (valve_start_auto(&err))
-            link_printf("OK AUTO at %s mB\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
+            link_printf("OK AUTO at %s mbar\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
         else
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
     } else if (strncmp(line, "CTRL MAN", 8) == 0 && (line[8] == ' ' || line[8] == '\0')) {
         int32_t pct10 = -1;
         if (line[8] && !parse_pct10(line + 8, &pct10))
-            link_printf("ERR expected: CTRL MAN [<0-100>], one decimal\r\n");
+            link_printf("ERR Expected: CTRL MAN [<0-100>], one decimal\r\n");
         else if (!valve_to_manual(&err))
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
         else if (pct10 >= 0 && !valve_goto_pct10(pct10, &err))
             link_printf("ERR MANUAL, %s\r\n", err);
         else
@@ -1384,11 +1387,30 @@ bool valve_command(const char *line)
         const char *s = line + 8;
         int64_t v;
         if (!fixed_parse(&s, 3, &v) || *s || v < INT32_MIN || v > INT32_MAX)
-            link_printf("ERR expected: CTRL SP <mbar>\r\n");
+            link_printf("ERR Expected: CTRL SP <mbar>\r\n");
         else if (!valve_set_target((int32_t)v, &err))
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
         else
-            link_printf("OK target %s mB\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
+            link_printf("OK target %s mbar\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
+    } else if (is_auto() && (strcmp(line, "MOT STOP") == 0 || strcmp(line, "MOT STOP RAMP") == 0 ||
+                             strcmp(line, "MOT OFF") == 0)) {
+        // In AUTO the motor commands end AUTO first, as the screen STOP does;
+        // otherwise the loop would move the valve again at its next step.
+        bool off = line[4] == 'O';
+        valve_stop();
+        if (off)
+            stepper3_off();
+        link_printf("OK stopped at %ld%s, AUTO ended, MANUAL\r\n", (long)stepper3_position(),
+                    off ? ", coils off" : "");
+    } else if (strcmp(line, "CTRL OK") == 0) {
+        // The screen OK and the Modbus OK coil: clear the strip warning.
+        if (warn[0]) {
+            ev("OK", "Warning OK (link): %s", warn);
+            valve_warning_clear();
+            link_printf("OK warning cleared\r\n");
+        } else {
+            link_printf("OK no warning\r\n");
+        }
     } else if (strncmp(line, "TUNE", 4) == 0) {
         tune_command(line + 4);
     } else if (strcmp(line, "CTRL RESET") == 0) {
@@ -1403,25 +1425,25 @@ bool valve_command(const char *line)
         if (cal_start(&err))
             link_printf("OK calibrating, up to %lu s\r\n", (unsigned long)valve_cal_budget_s());
         else
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
     } else if (strcmp(line, "VALVE CLOSED") == 0) {
         if (valve_set_closed(&err))
             link_printf("OK seated, count %ld\r\n", (long)stepper3_position());
         else
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
     } else if (strncmp(line, "VALVE GOTO", 10) == 0) {
         int32_t pct10;
         if (!parse_pct10(line + 10, &pct10))
-            link_printf("ERR expected: VALVE GOTO <0-100>, one decimal\r\n");
+            link_printf("ERR Expected: VALVE GOTO <0-100>, one decimal\r\n");
         else if (!valve_goto_pct10(pct10, &err))
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
         else
             link_printf("OK going to %s %% (count %ld) from %ld\r\n",
                         fixed_fmt(p, sizeof p, pct10, 1), (long)stepper3_target(), (long)stepper3_position());
     } else if (strcmp(line, "VALVE SETZERO") == 0 || strcmp(line, "VALVE SKIP") == 0) {
         bool zero = line[6] == 'S' && line[7] == 'E';
         if (!valve_answer(zero, &err))
-            link_printf("ERR %s\r\n", err);
+            link_err(err);
         else if (zero)
             link_printf("OK count %ld\r\n", (long)stepper3_position());
         else

@@ -125,19 +125,19 @@ bool rtclock_command(const char *line)
     if (strncmp(line, "TIME", 4) != 0)
         return false;
     if (strncmp(line, "TIME SET ", 9) != 0) {
-        link_printf("ERR expected: TIME? or TIME SET YYYY-MM-DD HH:MM:SS\r\n");
+        link_printf("ERR Expected: TIME? or TIME SET YYYY-MM-DD HH:MM:SS\r\n");
         return true;
     }
 
     // Fixed layout: YYYY-MM-DD HH:MM:SS
     const char *p = line + 9;
     if (strlen(p) != 19 || p[4] != '-' || p[7] != '-' || p[10] != ' ' || p[13] != ':' || p[16] != ':') {
-        link_printf("ERR expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
+        link_printf("ERR Expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
         return true;
     }
     for (int i = 0; i < 19; i++)
         if (i != 4 && i != 7 && i != 10 && i != 13 && i != 16 && (p[i] < '0' || p[i] > '9')) {
-            link_printf("ERR expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
+            link_printf("ERR Expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
             return true;
         }
 #define NUM2(i) ((p[i] - '0') * 10 + (p[(i) + 1] - '0'))
@@ -145,7 +145,7 @@ bool rtclock_command(const char *line)
     h = NUM2(11); mi = NUM2(14); s = NUM2(17);
 #undef NUM2
     if (y < 2000 || y > 2099 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
-        link_printf("ERR date or time out of range\r\n");
+        link_printf("ERR Date or time out of range\r\n");
         return true;
     }
     if (!lse_ok) {

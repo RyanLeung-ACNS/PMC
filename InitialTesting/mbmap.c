@@ -183,7 +183,7 @@ uint8_t mbmap_write_regs(uint16_t addr, uint16_t n, const uint16_t *v)
             fixed_fmt(t, sizeof t, fixed_round(mm, 2), 1);
             if (!valve_set_target(mm, &why))
                 return refused("target", why);
-            valve_event("NET", "Modbus %s: target %s mB", peer, t);
+            valve_event("NET", "Modbus %s: target %s mbar", peer, t);
         } else {
             if (f < 0.0f || f > 100.0f)
                 return MODBUS_EX_VALUE;

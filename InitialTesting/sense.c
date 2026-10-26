@@ -112,9 +112,54 @@ static size_t state_len(const char *s)
     return (size_t)(c - s);
 }
 
-static bool same_state(const char *a, const char *b, bool live)
+// The motor and valve lines: the same apart from the numbers (count,
+// position, target), so they print when a move starts or ends, a homing
+// stage or the switch changes, not as the count runs. A number is a word
+// that starts with a digit or "-digit"; the 4 in F-4 is not one.
+static bool is_num(const char *s, const char *at)
 {
-    if (!live)
+    if (at > s && at[-1] != ' ' && at[-1] != '(')
+        return false;
+    return (*at >= '0' && *at <= '9') || (*at == '-' && at[1] >= '0' && at[1] <= '9');
+}
+
+static const char *skip_num(const char *c)
+{
+    if (*c == '-')
+        c++;
+    while ((*c >= '0' && *c <= '9') || *c == '.')
+        c++;
+    return c;
+}
+
+static bool same_words(const char *a, const char *b)
+{
+    const char *x = a, *y = b;
+    for (;;) {
+        bool nx = is_num(a, x), ny = is_num(b, y);
+        if (nx != ny)
+            return false;
+        if (nx) {
+            x = skip_num(x);
+            y = skip_num(y);
+            continue;
+        }
+        if (*x != *y)
+            return false;
+        if (!*x)
+            return true;
+        x++;
+        y++;
+    }
+}
+
+typedef enum { SAME_ALL, SAME_STATE, SAME_WORDS } same_t;
+
+static bool same_state(const char *a, const char *b, same_t how)
+{
+    if (how == SAME_WORDS)
+        return same_words(a, b);
+    if (how == SAME_ALL)
         return strcmp(a, b) == 0;
     size_t n = state_len(a);
     return n == state_len(b) && strncmp(a, b, n) == 0;
@@ -128,14 +173,14 @@ static void print_changed_lines(void)
     // A PC that connects later still gets every line once.
     bool resend = link_take_new_client();
 
-    const bool live[STATUS_LINES] = { false, false, false, true, true, false };
+    static const same_t how[STATUS_LINES] = { SAME_ALL, SAME_WORDS, SAME_ALL, SAME_STATE, SAME_STATE, SAME_WORDS };
     // In AUTO the motor line changes every second: DATA carries the position.
     bool in_auto = valve_auto();
 
     for (int i = 0; i < STATUS_LINES; i++) {
         if (!line[i][0] || (i == 1 && in_auto))
             continue;
-        if (resend || last_line[i] == NULL || !same_state(line_copy[i], line[i], live[i])) {
+        if (resend || last_line[i] == NULL || !same_state(line_copy[i], line[i], how[i])) {
             lv_strlcpy(line_copy[i], line[i], sizeof line_copy[i]);
             last_line[i] = line_copy[i];
             link_printf("%s\r\n", line[i]);

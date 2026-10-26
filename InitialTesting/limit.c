@@ -93,8 +93,8 @@ bool limit_open_now(void)
 const char *limit_text(void)
 {
     switch (state) {
-    case LIMIT_CLOSED: return "closed";
-    case LIMIT_OPEN:   return "OPEN";
+    case LIMIT_CLOSED: return "free";
+    case LIMIT_OPEN:   return "pressed";
     default:           return "unknown";
     }
 }
@@ -107,6 +107,6 @@ bool limit_command(const char *line)
     link_printf("LIM %s, pin %s %s, changes %lu, %s\r\nOK\r\n",
                 limit_text(), PMC_LIMIT_PIN_NAME, high ? "high" : "low",
                 (unsigned long)changes,
-                PMC_LIMIT_STOP ? "closing moves blocked while open" : "display only (PMC_LIMIT_STOP 0)");
+                PMC_LIMIT_STOP ? "closing moves blocked while pressed" : "display only (PMC_LIMIT_STOP 0)");
     return true;
 }

@@ -109,7 +109,7 @@ bool trend_coarse(uint32_t age_s, trend_pt_t *o)
 static void put_fixed(char *buf, size_t n, int32_t v, int dec)
 {
     if (v == TREND_NONE) {
-        lv_strlcpy(buf, "-", n);
+        buf[0] = '\0';   // empty field, as on the DATA line
         return;
     }
     int32_t div = dec == 3 ? 1000 : 100;
@@ -140,7 +140,7 @@ void trend_task(void)
         }
         dump.since = lv_tick_get();
         if (dump.head) {
-            link_printf("TREND age_s, pressure mbar, target mbar, valve %%\r\n");
+            link_printf("TREND age_s,p_mbar,target_mbar,valve_pct\r\n");
             dump.head = false;
             continue;
         }
@@ -158,7 +158,7 @@ void trend_task(void)
         put_fixed(p, sizeof p, q.p, 3);
         put_fixed(sp, sizeof sp, q.sp, 3);
         put_fixed(v, sizeof v, q.v, 2);
-        link_printf("TREND -%lu, %s, %s, %s\r\n", (unsigned long)(dump.end - 1 - idx), p, sp, v);
+        link_printf("TREND -%lu,%s,%s,%s\r\n", (unsigned long)(dump.end - 1 - idx), p, sp, v);
     }
 }
 
@@ -176,7 +176,7 @@ bool trend_command(const char *line)
         char *end;
         long s = strtol(line + 10, &end, 10);
         if (end == line + 10 || *end || s < 1 || s > TREND_FINE_N) {
-            link_printf("ERR expected: TREND DUMP <1-%d>\r\n", TREND_FINE_N);
+            link_printf("ERR Expected: TREND DUMP <1-%d>\r\n", TREND_FINE_N);
             return true;
         }
         // Sent from trend_task() a line at a time, as the link has room.

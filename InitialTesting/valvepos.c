@@ -281,7 +281,7 @@ bool valvepos_command(const char *line)
         if (valvepos_use(&why))
             link_printf("OK position %ld from the saved count\r\n", (long)boot_count);
         else
-            link_printf("ERR %s\r\n", why);
+            link_err(why);
     } else {
         return false;
     }

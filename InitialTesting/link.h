@@ -17,6 +17,18 @@ void link_init(void);
 void link_task(void);
 
 void link_printf(const char *fmt, ...);
+
+// "ERR <why>" with the first letter in upper case: the refusal texts are
+// shared with the screen, and the link's ERR lines are in sentence case.
+static inline void link_err(const char *why)
+{
+    if (!why || !why[0]) {
+        link_printf("ERR\r\n");
+        return;
+    }
+    char c = why[0] >= 'a' && why[0] <= 'z' ? (char)(why[0] - 'a' + 'A') : why[0];
+    link_printf("ERR %c%s\r\n", c, why + 1);
+}
 // Bytes link_printf can send now without dropping or waiting. Bulk replies
 // (TREND DUMP) send a line only when this is enough.
 size_t link_tx_room(void);
