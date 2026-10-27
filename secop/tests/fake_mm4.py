@@ -49,7 +49,7 @@ class Board:
         """Reply lines for one command line."""
         with self.lock:
             if line == '*IDN?':
-                return ['PMC,0x3600273C,0.13.0']
+                return ['RL,PMC1,3600273C,0.13.0']
             if line == 'PRES?':
                 return [f'PRES {self.p:.3f} mbar']
             if line == 'PRES SP?':
