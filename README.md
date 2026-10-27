@@ -17,6 +17,8 @@ Two hardware options are being built and compared; neither is final:
 
 `simulator/` holds the simulator: this firmware compiled to WebAssembly, run in a browser over a simulated bench (`simulator/README.md`).
 
+`secop/` holds a Frappy (SECoP) driver for the text port, so a SECoP server can read the pressure and set the target, MANUAL or AUTO and the valve (`secop/README.md`).
+
 ## This repository
 
 This repository holds the Option C prototype: firmware for the MikroE Mikromedia 4 (STM32F407ZG) with Click boards, built in NECTO Studio 7 (mikroSDK, LVGL 9.4). The firmware is in `InitialTesting/`.
