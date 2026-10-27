@@ -3,8 +3,9 @@
     python fake_mm4.py [port]
 
 It answers as the firmware with the remote command set will: no echo,
-nothing sent unasked, ';' chaining, and one reply line per command (the bare value now in
-force, or ERR <code> <text>), each reading its own query.
+nothing sent unasked, ';' chaining, and one reply line per command: a query
+gives its words and value (PRES 4.625 mbar), a set command its words, the value
+now in force and OK (PRES SP 5.0 mbar OK), a refusal ERR <code> <text>.
 
 Only the remote command set is modelled. The valve is homed at start, and
 the pressure follows the valve with a lag (0.2 mbar per % open).
@@ -34,9 +35,6 @@ class Board:
             self.valve += max(-5 * dt, min(5 * dt, d))
             self.p += (0.2 * self.valve - self.p) * min(1.0, dt / 3.0)
 
-    def alarm_line(self):
-        return f'{self.alarm},1,Test alarm' if self.alarm else 'NONE'
-
     def chain(self, line):
         """One reply line for a line of commands separated by ';'. At the
         first ERR the rest is skipped."""
@@ -54,19 +52,19 @@ class Board:
             if line == '*IDN?':
                 return ['RL,HPC1,3600273C,0.13.0']
             if line == 'PRES?':
-                return [f'{self.p:.3f} mbar']
+                return [f'PRES {self.p:.3f} mbar']
             if line == 'PRES SP?':
-                return [f'{self.sp:.1f} mbar']
+                return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE?':
-                return [self.mode]
+                return [f'MODE {self.mode}']
             if line == 'VALV?':
-                return [f'{self.valve:.2f} %']
+                return [f'VALV {self.valve:.2f} %']
             if line == 'VALV MOVING?':
-                return [f'{int(abs(self.goal - self.valve) > 0.005)}']
+                return [f'VALV MOVING {int(abs(self.goal - self.valve) > 0.005)}']
             if line == 'BARO?':
-                return ['1013.25 mbar']
+                return ['BARO 1013.25 mbar']
             if line == 'ALRM?':
-                return [self.alarm_line()]
+                return [f'ALRM {self.alarm},1,Test alarm' if self.alarm else 'ALRM NONE']
             if line.startswith('PRES SP '):
                 try:
                     v = float(line[8:])
@@ -75,31 +73,31 @@ class Board:
                 if not 0 <= v <= 1034:
                     return ['ERR 102 Outside 0 to 1034 mbar']
                 self.sp = round(v, 1)
-                return [f'{self.sp:.1f} mbar']
+                return [f'PRES SP {self.sp:.1f} mbar OK']
             if line == 'MODE AUTO':
                 if self.alarm.startswith('F'):
                     return ['ERR 203 Reset the fault first']
                 self.mode = 'AUTO'
-                return ['AUTO']
+                return ['MODE AUTO OK']
             if line == 'MODE MANUAL':
                 if self.mode == 'AUTO':
                     self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['MANUAL']
+                return ['MODE MANUAL OK']
             if line.startswith('VALV SET '):
                 if self.mode == 'AUTO':
                     return ['ERR 202 Switch to MANUAL first']
                 self.goal = max(0.0, min(100.0, float(line[9:])))
-                return [f'{self.goal:.1f} %']
+                return [f'VALV SET {self.goal:.1f} % OK']
             if line == 'STOP':
                 self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['MANUAL']
+                return ['STOP OK']
             if line == 'ALRM RESET':
                 self.alarm = ''
-                return [self.alarm_line()]
+                return ['ALRM RESET OK']
             if line == 'ALRM OK':
-                return [self.alarm_line()]
+                return ['ALRM OK OK']
         return [f'ERR 100 Unknown command: {line}']
 
 
