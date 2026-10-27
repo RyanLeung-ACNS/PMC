@@ -128,4 +128,4 @@ def client(board, conn):
 
 
 if __name__ == '__main__':
-    serve(int(sys.argv[1]) if len(sys.argv) > 1 else 5000)
+    serve(int(sys.argv[1]) if len(sys.argv) > 1 else 8888)

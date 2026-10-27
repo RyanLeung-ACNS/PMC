@@ -1,6 +1,6 @@
 """Frappy (SECoP) driver for the mm4 pressure controller.
 
-The mm4 is reached over its text port (TCP 5000). Three modules share one
+The mm4 is reached over its text port (TCP 8888). Three modules share one
 connection (names as in cfg/mm4_cfg.py):
 
     pressure       value = pressure (mbar), target = setpoint (starts AUTO),

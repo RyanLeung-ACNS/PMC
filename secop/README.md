@@ -2,7 +2,7 @@
 
 A [Frappy](https://github.com/SampleEnvironment/frappy) driver so a SECoP
 server can read and drive the mm4. It talks to the board's text port (TCP
-5000).
+8888).
 
 This is a reference implementation of the suggested SECoP mapping in the
 mm4 Remote Commands handover, for whoever writes the production driver. The
@@ -53,7 +53,7 @@ screen. The driver has no way to reach them.
    server's other driver packages.
 3. Copy `cfg/mm4_cfg.py` into the server's configuration folder. Set the
    board's address in `MM4_URI` or edit the default in the file
-   (`tcp://<address shown on the screen>:5000`). Copy it once per board,
+   (`tcp://<address shown on the screen>:8888`). Copy it once per board,
    with its own node name and SECoP port.
 4. `frappy-server -c mm4_cfg.py mm4`
 
@@ -64,7 +64,7 @@ firmware 0.12.21 and earlier does not answer these commands.
 
 ## Things to know
 
-- The board takes one connection on port 5000 at a time, and a new one
+- The board takes one connection on port 8888 at a time, and a new one
   replaces the old. While the Frappy server is connected, close any terminal
   and the DATA logger (`tools/logger`).
 - Readings come from `DATA?` each poll (pressure every second, valve every
