@@ -34,7 +34,7 @@ class Mm4IO(StringIO):
     """Line link to the mm4 text port: one reply line per command."""
     end_of_line = '\n'   # the board ends lines with CR LF; CR is stripped
     timeout = 3
-    identification = [('*IDN?', r'RL,HPC1,')]
+    identification = [('*IDN?', r'RL,iPC1,')]
 
     def do(self, command):
         """Send one line and read its reply; an ERR is raised to the client.
