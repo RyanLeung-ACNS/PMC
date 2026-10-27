@@ -381,6 +381,7 @@ int main(int argc, char **argv)
     if (!strcmp(st, "motor-held")) fake_override = true;   // Limit override held
     if (!strcmp(st, "motor-moving")) { extern bool fake_busy; fake_busy = true; ui_service(); }   // a move running
     if (!strcmp(st, "motor-speed")) tap(122, 72);
+    if (!strcmp(st, "motor-steps")) { tap(415, 128); ui_service(); }   // Hold off: the step sizes
     if (!strcmp(st, "motor-coils") || !strcmp(st, "motor-ask")) tap(194, 72);
     if (!strcmp(st, "motor-ask")) { v_cal = true; tap(120, 184); }   // Coil order while homed: asks
     if (!strcmp(st, "overon")) { fake_override = true; tap(415, 184); }   // Menu, override armed

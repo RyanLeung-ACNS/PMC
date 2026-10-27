@@ -17,7 +17,7 @@
  * Body y 48-208, three 48 px rows (y 48, 104, 160). The top row is on every
  * tab: the tabs Move / Speed / Coils (x10 w226) and the position card (x244
  * w226). Below it:
- *   Move   step size 1 to 10k or Hold (hold to move), then Close, Open,
+ *   Move   step size 1 to 10k, and Hold (hold to move, on by default), then Close, Open,
  *          Set zero and Limit override (arms: the next close ignores the switch)
  *   Speed  Run, Start and Accel [-] value [+]
  *   Coils  Mode WAVE/FULL/HALF, Hold torque, Coils off, Coil order, Direction
@@ -40,15 +40,18 @@ enum { TAB_MOVE, TAB_SPEED, TAB_COILS, TAB_N };
 static struct {
     lv_obj_t *tabs[TAB_N], *page[TAB_N];
     lv_obj_t *pos, *last;
-    lv_obj_t *size[6], *mode[3];
+    lv_obj_t *size[5], *mode[3], *hmove, *turns;
     lv_obj_t *rate, *start, *accel, *adj[6];
     lv_obj_t *close, *open, *zero, *over, *hold, *off, *order, *dir;
     lv_obj_t *held;   // the Close or Open button driving a hold move
 } m;
-#define SIZE_HOLD 5
-static int size_sel = SIZE_HOLD, tab_sel;
+// Hold (move while pressed) is its own toggle beside the step sizes, as
+// wide as STOP; while it is on the step sizes are greyed (0.12.20, Ryan
+// 27 Oct). On by default each time the page opens.
+static bool hold_on = true;
+static int size_sel = 2, tab_sel;
 static const int32_t step_sizes[5] = { 1, 10, 100, 1000, 10000 };
-static const char *const step_names[6] = { "1", "10", "100", "1k", "10k", "Hold" };
+static const char *const step_names[5] = { "1", "10", "100", "1k", "10k" };
 // A hold move asks for this far and is ramped down on release.
 #define HOLD_MOVE 200000
 
@@ -103,9 +106,19 @@ static void motor_fast(void);
 /* --------------------------------------------------------------------------
  * Events (on press; a greyed button does nothing)
  * ------------------------------------------------------------------------ */
+// A step size, greyed under Hold or not, picks that size and turns Hold off.
 static void size_event(lv_event_t *e)
 {
     size_sel = (int)event_arg(e);
+    hold_on = false;
+    motor_fast();
+}
+
+static void hmove_event(lv_event_t *e)
+{
+    (void)e;
+    if (!stepper3_busy())
+        hold_on = !hold_on;
     motor_fast();
 }
 
@@ -113,7 +126,7 @@ static void move_event(lv_event_t *e)
 {
     if (ui_btn_disabled(e))
         return;
-    bool hold = size_sel == SIZE_HOLD;
+    bool hold = hold_on;
     if (stepper3_busy())
         return;   // a move starts from rest only; the buttons stay lit meanwhile
     int32_t steps = (hold ? HOLD_MOVE : step_sizes[size_sel]) * (int32_t)event_arg(e);
@@ -391,7 +404,7 @@ static void motor_build(lv_obj_t *scr)
 {
     memset(&m, 0, sizeof m);
     tab_sel = TAB_MOVE;
-    size_sel = SIZE_HOLD;   // opens on Hold (0.12.19, Ryan 27 Oct)
+    hold_on = true;   // opens on Hold (0.12.19, Ryan 27 Oct)
     const int32_t y2 = 0, y3 = R[2] - R[1];
 
     // Top row: the tabs and the position (room for -2147483648, Ryan 22 Oct).
@@ -402,10 +415,17 @@ static void motor_build(lv_obj_t *scr)
     m.last = ui_label(pc, 8, 3, 210, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, "");
     m.pos = ui_label(pc, 0, 0, 210, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "0");
     lv_obj_align(m.pos, LV_ALIGN_BOTTOM_RIGHT, -8, -1);
+    // Output turns, bottom left (0.12.20, Ryan 27 Oct).
+    m.turns = ui_label(pc, 8, 0, 110, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_align(m.turns, LV_ALIGN_BOTTOM_LEFT, 8, -5);
 
     // Move: step size (or Hold), Close, Open, Set zero, Limit override.
     lv_obj_t *p = m.page[TAB_MOVE] = page(scr);
-    seg(p, 10, y2, 460, 6, step_names, m.size, size_event);
+    seg(p, 10, y2, 343, 5, step_names, m.size, size_event);
+    m.hmove = btn(p, 361, y2, 109, "Hold", hmove_event, 0);
+    lv_obj_set_style_border_side(m.hmove, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_width(m.hmove, 2, 0);
+    lv_obj_set_style_border_color(m.hmove, UI_TEXT, 0);
     m.close = btn(p, 10, y3, 109, LV_SYMBOL_LEFT " Close", move_event, -1);
     m.open = btn(p, 127, y3, 109, "Open " LV_SYMBOL_RIGHT, move_event, 1);
     lv_obj_add_event_cb(m.close, release_event, LV_EVENT_RELEASED, NULL);
@@ -464,8 +484,21 @@ static void motor_fast(void)
     ui_set_text(m.last, t);
     ui_set_color(m.last, s == STEPPER3_STOP_LIMIT ? UI_FAULT : UI_MUTED);
 
-    for (int i = 0; i < 6; i++)
-        seg_show(m.size[i], i == size_sel, true);
+    for (int i = 0; i < 5; i++)
+        seg_show(m.size[i], i == size_sel, !hold_on);
+    // Hold: outlined dark when off, filled dark when on.
+    lv_color_t hb = hold_on ? UI_TEXT : UI_CARD;
+    if (!lv_color_eq(lv_obj_get_style_bg_color(m.hmove, 0), hb)) {
+        lv_obj_set_style_bg_color(m.hmove, hb, 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(m.hmove, 0), hold_on ? lv_color_white() : UI_TEXT, 0);
+    }
+    // Output turns from count 0, in the steps of the current mode.
+    char tn[24];
+    int64_t c100 = (int64_t)stepper3_position() * 100 / ((int64_t)STEPPER3_STEPS_PER_TURN * stepper3_scale());
+    int64_t a100 = c100 < 0 ? -c100 : c100;
+    lv_snprintf(tn, sizeof tn, "%s%ld.%02ld turns", stepper3_position() < 0 ? "-" : "", (long)(a100 / 100),
+                (long)(a100 % 100));
+    ui_set_text(m.turns, tn);
     for (int i = 0; i < 3; i++)
         seg_show(m.mode[i], (int)stepper3_mode() == i, !busy && !stepper3_locked());
     // Close is greyed while the limit stop reads open, unless the override
