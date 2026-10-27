@@ -18,10 +18,10 @@
  * tab: the tabs Move / Speed / Coils (x10 w226) and the position card (x244
  * w226). Below it:
  *   Move   step size 1 to 10k or Hold (hold to move), then Close, Open,
- *          Zero and Limit override (closes past the switch while held)
+ *          Set zero and Limit override (closes past the switch while held)
  *   Speed  Run, Start and Accel [-] value [+]
  *   Coils  Mode WAVE/FULL/HALF, Hold torque, Coils off, Coil order, Direction
- * Coil order, Direction and Zero ask first while the valve is homed.
+ * Coil order, Direction and Set zero ask first while the valve is homed.
  * The strip reads the motor state and the limit line (a latched fault, an
  * armed override or a message over it, as on every screen).
  * Moves are relative, by the selected step size, in steps of the current
@@ -403,7 +403,7 @@ static void motor_build(lv_obj_t *scr)
     m.pos = ui_label(pc, 0, 0, 210, &ui_num_26, UI_TEXT, LV_TEXT_ALIGN_RIGHT, "0");
     lv_obj_align(m.pos, LV_ALIGN_BOTTOM_RIGHT, -8, -1);
 
-    // Move: step size (or Hold), Close, Open, Zero, Limit override.
+    // Move: step size (or Hold), Close, Open, Set zero, Limit override.
     lv_obj_t *p = m.page[TAB_MOVE] = page(scr);
     seg(p, 10, y2, 460, 6, step_names, m.size, size_event);
     m.close = btn(p, 10, y3, 109, LV_SYMBOL_LEFT " Close", move_event, -1);
@@ -412,7 +412,7 @@ static void motor_build(lv_obj_t *scr)
     lv_obj_add_event_cb(m.close, release_event, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_add_event_cb(m.open, release_event, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(m.open, release_event, LV_EVENT_PRESS_LOST, NULL);
-    m.zero = btn(p, 244, y3, 109, "Zero", zero_event, 0);
+    m.zero = btn(p, 244, y3, 109, "Set zero", zero_event, 0);
     // Apart from the moves: a dark outline, filled dark while it drives
     // (as it was on Settings).
     m.over = btn(p, 361, y3, 109, "Limit\noverride", override_event, 0);

@@ -7,8 +7,6 @@
 /* LVGL v9: read_cb signature changed, and lv_indev_drv_t is removed */
 static void touchpad_init(void);
 static void touchpad_read(lv_indev_t * indev, lv_indev_data_t * data);
-static bool touchpad_is_pressed(void);
-static void touchpad_get_xy(lv_coord_t * x, lv_coord_t * y);
 
 lv_indev_t * indev_touchpad;
 
@@ -56,9 +54,40 @@ static void touchpad_init(void)
  * interrupt and the main loop, and the ~1 ms transfer belongs outside an
  * ISR. A press seen by any poll is latched until LVGL next reads, so a quick
  * tap that starts and ends between two LVGL reads still counts.
+ *
+ * One finger only (0.12.18). The controller reports up to five touches and
+ * LVGL has one pointer. To 0.12.17 the pointer was the controller's first
+ * point, which can be either finger and swaps as fingers lift, so a second
+ * finger (or a palm) made the press jump between buttons, and the buttons
+ * act on press. Now the finger that started the press is followed by
+ * position (the nearest point within TOUCH_SAME_PX of where it was); other
+ * touches are ignored. When that finger lifts the press ends, and the next
+ * press waits until no finger is on the glass.
  */
-static bool touch_now, touch_latched;
+#define TOUCH_SAME_PX 60
+
+static bool touch_now, touch_latched, touch_wait_up;
 static lv_coord_t touch_x, touch_y;
+static uint32_t touch_multi;    // polls that saw more than one touch, for TOUCH?
+
+static bool touch_follow(const tp_touch_item_t *t, uint8_t n, lv_coord_t *x, lv_coord_t *y)
+{
+    int32_t best = -1, best_d = 0;
+    for (uint8_t i = 0; i < n; i++) {
+        int32_t dx = (int32_t)t->point[i].coord_x - touch_x;
+        int32_t dy = (int32_t)t->point[i].coord_y - touch_y;
+        int32_t d = dx * dx + dy * dy;
+        if (best < 0 || d < best_d) {
+            best = i;
+            best_d = d;
+        }
+    }
+    if (best < 0 || best_d > TOUCH_SAME_PX * TOUCH_SAME_PX)
+        return false;
+    *x = (lv_coord_t)t->point[best].coord_x;
+    *y = (lv_coord_t)t->point[best].coord_y;
+    return true;
+}
 
 void touch_poll(void)
 {
@@ -69,13 +98,36 @@ void touch_poll(void)
 
     process_tp();
     touch_reads++;
-    touch_now = touchpad_is_pressed();
-    if(touch_now) {
-        touchpad_get_xy(&touch_x, &touch_y);
-        if(!touch_was_pressed)
-            touch_presses++;
+    // The points as the SDK gives them to LVGL (get_touch_coordinates).
+    tp_touch_item_t t;
+    memset(&t, 0, sizeof t);
+    uint8_t n = tp.touch.n_touches;
+    if(n)
+        tp_press_coordinates(&tp, &t);
+    if(n > TP_N_TOUCHES_MAX)
+        n = TP_N_TOUCHES_MAX;
+    if(n > 1)
+        touch_multi++;
+
+    if(n == 0) {
+        touch_now = false;
+        touch_wait_up = false;
+    } else if(touch_now) {
+        // Follow the finger that started the press; if it lifted, end the
+        // press even though another finger is still down.
+        if(!touch_follow(&t, n, &touch_x, &touch_y)) {
+            touch_now = false;
+            touch_wait_up = true;
+        }
+    } else if(!touch_wait_up) {
+        touch_x = (lv_coord_t)t.point[0].coord_x;
+        touch_y = (lv_coord_t)t.point[0].coord_y;
+        touch_now = true;
+        touch_presses++;
         touch_latched = true;
     }
+    if(touch_now)
+        touch_latched = true;
     touch_was_pressed = touch_now;
 }
 
@@ -95,24 +147,10 @@ bool touch_command(const char *line)
 {
     if(strcmp(line, "TOUCH?") != 0)
         return false;
-    link_printf("TOUCH reads=%lu errors=%lu last_err=%d presses=%lu now=%s last=%d,%d\r\nOK\r\n",
+    link_printf("TOUCH reads=%lu errors=%lu last_err=%d presses=%lu multi=%lu now=%s last=%d,%d\r\nOK\r\n",
                 (unsigned long)touch_reads, (unsigned long)touch_errors, (int)touch_last_err,
-                (unsigned long)touch_presses,
+                (unsigned long)touch_presses, (unsigned long)touch_multi,
                 touch_was_pressed ? "pressed" : "released",
                 (int)tp.touch.point[0].coord_x, (int)tp.touch.point[0].coord_y);
     return true;
 }
-
-/* Return true if the touchpad is pressed. */
-static bool touchpad_is_pressed(void)
-{
-    /* Your original code missed the return statement. */
-    check_touchpad();
-}
-
-/* Get the x and y coordinates if the touchpad is pressed. */
-static void touchpad_get_xy(lv_coord_t * x, lv_coord_t * y)
-{
-    get_touch_coordinates(x, y);
-}
-

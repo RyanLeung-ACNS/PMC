@@ -10,8 +10,12 @@
  *      port is off (the two clocks cannot share the PLL).
  *   0: USB COM port (COM3) as before, Ethernet off.
  * Flashing over USB-C with mikroBootloader works the same either way.
+ * 1 by default from 0.12.18 (Ryan, 27 Oct); 0 for a bench build on the
+ * USB COM port.
  */
-#define PMC_LINK_ETHERNET 0
+#ifndef PMC_LINK_ETHERNET
+#define PMC_LINK_ETHERNET 1
+#endif
 
 // Ethernet build only (0.11.46): 0 = read only, the network link answers
 // queries (a first word ending in ?), HELP, DATA ON/OFF and TREND DUMP and
@@ -21,7 +25,7 @@
 #define PMC_LINK_WRITE    1
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.12.17"
+#define PMC_FW_VERSION    "0.12.18"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).

@@ -391,6 +391,8 @@ void ui_back(void)
 static void home_event(lv_event_t *e)
 {
     (void)e;
+    if (overlay)
+        return;   // greyed under a popup: Back closes the popup first
     ui_home();
 }
 
@@ -473,8 +475,8 @@ static void build_frame(void)
     lv_obj_set_style_bg_color(hdr, UI_TEXT, 0);
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);    // touches on the header stop here
     // Back and Home, icons only, 48 px each; the title is centred (Ryan,
-    // 16 Oct). Home is hidden on Home and under popups, where Back closes
-    // the popup.
+    // 16 Oct). Home is hidden on Home and greyed under popups, where Back
+    // closes the popup.
     back_btn = ui_btn(hdr, 0, 0, HDR_BTN_W, 40, UI_DARK, LV_SYMBOL_LEFT, back_event, NULL);
     home_btn = ui_btn(hdr, HDR_BTN_W, 0, HDR_BTN_W, 40, UI_DARK, LV_SYMBOL_HOME, home_event, NULL);
     // A touch in the 8 px gap under the header is Back's, not the page's.
@@ -696,7 +698,14 @@ static void frame_refresh(void)
     // Header.
     bool home = cur == &ui_scr_home;
     show(back_btn, !home || overlay);
-    show(home_btn, !home && !overlay);
+    // Home stays in place under a popup, greyed (0.12.18, Ryan: it seemed
+    // to disappear); Back closes the popup.
+    show(home_btn, !home);
+    static int home_dim = -1;
+    if (home_dim != (overlay != NULL)) {
+        home_dim = overlay != NULL;
+        lv_obj_set_style_text_color(lv_obj_get_child(home_btn, 0), home_dim ? UI_IDLE : lv_color_white(), 0);
+    }
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
     const char *mode_txt = nf ? "FAULT" : valve_mode_name();

@@ -6,7 +6,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 PROJ="$HERE/../../InitialTesting"
 OUT="$HERE/out"
 mkdir -p "$OUT/lvgl"
-CFLAGS="-O1 -w -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
+CFLAGS="-O1 -w -DPMC_LINK_ETHERNET=0 -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
   -I$PROJ/lvgl_940 -I$PROJ/lvgl_940/lv_conf/heavy \
   -I$PROJ -I$PROJ/build-MM4/generated"
 
