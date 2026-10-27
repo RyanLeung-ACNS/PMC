@@ -15,8 +15,8 @@ either target takes control, as SECoP expects.
 
 It uses the remote command set, which the firmware gets in the same release
 as this driver. Every command gets one reply line: a query its words and
-value (PRES? -> PRES 4.625 mbar), a set command its words and the value now
-in force (PRES SP 5 -> PRES SP 5.0 mbar), a refusal ERR <code> <text>.
+value (PRES? -> PRES 4.625 mbar), a set command nothing unless refused
+(ERR <code> <text>), so each set line here ends with a query.
 Each reading is its own query
 (PRES?, PRES SP?, MODE?, VALV?, VALV MOVING?, BARO?, ALRM?), and each poll
 chains its queries on one line with ';'. Nothing here
@@ -37,7 +37,9 @@ class Mm4IO(StringIO):
     identification = [('*IDN?', r'RL,HPC1,')]
 
     def do(self, command):
-        """Send one command; an ERR reply is raised to the client."""
+        """Send one line and read its reply; an ERR is raised to the client.
+        Set commands reply only when refused, so a line that sets something
+        ends with a query (MODE AUTO;MODE?) to always get one line back."""
         reply = self.communicate(command).strip()   # the CR of CR LF
         if reply.startswith('ERR'):
             raise ImpossibleError(reply[3:].strip())
@@ -134,14 +136,13 @@ class Pressure(HasOutputModule, HasIO, Drivable):
         return IDLE, 'MANUAL'
 
     def write_target(self, value):
-        self.io.do(f'PRES SP {value:.1f}')
-        self.io.do('MODE AUTO')
+        self.io.do(f'PRES SP {value:.1f};MODE AUTO;MODE?')
         self.activate_control()
         return value
 
     def set_control_active(self, active):
         if self.control_active and not active:
-            self.io.do('MODE MANUAL')
+            self.io.do('MODE MANUAL;MODE?')
         self.control_active = active
 
     @nopoll
@@ -157,18 +158,18 @@ class Pressure(HasOutputModule, HasIO, Drivable):
     @Command()
     def stop(self):
         """Stop the valve now; in AUTO this ends AUTO (MANUAL)."""
-        self.io.do('STOP')
+        self.io.do('STOP;MODE?')
         self.sync_control(False)
 
     @Command()
     def reset(self):
         """Clear latched faults whose cause has gone."""
-        self.io.do('ALRM RESET')
+        self.io.do('ALRM RESET;ALRM?')
 
     @Command()
     def ok_warning(self):
         """Acknowledge the warning, as OK on the screen."""
-        self.io.do('ALRM OK')
+        self.io.do('ALRM OK;ALRM?')
 
 
 class Valve(HasControlledBy, HasIO, Drivable):
@@ -196,14 +197,14 @@ class Valve(HasControlledBy, HasIO, Drivable):
 
     def write_target(self, value):
         self.self_controlled()   # ends AUTO through the pressure module
-        self.io.do(f'VALV SET {value:.1f}')
+        self.io.do(f'VALV SET {value:.1f};VALV MOVING?')
         self.status = BUSY, 'moving'
         return value
 
     @Command()
     def stop(self):
         """Stop the valve now; in AUTO this ends AUTO (MANUAL)."""
-        self.io.do('STOP')
+        self.io.do('STOP;MODE?')
 
 
 class RoomPressure(HasIO, Readable):

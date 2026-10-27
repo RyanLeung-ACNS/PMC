@@ -4,8 +4,8 @@
 
 It answers as the firmware with the remote command set will: no echo,
 nothing sent unasked, ';' chaining, and one reply line per command: a query
-gives its words and value (PRES 4.625 mbar), a set command its words and the
-value now in force (PRES SP 5.0 mbar), a refusal ERR <code> <text>.
+gives its words and value (PRES 4.625 mbar), a set command nothing unless
+refused, and a refusal ERR <code> <text>.
 
 Only the remote command set is modelled. The valve is homed at start, and
 the pressure follows the valve with a lag (0.2 mbar per % open).
@@ -36,15 +36,19 @@ class Board:
             self.p += (0.2 * self.valve - self.p) * min(1.0, dt / 3.0)
 
     def chain(self, line):
-        """One reply line for a line of commands separated by ';'. At the
-        first ERR the rest is skipped."""
+        """The reply to a line of commands separated by ';': the replies of
+        its queries, joined by ';'. Set commands answer only when refused, and
+        at the first ERR the rest is skipped. None if there is nothing to say."""
         replies = []
         for part in line.split(';'):
-            reply = self.command(part.strip())[0]
-            replies.append(reply)
+            part = part.strip()
+            reply = self.command(part)[0]
             if reply.startswith('ERR'):
+                replies.append(reply)
                 break
-        return ';'.join(replies)
+            if part.endswith('?'):
+                replies.append(reply)
+        return ';'.join(replies) if replies else None
 
     def command(self, line):
         """Reply lines for one command line."""
@@ -132,7 +136,9 @@ def client(board, conn):
                 i = min(x for x in (buf.find(b'\n'), buf.find(b'\r')) if x >= 0)
                 line, buf = buf[:i].decode().strip(), buf[i + 1:]
                 if line:
-                    conn.sendall((board.chain(line) + '\r\n').encode())
+                    reply = board.chain(line)
+                    if reply is not None:
+                        conn.sendall((reply + '\r\n').encode())
     except OSError:
         pass
     finally:
