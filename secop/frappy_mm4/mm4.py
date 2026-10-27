@@ -16,7 +16,7 @@ either target takes control, as SECoP expects.
 It uses the remote command set, which the firmware gets in the same release
 as this driver. Every command gets one reply line: the value now in force
 (PRES SP 5 -> PRES SP 5.0 mbar), or ERR <code> <text>. Each reading is its own query
-(PRES?, PRES SP?, MODE?, VALVE?, VALVE MOVING?, BARO?, ALARM?), and each poll
+(PRES?, PRES SP?, MODE?, VALV?, VALV MOVING?, BARO?, ALRM?), and each poll
 chains its queries on one line with ';'. Nothing here
 homes the valve, calibrates, changes a setting or drives the motor. Those
 stay on the touch screen.
@@ -71,7 +71,7 @@ def number(text):
 
 
 def alarm_tags(text):
-    """Tags of the active alarms from ALARM?, faults first ('' if none)."""
+    """Tags of the active alarms from ALRM?, faults first ('' if none)."""
     return '' if text is None else ','.join(a.split(',')[0] for a in text.split('|'))
 
 
@@ -95,7 +95,7 @@ class Pressure(HasOutputModule, HasIO, Drivable):
                           FloatRange(0, unit='mbar'), readonly=False, default=0.5)
 
     def read_value(self):
-        p, sp, mode, alarm = self.io.get('PRES?', 'PRES SP?', 'MODE?', 'ALARM?')
+        p, sp, mode, alarm = self.io.get('PRES?', 'PRES SP?', 'MODE?', 'ALRM?')
         p, sp = number(p), number(sp)
         if sp is not None:
             self.target = sp
@@ -161,12 +161,12 @@ class Pressure(HasOutputModule, HasIO, Drivable):
     @Command()
     def reset(self):
         """Clear latched faults whose cause has gone."""
-        self.io.do('ALARM RESET')
+        self.io.do('ALRM RESET')
 
     @Command()
     def ok_warning(self):
         """Acknowledge the warning, as OK on the screen."""
-        self.io.do('ALARM OK')
+        self.io.do('ALRM OK')
 
 
 class Valve(HasControlledBy, HasIO, Drivable):
@@ -179,7 +179,7 @@ class Valve(HasControlledBy, HasIO, Drivable):
                        FloatRange(0, 100, unit='%', fmtstr='%.1f'), readonly=False)
 
     def read_value(self):
-        v, mode, moving = self.io.get('VALVE?', 'MODE?', 'VALVE MOVING?')
+        v, mode, moving = self.io.get('VALV?', 'MODE?', 'VALV MOVING?')
         v = number(v)
         if v is None:
             self.status = WARN, 'valve not homed: home it at the screen'
@@ -194,7 +194,7 @@ class Valve(HasControlledBy, HasIO, Drivable):
 
     def write_target(self, value):
         self.self_controlled()   # ends AUTO through the pressure module
-        self.io.do(f'VALVE SET {value:.1f}')
+        self.io.do(f'VALV SET {value:.1f}')
         self.status = BUSY, 'moving'
         return value
 

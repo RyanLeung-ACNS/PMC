@@ -56,14 +56,14 @@ class Board:
                 return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE?':
                 return [f'MODE {self.mode}']
-            if line == 'VALVE?':
-                return [f'VALVE {self.valve:.2f} %']
-            if line == 'VALVE MOVING?':
-                return [f'VALVE MOVING {int(abs(self.goal - self.valve) > 0.005)}']
+            if line == 'VALV?':
+                return [f'VALV {self.valve:.2f} %']
+            if line == 'VALV MOVING?':
+                return [f'VALV MOVING {int(abs(self.goal - self.valve) > 0.005)}']
             if line == 'BARO?':
                 return ['BARO 1013.25 mbar']
-            if line == 'ALARM?':
-                return [f'ALARM {self.alarm},1,Test alarm' if self.alarm else 'ALARM NONE']
+            if line == 'ALRM?':
+                return [f'ALRM {self.alarm},1,Test alarm' if self.alarm else 'ALRM NONE']
             if line.startswith('PRES SP '):
                 try:
                     v = float(line[8:])
@@ -83,20 +83,20 @@ class Board:
                     self.goal = self.valve
                 self.mode = 'MANUAL'
                 return ['MODE MANUAL']
-            if line.startswith('VALVE SET '):
+            if line.startswith('VALV SET '):
                 if self.mode == 'AUTO':
                     return ['ERR 202 Switch to MANUAL first']
-                self.goal = max(0.0, min(100.0, float(line[10:])))
-                return [f'VALVE SET {self.goal:.1f} %']
+                self.goal = max(0.0, min(100.0, float(line[9:])))
+                return [f'VALV SET {self.goal:.1f} %']
             if line == 'STOP':
                 self.goal = self.valve
                 self.mode = 'MANUAL'
                 return ['STOP']
-            if line == 'ALARM RESET':
+            if line == 'ALRM RESET':
                 self.alarm = ''
-                return ['ALARM RESET']
-            if line == 'ALARM OK':
-                return ['ALARM OK']
+                return ['ALRM RESET']
+            if line == 'ALRM OK':
+                return ['ALRM OK']
         return [f'ERR 100 Unknown command: {line}']
 
 

@@ -58,8 +58,8 @@ screen. The driver has no way to reach them.
 4. `frappy-server -c mm4_cfg.py mm4`
 
 The driver needs the firmware with the remote command set (`PRES SP`,
-`MODE AUTO`, `MODE MANUAL`, `VALVE SET`, `STOP`, `ALARM RESET`, `ALARM OK`,
-`PRES?`, `PRES SP?`, `MODE?`, `VALVE?`, `VALVE MOVING?`, `BARO?`, `ALARM?`). That firmware and this driver are released together;
+`MODE AUTO`, `MODE MANUAL`, `VALV SET`, `STOP`, `ALRM RESET`, `ALRM OK`,
+`PRES?`, `PRES SP?`, `MODE?`, `VALV?`, `VALV MOVING?`, `BARO?`, `ALRM?`). That firmware and this driver are released together;
 firmware 0.12.21 and earlier does not answer these commands.
 
 ## Things to know
@@ -68,8 +68,8 @@ firmware 0.12.21 and earlier does not answer these commands.
   replaces the old. While the Frappy server is connected, close any terminal
   and the logger (`tools/logger`).
 - Each reading is its own query, and each poll chains its queries on one
-  line: the pressure poll (every second) sends `PRES?;PRES SP?;MODE?;ALARM?`, the
-  valve poll (every 2 s) `VALVE?;MODE?;VALVE MOVING?`.
+  line: the pressure poll (every second) sends `PRES?;PRES SP?;MODE?;ALRM?`, the
+  valve poll (every 2 s) `VALV?;MODE?;VALV MOVING?`.
 - An `ERR` from the board comes back to the SECoP client as an error with
   the board's text, for example `Switch to MANUAL first`.
 - The driver has been tested against `tests/fake_mm4.py` only, not yet
