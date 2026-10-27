@@ -1,4 +1,4 @@
-"""Run the Frappy driver against the fake mm4, both command sets.
+"""Run the Frappy driver against the fake mm4.
 
     python secop/tests/run.py
 
@@ -39,19 +39,17 @@ def wait_until(pred, timeout=15):
     return False
 
 
-def run(commands, board_port, secop_port):
+def run(board_port, secop_port):
     tmp = tempfile.mkdtemp()
-    env = dict(os.environ, MM4_URI=f'tcp://127.0.0.1:{board_port}', MM4_COMMANDS=commands,
+    env = dict(os.environ, MM4_URI=f'tcp://127.0.0.1:{board_port}',
                FRAPPY_CONFDIR=str(SECOP / 'cfg'), FRAPPY_LOGDIR=tmp, FRAPPY_PIDDIR=tmp,
                PYTHONPATH=str(SECOP) + os.pathsep + os.environ.get('PYTHONPATH', ''))
-    board = subprocess.Popen([sys.executable, str(HERE / 'fake_mm4.py'), str(board_port)]
-                             + (['--plan'] if commands == 'plan' else []), env=env,
+    board = subprocess.Popen([sys.executable, str(HERE / 'fake_mm4.py'), str(board_port)], env=env,
                              stdout=subprocess.DEVNULL)
     time.sleep(0.5)
     server = subprocess.Popen(['frappy-server', '-q', '-p', str(secop_port),
                                '-c', str(SECOP / 'cfg' / 'mm4_cfg.py'), 'mm4'], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    print(f'--- commands = {commands}')
     try:
         client = SecopClient(f'localhost:{secop_port}')
         wait_until(lambda: client.connect(1) or True, 20)
@@ -60,7 +58,8 @@ def run(commands, board_port, secop_port):
         check('reads a pressure', wait_until(lambda: get('pressure', 'value') > 0))
         check('reads the valve %', wait_until(lambda: abs(get('valve', 'value') - 5.0) < 0.5),
               get('valve', 'value'))
-        check('mode starts MANUAL', get('pressure', 'mode').name == 'MANUAL')
+        check('starts in MANUAL', get('pressure', 'control_active') is False and
+              get('valve', 'controlled_by').name == 'self')
 
         client.setParameter('valve', 'target', 20.0)
         check('valve move reaches 20 %',
@@ -71,32 +70,36 @@ def run(commands, board_port, secop_port):
         client.setParameter('pressure', 'target', 3.0)
         check('setpoint 3.0 mbar read back',
               wait_until(lambda: abs(get('pressure', 'target') - 3.0) < 1e-6), get('pressure', 'target'))
-
-        client.setParameter('pressure', 'mode', 'AUTO')
-        check('mode AUTO', wait_until(lambda: get('pressure', 'mode').name == 'AUTO'))
-
-        try:
-            client.setParameter('valve', 'target', 50.0)
-            check('valve move refused in AUTO', False, 'no error raised')
-        except Exception as e:
-            check('valve move refused in AUTO', 'MANUAL' in str(e), str(e))
-
+        check('writing the setpoint starts AUTO',
+              wait_until(lambda: get('pressure', 'control_active') is True and
+                         get('valve', 'controlled_by').name == 'pressure'))
         check('AUTO settles near 3.0 mbar',
               wait_until(lambda: abs(get('pressure', 'value') - 3.0) < 0.5 and
                          get('pressure', 'status')[0].name == 'IDLE', 60),
               (get('pressure', 'value'), get('pressure', 'status')))
 
+        client.setParameter('valve', 'target', 10.0)
+        check('writing the valve ends AUTO',
+              wait_until(lambda: get('pressure', 'control_active') is False and
+                         get('valve', 'controlled_by').name == 'self'))
+        check('valve then reaches 10 %',
+              wait_until(lambda: abs(get('valve', 'value') - 10.0) < 0.2, 30), get('valve', 'value'))
+
+        client.setParameter('pressure', 'target', 2.0)
+        check('AUTO again', wait_until(lambda: get('pressure', 'control_active') is True))
         client.execCommand('pressure', 'stop')
-        check('stop ends AUTO', wait_until(lambda: get('pressure', 'mode').name == 'MANUAL'))
+        check('stop ends AUTO', wait_until(lambda: get('pressure', 'control_active') is False))
 
+        client.execCommand('pressure', 'reset')
+        check('reset accepted', True)
         try:
-            client.setParameter('pressure', 'mode', 'HOMING')
-            check('HOMING cannot be set', False, 'no error raised')
+            client.setParameter('pressure', 'target', 2000)
+            check('setpoint out of range refused', False, 'no error raised')
         except Exception:
-            check('HOMING cannot be set', True)
+            check('setpoint out of range refused', True)
 
-        check('room pressure read', abs(get('pressure', 'room_pressure') - 1013.25) < 0.01,
-              get('pressure', 'room_pressure'))
+        check('room pressure read', abs(get('room_pressure', 'value') - 1013.25) < 0.01,
+              get('room_pressure', 'value'))
         client.disconnect()
     finally:
         server.terminate()
@@ -108,7 +111,6 @@ def run(commands, board_port, secop_port):
 
 
 if __name__ == '__main__':
-    run('0.12', 15601, 15701)
-    run('plan', 15602, 15702)
+    run(15601, 15701)
     print('all passed' if not failures else f'{failures} failed')
     sys.exit(1 if failures else 0)

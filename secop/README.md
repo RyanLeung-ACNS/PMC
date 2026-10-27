@@ -6,20 +6,30 @@ server can read and drive the mm4. It talks to the board's text port (TCP
 
 ## What the SECoP client sees
 
+The modules follow the SECoP controller pattern: `pressure` controls
+`valve`. Writing either target takes control, as SECoP clients expect.
+
 | Module | Parameter or command | What it is |
 |---|---|---|
 | `pressure` | `value` | Pot pressure, mbar |
-| | `target` | Setpoint, mbar, 0.1 mbar steps; used in AUTO |
-| | `mode` | `MANUAL` or `AUTO` (can be set); `HOMING`, `NOT_HOMED` (shown only) |
+| | `target` | Setpoint, mbar, 0.1 mbar steps. Writing it sets the setpoint and starts AUTO |
+| | `control_active` | True in AUTO |
 | | `status` | IDLE in MANUAL, or in AUTO within `tolerance` of the setpoint; BUSY while AUTO is still getting there, or while homing; WARN for a warning or a valve that is not homed; ERROR for a fault or no reading |
-| | `_alarm` | Latched fault `F-n` or warning `W-n`, empty if none |
-| | `_tolerance` | Band for IDLE in AUTO, default 0.5 mbar (driver only, not the board's target band) |
-| | `_room_pressure` | Room pressure from the Pressure 21 Click, if fitted |
+| | `alarm` | Latched fault `F-n` or warning `W-n`, empty if none |
+| | `tolerance` | Band for IDLE in AUTO, default 0.5 mbar (driver only, not the board's target band) |
 | | `stop` | Stop the valve now; in AUTO this ends AUTO |
-| | `_reset_alarm`, `_ok_warning` | Clear latched faults whose cause has gone; acknowledge the warning |
+| | `reset` | Clear latched faults whose cause has gone |
+| | `ok_warning` | Acknowledge the warning, as OK on the screen |
 | `valve` | `value` | Valve position, % open |
-| | `target` | Valve position to go to, MANUAL only (the board refuses it in AUTO) |
+| | `target` | Valve position to go to. Writing it ends AUTO first (MANUAL) |
+| | `controlled_by` | `pressure` in AUTO, `self` in MANUAL |
 | | `stop` | As above |
+| `room_pressure` | `value` | Room pressure from the Pressure 21 Click, mbar (leave the module out if not fitted) |
+
+`alarm`, `tolerance` and `ok_warning` are not SECoP predefined names, so
+the node lists them as `_alarm`, `_tolerance` and `_ok_warning`. The link
+module (`mm4_io`) is not exported, so no SECoP client can send raw text
+commands.
 
 Homing, calibration, settings, tuning and the motor stay on the touch
 screen. The driver has no way to reach them.
@@ -43,17 +53,18 @@ screen. The driver has no way to reach them.
    with its own node name and SECoP port.
 4. `frappy-server -c mm4_cfg.py mm4`
 
-`command_set` in the cfg file chooses the command words: `0.12` for the
-firmware as built (0.12.19 to 0.12.21), `plan` once the board has the
-remote command set (`SP`, `MODE AUTO`, `STOP`, ...). The default is `0.12`.
+The driver needs the firmware with the remote command set (`SP`,
+`MODE AUTO`, `MODE MANUAL`, `VALVE SET`, `STOP`, `ALARM RESET`, `ALARM OK`,
+`DATA?`, `DATA HDR?`). That firmware and this driver are released together;
+firmware 0.12.21 and earlier does not answer these commands.
 
 ## Things to know
 
 - The board takes one connection on port 5000 at a time, and a new one
   replaces the old. While the Frappy server is connected, close any terminal
   and the DATA logger (`tools/logger`).
-- With firmware 0.12 the driver sends `DATA ON` and reads the once-a-second
-  DATA line. Values are at most a second old.
+- Readings come from `DATA?` each poll (pressure every second, valve every
+  2 s), one DATA line per poll.
 - An `ERR` from the board comes back to the SECoP client as an error with
   the board's text, for example `Switch to MANUAL first`.
 - The driver has been tested against `tests/fake_mm4.py` only, not yet
@@ -65,5 +76,5 @@ remote command set (`SP`, `MODE AUTO`, `STOP`, ...). The default is `0.12`.
     python secop/tests/run.py
 
 It starts the stand-in board and a Frappy server on local ports, then checks
-reading, setpoint, MANUAL and AUTO, valve moves, refusals and stop, for both
-command sets.
+readings, the setpoint starting AUTO, a valve move ending AUTO, stop, reset,
+an out-of-range setpoint and the room pressure.

@@ -1,130 +1,83 @@
 """Frappy (SECoP) driver for the mm4 pressure controller.
 
-The mm4 is reached over its text port (TCP 5000). Two modules share one
-connection:
+The mm4 is reached over its text port (TCP 5000). Three modules share one
+connection (names as in cfg/mm4_cfg.py):
 
-    Pressure  value = pressure (mbar), target = setpoint, mode MANUAL/AUTO,
-              stop, alarm reset and warning OK
-    Valve     value = valve % open, target = valve % (MANUAL only; the
-              board refuses it in AUTO)
+    pressure       value = pressure (mbar), target = setpoint (starts AUTO),
+                   control_active = AUTO, stop, reset (faults), _ok_warning
+    valve          value = valve % open, target = valve % (ends AUTO),
+                   controlled_by = self or pressure
+    room_pressure  value = room pressure (mbar), if the Click is fitted
 
-Only the remote command set is used: nothing here homes the valve,
-calibrates, changes a setting or drives the motor. Those stay on the touch
-screen.
+The SECoP side follows the standard controller pattern: the pressure module
+controls the valve module (control_active, controlled_by), and writing
+either target takes control, as SECoP expects.
 
-Readings come from the board's DATA line (t_s, p_mbar, target_mbar,
-valve_pct, mode, alarm, ...). Firmware up to 0.12.21 sends it once a second
-after DATA ON, so the driver turns that on and keeps the newest line; a
-firmware that answers DATA? with one DATA line works the same way. The
-command words for both are in COMMANDS, chosen by the 'command_set' property.
+It uses the remote command set (names picked 27 Oct 2026), which the
+firmware gets in the same release as this driver: SP, MODE AUTO,
+MODE MANUAL, VALVE SET, STOP, ALARM RESET, ALARM OK, DATA?, DATA HDR?.
+Nothing here homes the valve, calibrates, changes a setting or drives the
+motor. Those stay on the touch screen.
+
+Readings come from DATA?, one DATA line (t_s, p_mbar, target_mbar,
+valve_pct, mode, alarm, ...), with the column names from DATA HDR?.
 """
 
 import re
 import time
 
-from frappy.core import BUSY, ERROR, IDLE, WARN, Command, Drivable, EnumType, \
-    FloatRange, HasIO, Parameter, Property, StringIO, StringType, nopoll
+from frappy.core import BUSY, ERROR, IDLE, WARN, BoolType, Command, Drivable, \
+    FloatRange, HasIO, Parameter, Readable, StringIO, StringType, nopoll
+from frappy.mixins import HasControlledBy, HasOutputModule
 from frappy.errors import CommunicationFailedError, ImpossibleError
 
-# Command words. '0.12' is the firmware as built (0.12.19 to 0.12.21);
-# 'plan' is the remote command set with the names picked on 27 Oct 2026,
-# not in the firmware yet.
 COMMANDS = {
-    '0.12': {
-        'data_on': 'DATA ON', 'header': 'DATA?', 'data': 'DATA?',
-        'target': 'CTRL SP {:.1f}', 'auto': 'CTRL AUTO', 'manual': 'CTRL MAN',
-        'valve': 'VALVE GOTO {:.1f}', 'stop': 'VALVE STOP',
-        'reset': 'CTRL RESET', 'ok': 'CTRL OK',
-    },
-    'plan': {
-        'data_on': None, 'header': 'DATA HDR?', 'data': 'DATA?',
-        'target': 'SP {:.1f}', 'auto': 'MODE AUTO', 'manual': 'MODE MANUAL',
-        'valve': 'VALVE SET {:.1f}', 'stop': 'STOP',
-        'reset': 'ALARM RESET', 'ok': 'ALARM OK',
-    },
+    'header': 'DATA HDR?', 'data': 'DATA?',
+    'target': 'SP {:.1f}', 'auto': 'MODE AUTO', 'manual': 'MODE MANUAL',
+    'valve': 'VALVE SET {:.1f}', 'stop': 'STOP',
+    'reset': 'ALARM RESET', 'ok': 'ALARM OK',
 }
 
-# The DATA columns as firmware 0.11.52 on lists them, used until the board
-# has answered with its own list.
+# The DATA columns, used until DATA HDR? has answered.
 DEFAULT_COLUMNS = ['t_s', 'p_mbar', 'target_mbar', 'valve_pct', 'mode', 'alarm',
                    'ratio_mV_per_V', 'exc_mV', 'die_C', 'baro_mbar']
-
-# A DATA line older than this means the board has stopped sending it.
-DATA_STALE_S = 5.0
 
 
 class Mm4IO(StringIO):
     """Line link to the mm4 text port.
 
     Every command line gets one final line starting OK or ERR; *IDN? gets
-    one line and no OK. Anything else the board sends (its echo of the
-    command, status lines, events, DATA lines) is read past: DATA lines are
-    kept in 'data', the rest go to the debug log.
+    one line and no OK. Any other line before the final one is kept as the
+    reply body (DATA? and DATA HDR?) or, if unexpected, logged and skipped.
     """
     end_of_line = '\n'   # the board ends lines with CR LF; CR is stripped
     timeout = 3
     identification = [('*IDN?', r'PMC,MM4,')]
-    command_set = Property('command words: 0.12 (firmware as built) or plan',
-                        StringType(), default='0.12')
 
     def earlyInit(self):
         super().earlyInit()
-        if self.command_set not in COMMANDS:
-            raise ValueError(f'command_set must be one of {", ".join(COMMANDS)}')
-        self.cmd = COMMANDS[self.command_set]
         self.columns = list(DEFAULT_COLUMNS)
-        self.data = {}
-        self.data_time = 0
 
     def connectStart(self):
         super().connectStart()
-        self.data = {}
-        self.data_time = 0
-        if self.cmd['data_on']:
-            self.query(self.cmd['data_on'])
-        final, lines = self.query(self.cmd['header'])
+        final, lines = self.query(COMMANDS['header'])
         for line in lines:
-            # 'DATA t_s,p_mbar,...' (0.12) or 'DATA t_s,...' / 'DATA HDR t_s,...'
-            m = re.match(r'DATA(?: HDR)?[ ,]+([a-zA-Z_][\w,]*)$', line)
-            if m and not final.startswith('ERR'):
+            m = re.match(r'DATA HDR ([a-zA-Z_][\w,]*)$', line)
+            if m and final.startswith('OK'):
                 self.columns = m.group(1).split(',')
-        if self.cmd['data_on']:
-            self._wait_data(2.5)   # the first streamed line comes within a second
-
-    def _wait_data(self, seconds):
-        end = time.time() + seconds
-        with self._lock:
-            while not self.data_time and time.time() < end:
-                try:
-                    self._take(self._readline())
-                except TimeoutError:
-                    break
-
-    def _take(self, line):
-        """Handle a line that is not the reply looked for."""
-        if line.startswith('DATA,'):
-            fields = line[5:].split(',')
-            self.data = dict(zip(self.columns, fields))
-            self.data_time = time.time()
-        elif line and not line.startswith('> '):
-            self.comLog('< %s (not a reply)', line)
 
     def _readline(self):
         reply = self._conn.readline(self.timeout)
         return reply.decode(self.encoding).strip()
 
     def query(self, command):
-        """Send one line; return (final OK/ERR line, lines before it)."""
+        """Send one line; return (final OK/ERR line, DATA lines before it)."""
         self.check_connection()
         try:
             with self._lock:
-                # lines sent since the last command: keep the DATA lines
-                pending = self._conn.flush_recv()
-                if pending:
-                    *whole, part = pending.split(self._eol_read)
-                    self._conn._rxbuffer = part
-                    for line in whole:
-                        self._take(line.decode(self.encoding).strip())
+                garbage = self._conn.flush_recv()
+                if garbage:
+                    self.comLog('garbage: %r', garbage)
                 self._conn.send(command.encode(self.encoding) + self._eol_write)
                 self.comLog('> %s', command)
                 lines = []
@@ -136,9 +89,10 @@ class Mm4IO(StringIO):
                     if line.startswith(('OK', 'ERR')):
                         self.comLog('< %s', line)
                         return line, lines
-                    if line.startswith('DATA') and command.startswith('DATA'):
+                    if line.startswith('DATA'):
                         lines.append(line)
-                    self._take(line)
+                    elif line:
+                        self.comLog('< %s (not a reply)', line)
         except Exception as e:
             self.closeConnection()
             raise CommunicationFailedError(repr(e)) from None
@@ -149,22 +103,18 @@ class Mm4IO(StringIO):
 
     def do(self, key, *args):
         """Run one of the COMMANDS; an ERR reply is raised to the client."""
-        final, _ = self.query(self.cmd[key].format(*args))
+        final, _ = self.query(COMMANDS[key].format(*args))
         if final.startswith('ERR'):
             raise ImpossibleError(final[3:].strip())
         return final
 
     def fresh_data(self):
-        """The newest DATA fields, asked for now (0.12: the streamed line)."""
-        self.query(self.cmd['data'])
-        if time.time() - self.data_time > DATA_STALE_S:
-            if self.cmd['data_on']:
-                self.query(self.cmd['data_on'])
-            raise CommunicationFailedError('no DATA line from the board')
-        return self.data
-
-
-MODES = ('MANUAL', 'AUTO', 'HOMING', 'NOT_HOMED')
+        """The DATA fields now, from DATA?."""
+        final, lines = self.query(COMMANDS['data'])
+        for line in lines:
+            if line.startswith('DATA,'):
+                return dict(zip(self.columns, line[5:].split(',')))
+        raise CommunicationFailedError(f'no DATA line in the reply to DATA? ({final})')
 
 
 def number(text):
@@ -172,22 +122,24 @@ def number(text):
     return float(text) if text else None
 
 
-class Pressure(HasIO, Drivable):
-    """Pot pressure and its control: setpoint, MANUAL or AUTO, stop."""
+class Pressure(HasOutputModule, HasIO, Drivable):
+    """Pot pressure and its control (SECoP: a controller with an output module).
+
+    Writing target sets the setpoint and starts AUTO (control_active true).
+    stop ends AUTO and holds the valve. Writing the valve's target ends AUTO
+    first (the valve's controlled_by goes back to self).
+    """
 
     ioClass = Mm4IO
 
     value = Parameter('pressure', FloatRange(unit='mbar', fmtstr='%.2f'))
-    target = Parameter('setpoint, used in AUTO', FloatRange(0, 1000, unit='mbar', fmtstr='%.1f'),
-                       readonly=False)
-    mode = Parameter('MANUAL or AUTO (HOMING and NOT_HOMED are shown, not set)',
-                     EnumType('mode', MANUAL=0, AUTO=1, HOMING=2, NOT_HOMED=3),
-                     readonly=False)
+    target = Parameter('setpoint; writing it starts AUTO',
+                       FloatRange(0, 1000, unit='mbar', fmtstr='%.1f'), readonly=False)
+    control_active = Parameter('true in AUTO (the board regulates the pressure)', BoolType(),
+                               default=False)
     alarm = Parameter('latched fault (F-n) or warning (W-n), empty if none', StringType())
     tolerance = Parameter('within this of the setpoint the status is IDLE in AUTO',
                           FloatRange(0, unit='mbar'), readonly=False, default=0.5)
-    room_pressure = Parameter('room pressure (Pressure 21 Click), if fitted',
-                              FloatRange(unit='mbar', fmtstr='%.2f'), default=0)
 
     def read_value(self):
         d = self.io.fresh_data()
@@ -195,24 +147,30 @@ class Pressure(HasIO, Drivable):
         sp = number(d.get('target_mbar'))
         if sp is not None:
             self.target = sp
-        mode = d.get('mode', '').replace(' ', '_')
-        if mode in MODES:
-            self.mode = mode
+        mode = d.get('mode', '')
         self.alarm = d.get('alarm', '')
-        baro = number(d.get('baro_mbar'))
-        if baro is not None:
-            self.room_pressure = baro
+        self.sync_control(mode == 'AUTO')
         self.status = self.status_of(p, sp, mode, self.alarm)
         return p if p is not None else self.value
+
+    def sync_control(self, auto):
+        """Follow the board's mode, without sending anything."""
+        self.control_active = auto
+        out = self.output_module
+        if out:
+            if auto and out.controlled_by != self.name:
+                out.controlled_by = self.name
+            elif not auto and out.controlled_by:
+                out.controlled_by = 0   # self
 
     def status_of(self, p, sp, mode, alarm):
         if p is None:
             return ERROR, 'no pressure reading'
         if alarm.startswith('F'):
-            return ERROR, f'fault {alarm} (see the screen; ALARM RESET once cleared)'
+            return ERROR, f'fault {alarm} (see the screen; reset once cleared)'
         if mode == 'HOMING':
             return BUSY, 'valve homing'
-        if mode == 'NOT_HOMED':
+        if mode == 'NOT HOMED':
             return WARN, 'valve not homed: home it at the screen'
         if alarm:
             return WARN, f'warning {alarm}'
@@ -224,40 +182,33 @@ class Pressure(HasIO, Drivable):
 
     def write_target(self, value):
         self.io.do('target', value)
+        self.io.do('auto')
+        self.activate_control()
         return value
 
-    @nopoll
-    def read_mode(self):
-        self.read_value()
-        return self.mode
-
-    def write_mode(self, value):
-        if value == 'AUTO':
-            self.io.do('auto')
-        elif value == 'MANUAL':
+    def set_control_active(self, active):
+        if self.control_active and not active:
             self.io.do('manual')
-        else:
-            raise ImpossibleError('only MANUAL or AUTO can be set')
+        self.control_active = active
+
+    @nopoll
+    def read_control_active(self):
         self.read_value()
-        return self.mode
+        return self.control_active
 
     @nopoll
     def read_alarm(self):
         self.read_value()
         return self.alarm
 
-    @nopoll
-    def read_room_pressure(self):
-        self.read_value()
-        return self.room_pressure
-
     @Command()
     def stop(self):
         """Stop the valve now; in AUTO this ends AUTO (MANUAL)."""
         self.io.do('stop')
+        self.sync_control(False)
 
     @Command()
-    def reset_alarm(self):
+    def reset(self):
         """Clear latched faults whose cause has gone."""
         self.io.do('reset')
 
@@ -267,14 +218,14 @@ class Pressure(HasIO, Drivable):
         self.io.do('ok')
 
 
-class Valve(HasIO, Drivable):
-    """Needle valve position, set in MANUAL only (in AUTO the board refuses)."""
+class Valve(HasControlledBy, HasIO, Drivable):
+    """Needle valve position. Writing target ends AUTO first (MANUAL)."""
 
     ioClass = Mm4IO
 
     value = Parameter('valve position', FloatRange(unit='%', fmtstr='%.2f'))
-    target = Parameter('valve position to go to', FloatRange(0, 100, unit='%', fmtstr='%.1f'),
-                       readonly=False)
+    target = Parameter('valve position to go to; writing it ends AUTO',
+                       FloatRange(0, 100, unit='%', fmtstr='%.1f'), readonly=False)
     tolerance = Parameter('within this of the target the move is done',
                           FloatRange(0, unit='%'), readonly=False, default=0.1)
     move_timeout = Parameter('give up waiting for a move after this', FloatRange(0, unit='s'),
@@ -304,6 +255,7 @@ class Valve(HasIO, Drivable):
         return v
 
     def write_target(self, value):
+        self.self_controlled()   # ends AUTO through the pressure module
         self.io.do('valve', value)
         self._moving_since = time.time()
         self.status = BUSY, 'moving'
@@ -314,3 +266,19 @@ class Valve(HasIO, Drivable):
         """Stop the valve now; in AUTO this ends AUTO (MANUAL)."""
         self.io.do('stop')
         self._moving_since = None
+
+
+class RoomPressure(HasIO, Readable):
+    """Room pressure from the Pressure 21 Click, if fitted."""
+
+    ioClass = Mm4IO
+
+    value = Parameter('room pressure', FloatRange(unit='mbar', fmtstr='%.2f'))
+
+    def read_value(self):
+        baro = number(self.io.fresh_data().get('baro_mbar'))
+        if baro is None:
+            self.status = ERROR, 'no reading (Pressure 21 not fitted?)'
+            return self.value
+        self.status = IDLE, ''
+        return baro
