@@ -74,8 +74,8 @@ class Board:
                     v = float(line[8:])
                 except ValueError:
                     return ['ERR 101 Expected: PRES SP <mbar>']
-                if not 0 <= v <= 1034:
-                    return ['ERR 102 Outside 0 to 1034 mbar']
+                if not 0 <= v <= 1034.2:
+                    return ['ERR 102 Outside 0 to 1034.2 mbar']
                 self.sp = round(v, 1)
                 return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE AUTO':
@@ -102,7 +102,7 @@ class Board:
                 return ['ALRM RESET']
             if line == 'ALRM OK':
                 return ['ALRM OK']
-        return [f'ERR 100 Unknown command: {line}']
+        return ['ERR 100 Unknown command']
 
 
 def serve(port):
