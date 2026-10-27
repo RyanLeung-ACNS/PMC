@@ -26,6 +26,9 @@ bool sysinfo_reset_abnormal(void);
 // One line for the status output: "PMC firmware ..., last reset: ...".
 const char *sysinfo_line(void);
 
+// Restarts the processor now (the screen's Restart, 0.12.19). The next
+// start-up reports the reset as "software".
+void sysinfo_restart(void);
 // Handles "VER?". Returns false if the line is not a VER command.
 bool sysinfo_command(const char *line);
 

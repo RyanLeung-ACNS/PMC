@@ -41,6 +41,19 @@ const char *sysinfo_reset_reason(void) { return reason; }
 bool sysinfo_reset_abnormal(void)      { return abnormal; }
 const char *sysinfo_line(void)         { return line; }
 
+void sysinfo_restart(void)
+{
+#ifndef __wasm__
+    // SCB->AIRCR: VECTKEY 0x05FA and SYSRESETREQ (the CMSIS NVIC helpers
+    // are not linked in the mikroSDK build).
+    __asm volatile ("dsb" ::: "memory");
+    *(volatile uint32_t *)0xE000ED0CUL = (0x05FAUL << 16) | (1UL << 2);
+    __asm volatile ("dsb" ::: "memory");
+    for (;;)
+        ;
+#endif
+}
+
 // *IDN? (0.12.2): the IEEE 488.2 identity query most instrument software
 // sends first. One line, maker,model,serial,firmware, with the STM32's
 // 96-bit unique ID as the serial; no echo and no OK, as the standard reply.

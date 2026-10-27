@@ -106,6 +106,7 @@ bool link_take_new_client(void) { return false; }
 const char *sysinfo_reset_reason(void) { return fake_wdt ? "watchdog" : "power-on"; }
 bool sysinfo_reset_abnormal(void) { return fake_wdt; }
 const char *sysinfo_line(void) { return "PMC firmware 0.3.0 (preview), last reset: power-on"; }
+void sysinfo_restart(void) {}
 // Link output goes to stderr so the DATA line format can be checked.
 size_t link_tx_room(void) { return 4096; }
 void link_printf(const char *fmt, ...)

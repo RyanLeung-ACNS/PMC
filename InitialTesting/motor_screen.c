@@ -18,7 +18,7 @@
  * tab: the tabs Move / Speed / Coils (x10 w226) and the position card (x244
  * w226). Below it:
  *   Move   step size 1 to 10k or Hold (hold to move), then Close, Open,
- *          Set zero and Limit override (closes past the switch while held)
+ *          Set zero and Limit override (arms: the next close ignores the switch)
  *   Speed  Run, Start and Accel [-] value [+]
  *   Coils  Mode WAVE/FULL/HALF, Hold torque, Coils off, Coil order, Direction
  * Coil order, Direction and Set zero ask first while the valve is homed.
@@ -45,9 +45,8 @@ static struct {
     lv_obj_t *close, *open, *zero, *over, *hold, *off, *order, *dir;
     lv_obj_t *held;   // the Close or Open button driving a hold move
 } m;
-static int size_sel = 2, tab_sel;
-
 #define SIZE_HOLD 5
+static int size_sel = SIZE_HOLD, tab_sel;
 static const int32_t step_sizes[5] = { 1, 10, 100, 1000, 10000 };
 static const char *const step_names[6] = { "1", "10", "100", "1k", "10k", "Hold" };
 // A hold move asks for this far and is ramped down on release.
@@ -115,8 +114,8 @@ static void move_event(lv_event_t *e)
     if (ui_btn_disabled(e))
         return;
     bool hold = size_sel == SIZE_HOLD;
-    if (hold && stepper3_busy())
-        return;   // a hold move starts from rest only
+    if (stepper3_busy())
+        return;   // a move starts from rest only; the buttons stay lit meanwhile
     int32_t steps = (hold ? HOLD_MOVE : step_sizes[size_sel]) * (int32_t)event_arg(e);
     const char *why = stepper3_locked();
     if (!why && stepper3_move(steps)) {
@@ -136,16 +135,15 @@ static void move_event(lv_event_t *e)
 }
 
 // Hold move released (or the finger slid off): ramp down where it is; a
-// limit override stops at once.
+// close past the switch under the limit override stops at once.
 static void hold_end(void)
 {
     if (!m.held)
         return;
-    bool over = m.held == m.over;
     m.held = NULL;
-    if (over) {
+    if (stepper3_override()) {
         bool stopped = stepper3_override_cancel();
-        valve_event("LIM", "Limit override released (screen)%s", stopped ? ", valve stopped" : "");
+        valve_event("LIM", "Limit override ended, Close released (screen)%s", stopped ? ", valve stopped" : "");
     } else if (stepper3_busy()) {
         stepper3_stop_ramped();
         link_printf("MOT screen: hold move released\r\n");
@@ -264,7 +262,7 @@ static void do_zero(void)
 
 static void zero_event(lv_event_t *e)
 {
-    if (ui_btn_disabled(e))
+    if (ui_btn_disabled(e) || stepper3_busy())
         return;
     guarded("Set this position as 0 steps", do_zero);
 }
@@ -277,25 +275,26 @@ static void off_event(lv_event_t *e)
     motor_fast();
 }
 
-// Limit override (moved here from Settings, Ryan 23 Oct): closes past the
-// switch only while pressed (Ryan, 23 Oct: "i have to continue pressing
-// it"). Release stops at once and disarms it; no confirm, holding is the
-// deliberate act.
+// Limit override arms only (0.12.19, Ryan's pick 27 Oct; to 0.12.18 it
+// closed the valve while held). Armed, the next move ignores the switch:
+// hold Close to close past it, and releasing Close stops at once and ends
+// the override. A second press disarms it.
 static void override_event(lv_event_t *e)
 {
-    if (ui_btn_disabled(e) || stepper3_busy())
+    if (ui_btn_disabled(e))
         return;
-    const char *why = stepper3_locked();
-    stepper3_override_arm();
-    if (!why && stepper3_move(-HOLD_MOVE)) {
-        m.held = lv_event_get_target_obj(e);
-        valve_event("LIM", "Limit override: closing while held (screen)");
-    } else {
-        stepper3_override_cancel();
-        if (!why)
-            why = stepper3_refusal();
-        link_printf("MOT screen: override refused, %s\r\n", why);
-        ui_msg(why);
+    if (stepper3_override()) {
+        bool stopped = stepper3_override_cancel();
+        valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
+    } else if (!stepper3_busy()) {
+        const char *why = stepper3_locked();
+        if (why) {
+            link_printf("MOT screen: override refused, %s\r\n", why);
+            ui_msg(why);
+        } else {
+            stepper3_override_arm();
+            valve_event("LIM", "Limit override armed (screen): the next close ignores the switch");
+        }
     }
     motor_fast();
 }
@@ -392,6 +391,7 @@ static void motor_build(lv_obj_t *scr)
 {
     memset(&m, 0, sizeof m);
     tab_sel = TAB_MOVE;
+    size_sel = SIZE_HOLD;   // opens on Hold (0.12.19, Ryan 27 Oct)
     const int32_t y2 = 0, y3 = R[2] - R[1];
 
     // Top row: the tabs and the position (room for -2147483648, Ryan 22 Oct).
@@ -416,8 +416,6 @@ static void motor_build(lv_obj_t *scr)
     // Apart from the moves: a dark outline, filled dark while it drives
     // (as it was on Settings).
     m.over = btn(p, 361, y3, 109, "Limit\noverride", override_event, 0);
-    lv_obj_add_event_cb(m.over, release_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(m.over, release_event, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_set_style_border_side(m.over, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(m.over, 2, 0);
     lv_obj_set_style_border_color(m.over, UI_WARN, 0);
@@ -470,13 +468,15 @@ static void motor_fast(void)
         seg_show(m.size[i], i == size_sel, true);
     for (int i = 0; i < 3; i++)
         seg_show(m.mode[i], (int)stepper3_mode() == i, !busy && !stepper3_locked());
-    // Close is refused while the limit stop reads open, unless the override
-    // is armed; Open always works. The button driving a hold move stays lit.
+    // Close is greyed while the limit stop reads open, unless the override
+    // is armed; Set zero and Limit override while the motor is locked. A
+    // move does not grey the row (0.12.19, Ryan 27 Oct: the buttons seemed
+    // to hide themselves); a press during a move does nothing.
     bool ov = stepper3_override();
-    ui_btn_enable(m.close, (!busy && (!stepper3_limit_open() || ov)) || m.held == m.close);
-    ui_btn_enable(m.open, !busy || m.held == m.open);
-    ui_btn_enable(m.zero, !busy && !stepper3_locked());
-    ui_btn_enable(m.over, (!busy && !stepper3_locked()) || m.held == m.over);
+    ui_btn_enable(m.close, !stepper3_limit_open() || ov || m.held == m.close);
+    ui_btn_enable(m.open, true);
+    ui_btn_enable(m.zero, !stepper3_locked());
+    ui_btn_enable(m.over, !stepper3_locked() || ov);
     lv_color_t ob = ov ? UI_WARN : UI_CARD;
     if (!lv_color_eq(lv_obj_get_style_bg_color(m.over, 0), ob)) {
         lv_obj_set_style_bg_color(m.over, ob, 0);

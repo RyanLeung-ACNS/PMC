@@ -343,7 +343,7 @@ bool ui_btn_disabled(lv_event_t *e)
  * Frame on lv_layer_top(): header, status strip, STOP
  * ------------------------------------------------------------------------ */
 #define HDR_BTN_W 48  // Back and Home, icons only
-static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl;
+static lv_obj_t *frame, *hdr, *back_btn, *home_btn, *pmc_lbl, *title_lbl, *mode_lbl, *unsaved_btn;
 static lv_obj_t *strip, *strip_icon, *strip_shape, *strip_text, *strip_ok, *strip_act, *strip_spark;
 static lv_obj_t *stop_btn;
 
@@ -394,6 +394,14 @@ static void home_event(lv_event_t *e)
     if (overlay)
         return;   // greyed under a popup: Back closes the popup first
     ui_home();
+}
+
+static void unsaved_event(lv_event_t *e)
+{
+    (void)e;
+    if (overlay)
+        return;   // greyed under a popup, as Home
+    ui_open(&ui_scr_review);
 }
 
 static void stop_event(lv_event_t *e)
@@ -502,6 +510,21 @@ static void build_frame(void)
     lv_obj_set_style_radius(mode_lbl, 4, 0);
     lv_obj_set_style_border_width(mode_lbl, 2, 0);
     lv_obj_set_style_border_color(mode_lbl, lv_color_white(), 0);
+    // Unsaved settings (0.12.19, Ryan 27 Oct): on every screen while a
+    // setting in use differs from the newest save (cfg_unsaved), left of
+    // the mode badge; grey outline, no colour (not an alarm). Opens Review
+    // and save.
+    unsaved_btn = ui_btn(hdr, 0, 6, 72, 28, UI_DARK, "Unsaved", unsaved_event, NULL);
+    lv_obj_t *ul = lv_obj_get_child(unsaved_btn, 0);
+    lv_obj_set_style_text_font(ul, &ui_font_12, 0);
+    lv_obj_set_style_text_align(ul, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(ul);
+    lv_obj_set_style_radius(unsaved_btn, 4, 0);
+    lv_obj_set_style_border_side(unsaved_btn, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_width(unsaved_btn, 1, 0);
+    lv_obj_set_style_border_color(unsaved_btn, UI_IDLE, 0);
+    lv_obj_set_ext_click_area(unsaved_btn, 6);
+    lv_obj_add_flag(unsaved_btn, LV_OBJ_FLAG_HIDDEN);
 
     strip = plain(frame);
     lv_obj_set_pos(strip, 10, 216);
@@ -674,9 +697,8 @@ static int32_t text_w(const char *t)
 // Centre the title on the screen; when the mode word leaves no room for
 // that, centre it in the gap between Back and Home (or the edge, on Home)
 // and the mode word, and cut it with dots only if it is wider than the gap.
-static void title_fit(lv_obj_t *l, const char *text, int32_t left)
+static void title_fit(lv_obj_t *l, const char *text, int32_t left, int32_t right)
 {
-    int32_t right = 353;   // the mode badge starts at 361
     int32_t w = text_w(text);
     int32_t x = 240 - w / 2;
     if (w > right - left)
@@ -709,6 +731,22 @@ static void frame_refresh(void)
     show(pmc_lbl, home && !overlay);
     show(title_lbl, !home);
     const char *mode_txt = nf ? "FAULT" : valve_mode_name();
+    // NOT HOMED is wider than the button column: the badge grows left.
+    bool wide = m == VALVE_NOT_CAL && !nf;
+    bool uns = cfg_unsaved() > 0 && cur != &ui_scr_review;
+    int32_t ux = (wide ? 341 : 361) - 80;
+    show(unsaved_btn, uns);
+    if (uns) {
+        if (lv_obj_get_x(unsaved_btn) != ux)
+            lv_obj_set_x(unsaved_btn, ux);
+        static int uns_dim = -1;
+        if (uns_dim != (overlay != NULL)) {
+            uns_dim = overlay != NULL;
+            ui_set_color(lv_obj_get_child(unsaved_btn, 0), uns_dim ? UI_IDLE : lv_color_white());
+        }
+    }
+    int32_t right = uns ? ux - 8 : 353;   // the mode badge starts at 361
+    static int32_t fit_right;
     static const char *fit_mode, *fit_title;
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
@@ -722,17 +760,18 @@ static void frame_refresh(void)
         ui_set_text(pmc_lbl, home_title);
     }
     ui_set_text(mode_lbl, mode_txt);
-    if (renamed || mode_txt != fit_mode || (!home && cur->title != fit_title)) {
+    if (renamed || mode_txt != fit_mode || (!home && cur->title != fit_title) || right != fit_right) {
         fit_mode = mode_txt;
+        fit_right = right;
         if (!home) {
             fit_title = cur->title;
             ui_set_text(title_lbl, cur->title);
-            title_fit(title_lbl, cur->title, 2 * HDR_BTN_W + 4);
+            title_fit(title_lbl, cur->title, 2 * HDR_BTN_W + 4, right);
         }
         // Home's title sits on the left (Ryan, 16 Oct: centred left the
         // top left empty); it is centred in the gap only if it is too long.
-        title_fit(pmc_lbl, home_title, 10);
-        if (text_w(home_title) < 353 - 12)
+        title_fit(pmc_lbl, home_title, 10, right);
+        if (text_w(home_title) < right - 12)
             lv_obj_set_x(pmc_lbl, 12);
     }
     bool op = !valve_stop_latches();
@@ -752,8 +791,6 @@ static void frame_refresh(void)
         lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
         ui_set_color(mode_lbl, kind == 1 ? UI_TEXT : lv_color_white());
     }
-    // NOT HOMED is wider than the button column: the badge grows left.
-    bool wide = m == VALVE_NOT_CAL && !nf;
     if ((lv_obj_get_width(mode_lbl) > 109) != wide) {
         lv_obj_set_x(mode_lbl, wide ? 341 : 361);
         lv_obj_set_width(mode_lbl, wide ? 129 : 109);
