@@ -17,7 +17,7 @@
  * Body y 48-208, three 48 px rows (y 48, 104, 160). The top row is on every
  * tab: the tabs Move / Speed / Coils (x10 w226) and the position card (x244
  * w226). Below it:
- *   Move   step size 1 to 10k, and Hold (hold to move, on by default), then Close, Open,
+ *   Move   step size 1 to 10k, and Hold to run (move while pressed, on by default), then Close, Open,
  *          Set zero and Limit override (arms: the next close ignores the switch)
  *   Speed  Run, Start and Accel [-] value [+]
  *   Coils  Mode WAVE/FULL/HALF, Hold torque, Coils off, Coil order, Direction
@@ -45,7 +45,7 @@ static struct {
     lv_obj_t *close, *open, *zero, *over, *hold, *off, *order, *dir;
     lv_obj_t *held;   // the Close or Open button driving a hold move
 } m;
-// Hold (move while pressed) is its own toggle beside the step sizes, as
+// Hold to run (move while pressed) is its own toggle beside the step sizes, as
 // wide as STOP; while it is on the step sizes are greyed (0.12.20, Ryan
 // 27 Oct). On by default each time the page opens.
 static bool hold_on = true;
@@ -422,7 +422,7 @@ static void motor_build(lv_obj_t *scr)
     // Move: step size (or Hold), Close, Open, Set zero, Limit override.
     lv_obj_t *p = m.page[TAB_MOVE] = page(scr);
     seg(p, 10, y2, 343, 5, step_names, m.size, size_event);
-    m.hmove = btn(p, 361, y2, 109, "Hold", hmove_event, 0);
+    m.hmove = btn(p, 361, y2, 109, "Hold to run", hmove_event, 0);
     lv_obj_set_style_border_side(m.hmove, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(m.hmove, 2, 0);
     lv_obj_set_style_border_color(m.hmove, UI_TEXT, 0);
