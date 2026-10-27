@@ -1,3 +1,4 @@
+#include "pmc_config.h"
 #include <string.h>
 
 #include "lv_port_indev.h"
@@ -143,6 +144,7 @@ static void touchpad_read(lv_indev_t * indev, lv_indev_data_t * data)
     data->point.y = touch_y;
 }
 
+#if PMC_ENG_COMMANDS
 bool touch_command(const char *line)
 {
     if(strcmp(line, "TOUCH?") != 0)
@@ -154,3 +156,5 @@ bool touch_command(const char *line)
                 (int)tp.touch.point[0].coord_x, (int)tp.touch.point[0].coord_y);
     return true;
 }
+#endif
+

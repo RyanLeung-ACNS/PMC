@@ -16,13 +16,18 @@ const path = require('path');
   await tap(415, 72);    // Home valve
   await tap(346, 147);   // Home
   await p.selectOption('#speed', '600');
-  await p.waitForFunction(() => document.getElementById('console').textContent.includes('Homed in'), null, { timeout: 30000 });
+  // The board sends nothing unasked (0.13.0): ask MODE? until homing is done.
+  let homed = false;
+  for (let i = 0; i < 60 && !homed; i++) {
+    await p.fill('#cmd', 'mode?'); await p.press('#cmd', 'Enter'); await p.waitForTimeout(500);
+    homed = (await p.locator('#console').textContent()).includes('MODE MANUAL');
+  }
   await p.selectOption('#speed', '1');
-  await p.fill('#cmd', 'valve?');
+  await p.fill('#cmd', 'valv?');
   await p.press('#cmd', 'Enter');
   await p.waitForTimeout(500);
   const text = await p.locator('#console').textContent();
-  const ok1 = /VALVE mode MANUAL, (calibrated 1|position set)/.test(text);
+  const ok1 = homed && /> VALV\?\nVALV \d+\.\d\d %/.test(text);
   await p.fill('#cmd', 'PID KP 3'); await p.press('#cmd', 'Enter');
   await p.fill('#cmd', 'CFG SAVE'); await p.press('#cmd', 'Enter');
   await p.waitForTimeout(1500);
@@ -31,7 +36,7 @@ const path = require('path');
   const ok2 = /PID KP 3\.00/.test(await p.locator('#console').textContent());
   if (process.argv[2]) await p.screenshot({ path: process.argv[2], fullPage: true });
   await b.close();
-  console.log((ok1 ? 'ok   ' : 'FAIL ') + 'homed from the screen and VALVE? answered');
+  console.log((ok1 ? 'ok   ' : 'FAIL ') + 'homed from the screen and VALV? answered');
   console.log((ok2 ? 'ok   ' : 'FAIL ') + 'settings kept over a reload');
   console.log((errs.length ? 'FAIL ' : 'ok   ') + 'no page errors' + (errs.length ? ': ' + errs.join('; ') : ''));
   process.exit(ok1 && ok2 && !errs.length ? 0 : 1);

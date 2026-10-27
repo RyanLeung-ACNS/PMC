@@ -79,7 +79,6 @@ void limit_poll(void)
         if (state != LIMIT_UNKNOWN)
             changes++;
         state = s;
-        link_printf("LIM %s\r\n", limit_text());
     }
 }
 
@@ -99,6 +98,8 @@ const char *limit_text(void)
     }
 }
 
+#if PMC_ENG_COMMANDS
+// LIM? (engineering).
 bool limit_command(const char *line)
 {
     if (strcmp(line, "LIM?") != 0)
@@ -110,3 +111,4 @@ bool limit_command(const char *line)
                 PMC_LIMIT_STOP ? "closing moves blocked while pressed" : "display only (PMC_LIMIT_STOP 0)");
     return true;
 }
+#endif

@@ -6,10 +6,9 @@
 /**
  * @brief Valve limit switch input (pin and polarity in pmc_config.h).
  * Fail-safe closing stop: a trip counts at once, only the release is
- * debounced (20 ms). Each change is sent on the link as "LIM closed" or
- * "LIM OPEN". With PMC_LIMIT_STOP 1 the stepper refuses and stops closing
- * moves while it is open.
- *   LIM?   state, raw pin level and number of changes since start-up
+ * debounced (20 ms). With PMC_LIMIT_STOP 1 the stepper refuses and stops
+ * closing moves while it is open.
+ *   LIM?   (engineering) state, raw pin level and changes since start-up
  */
 typedef enum {
     LIMIT_UNKNOWN,   // not yet read steadily (first 20 ms); treated as open

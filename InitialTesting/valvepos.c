@@ -1,3 +1,4 @@
+#include "pmc_config.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -262,6 +263,7 @@ void valvepos_decline(void)
     offer = false;
 }
 
+#if PMC_ENG_COMMANDS
 bool valvepos_command(const char *line)
 {
     const char *why;
@@ -287,3 +289,5 @@ bool valvepos_command(const char *line)
     }
     return true;
 }
+#endif
+

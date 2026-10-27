@@ -121,7 +121,6 @@ bool stepper3_override(void) { return override_armed || override_active; }
 void stepper3_override_arm(void)
 {
     override_armed = true;
-    link_printf("MOT override armed: the next closing move ignores the limit switch\r\n");
 }
 
 // True when a closing step must not be taken now.
@@ -410,8 +409,6 @@ from_rest:
     if (override_armed) {
         override_armed = false;
         override_active = dist < 0;
-        if (override_active && LIMIT_FITTED && limit_open_now())
-            link_printf("MOT override: closing %ld steps with the limit switch open\r\n", (long)-dist);
     }
 
     // Wave uses the one-coil entries, full the two-coil entries.
@@ -465,9 +462,7 @@ void stepper3_poll(void)
     if (run_state != ST_MOVING || (int32_t)(lv_tick_get() - deadline_ms) <= 0)
         return;
     stepper3_stop();
-    last_stop = STEPPER3_STOP_TIMEOUT;
-    link_printf("F-5 motion timeout: stopped at %ld, target %ld\r\n",
-                (long)position, (long)target);
+    last_stop = STEPPER3_STOP_TIMEOUT;   // valve.c latches F-5 and logs it
 }
 
 int32_t stepper3_target(void) { return run_state == ST_MOVING ? target : position; }
@@ -509,7 +504,6 @@ bool stepper3_override_cancel(void)
     if (!override_active)
         return false;
     stepper3_stop();
-    link_printf("MOT override cancelled: stopped at %ld\r\n", (long)position);
     return true;
 }
 
@@ -682,6 +676,7 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     }
 }
 
+#if PMC_ENG_COMMANDS
 /* --------------------------------------------------------------------------
  * MOT commands
  * ------------------------------------------------------------------------ */
@@ -888,3 +883,4 @@ bool stepper3_command(const char *line)
     }
     return true;
 }
+#endif

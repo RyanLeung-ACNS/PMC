@@ -157,6 +157,16 @@ void lv_port_indev_init(void)
 
 void touch_poll(void) {}
 
+// No Pressure 21 in the simulator (baro.c is not built): BARO STATUS? as
+// on a board without the Click (BARO? replies BARO NONE).
+bool baro_command(const char *line)
+{
+    if (strcmp(line, "BARO STATUS?") != 0)
+        return false;
+    link_printf("S2 Pressure 21: not fitted (simulator)\r\nOK\r\n");
+    return true;
+}
+
 bool touch_command(const char *line)
 {
     if (strcmp(line, "TOUCH?") != 0)
@@ -362,7 +372,7 @@ EXPORT(sim_boot) void sim_boot(int reset, double now)
 // The main loop, ms passes of it.
 EXPORT(sim_run) void sim_run(int ms)
 {
-    char line[96];
+    char line[LINK_LINE_MAX + 1];
     for (int i = 0; i < ms; i++) {
         tim7_ms();
         if (++ms_count == 5) {
@@ -390,13 +400,8 @@ EXPORT(sim_run) void sim_run(int ms)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-        bool got = link_getline(line, sizeof line);
-        if (got)
-            link_printf("> %s\r\n", line);
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
-            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
-            !sense_data_command(line))
-            link_printf("ERR unknown command\r\n");
+        if (link_getline(line, sizeof line))
+            remote_line(line);
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();
         perf_note(t0);

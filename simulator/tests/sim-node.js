@@ -1,10 +1,12 @@
 // Loads simulator/pmc.wasm in node: the same calls the page makes.
 const fs = require('fs'), path = require('path');
-function wasmBytes() {
+// file: a .wasm built by wasm/build.sh (out/pmc-op.wasm); else pmc-wasm.js.
+function wasmBytes(file) {
+  if (file) return fs.readFileSync(file);
   const js = fs.readFileSync(path.join(__dirname, '..', 'pmc-wasm.js'), 'utf8');
   return Buffer.from(js.match(/PMC_WASM = "([^"]*)"/)[1], 'base64');
 }
-function load() {
+function load(file) {
   let inst, halted = null;
   const mem = () => new Uint8Array(inst.exports.memory.buffer);
   const cstr = p => { const m = mem(); let e = p; while (m[e]) e++; return Buffer.from(m.subarray(p, e)).toString(); };
@@ -12,7 +14,7 @@ function load() {
     env: { js_halt: p => { halted = cstr(p); } },
     wasi_snapshot_preview1: { random_get: (p, n) => { const m = mem(); for (let i = 0; i < n; i++) m[p + i] = (Math.random() * 256) | 0; return 0; } },
   };
-  inst = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes()), imports);
+  inst = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes(file)), imports);
   const x = inst.exports;
   x._initialize();
   const sim = {

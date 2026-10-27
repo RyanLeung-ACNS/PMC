@@ -29,7 +29,10 @@ const char *sysinfo_line(void);
 // Restarts the processor now (the screen's Restart, 0.12.19). The next
 // start-up reports the reset as "software".
 void sysinfo_restart(void);
-// Handles "VER?". Returns false if the line is not a VER command.
+// The chip's unique ID, 24 hex digits (the serial in *IDN?).
+const char *sysinfo_chip_id(void);
+
+// Handles "VER?" (engineering). Returns false if the line is not VER?.
 bool sysinfo_command(const char *line);
 
 #endif // _SYSINFO_H_

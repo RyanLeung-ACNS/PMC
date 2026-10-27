@@ -102,11 +102,7 @@ void supply_poll(void)
 
     low_raw = mv < SUPPLY_OFF_MV ? (uint8_t)(low_raw < 255 ? low_raw + 1 : 255) : 0;
     supply_state_t s = low_raw >= 2 ? SUPPLY_OFF : n_buf < AVG_N ? state : judge(avg_mv, state);
-    if (s != state) {
-        static const char *const name[4] = { "ok", "LOW", "HIGH", "OFF" };
-        link_printf("SUP %s, %ld mV\r\n", name[s], (long)avg_mv);
-        state = s;
-    }
+    state = s;   // a change is logged by valve.c (SUP events)
 #endif
 }
 
@@ -114,6 +110,7 @@ int32_t supply_mv(void) { return avg_mv; }
 supply_state_t supply_state(void) { return state; }
 bool supply_off(void) { return state == SUPPLY_OFF; }
 
+#if PMC_ENG_COMMANDS
 bool supply_command(const char *line)
 {
     if (strcmp(line, "SUP?") != 0)
@@ -128,3 +125,4 @@ bool supply_command(const char *line)
     link_printf("OK\r\n");
     return true;
 }
+#endif

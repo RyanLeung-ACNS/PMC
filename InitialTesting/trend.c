@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "lvgl.h"
+#include "pmc_config.h"
 #include "link.h"
 #include "valve.h"
 #include "trend.h"
@@ -162,6 +163,7 @@ void trend_task(void)
     }
 }
 
+#if PMC_ENG_COMMANDS
 bool trend_command(const char *line)
 {
     if (strcmp(line, "TREND?") == 0) {
@@ -191,3 +193,4 @@ bool trend_command(const char *line)
     }
     return false;
 }
+#endif

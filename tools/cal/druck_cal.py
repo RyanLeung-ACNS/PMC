@@ -6,8 +6,11 @@
     python druck_cal.py 192.168.1.23 load table.txt --id "OI table" --xunits V --exc 10
     python druck_cal.py 192.168.1.23 erase
 
-The first argument is the board's IP (Ethernet build, TCP port 5000, or
-host:port) or its COM port (USB build). Needs pip install pyserial.
+The first argument is the board's IP (Ethernet build, TCP port 8888 from
+0.13.0, or host:port) or its COM port (USB build). Needs pip install pyserial.
+The CAL, CFG and VER commands are engineering commands from 0.13.0: the
+board must run a bench build (PMC_ENG_COMMANDS 1 in pmc_config.h). The
+cryostat firmware answers them ERR 100 and the cal is done on its screen.
 Stop log_druck.py first: the board takes one connection at a time (a new
 one replaces the old), and only one program can hold a COM port.
 
@@ -16,8 +19,9 @@ against pressure (mbar), up to 32 points, linear between points. It is
 stored in the on-board serial flash with a CRC and loaded at start-up; if
 nothing valid is stored the board uses the nominal 0-10 mV/V = 0-15 psia.
 
-The normal cal is now the bench two-point, typed on the board's link
-(CAL VAC with the sensor pumped down, CAL AIR <room mbar> vented, CAL SAVE).
+The normal cal is the bench two-point on the board's Calibration screen
+(or, in a bench build, CAL VAC with the sensor pumped down, CAL AIR <room
+mbar> vented, CAL SAVE on the link).
 zs and load enter a table directly; a cert table ignores the INA228 input
 loading and reads about 5 % low.
 
@@ -37,7 +41,7 @@ import time
 
 import serial   # pip install pyserial
 
-TCP_PORT = 5000
+TCP_PORT = 8888
 
 FS_MBAR = 1034.214           # 15 psia
 MAX_POINTS = 32
@@ -115,7 +119,7 @@ class Board:
                     return got
         except serial.SerialException as e:
             sys.exit(f"link lost during '{text}': {e}")
-        sys.exit(f"no reply to '{text}' (old firmware, or wrong address/port?)")
+        sys.exit(f"no reply to '{text}' (firmware before 0.13.0 uses port 5000; or a wrong address)")
 
 
 class Dry:
@@ -128,6 +132,8 @@ def send(board, text):
     reply = board.cmd(text)
     for line in reply:
         print(line)
+    if reply[-1].startswith("ERR 100 "):
+        sys.exit("the board does not take engineering commands: flash a bench build (PMC_ENG_COMMANDS 1)")
     if reply[-1].startswith("ERR"):
         sys.exit(1)
 

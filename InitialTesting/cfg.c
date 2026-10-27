@@ -59,10 +59,12 @@ static const char *tune_fmt(char *buf, size_t n, int i, int32_t v)
     return fixed_fmt(buf, n, v, tune_dec[i]);
 }
 
+#if PMC_ENG_COMMANDS
 static const char *tune_text(char *buf, size_t n, int i)
 {
     return tune_fmt(buf, n, i, tune[i]);
 }
+#endif
 
 typedef struct {
     uint32_t serial;
@@ -913,6 +915,7 @@ bool cfg_sensor_use(uint32_t serial, const char **why)
 /* --------------------------------------------------------------------------
  * Commands
  * ------------------------------------------------------------------------ */
+#if PMC_ENG_COMMANDS   // CFG?, CFG LOAD, CFG TEST
 static void show(void)
 {
     link_printf("CFG flash %s\r\n", flash_ok ? "ok" : "not found");
@@ -999,6 +1002,7 @@ static void test(const char *what)
         link_printf("ERR Expected: CFG TEST CORRUPT|ERASE\r\n");
     }
 }
+#endif
 
 bool cfg_name_ok(const char *n)
 {
@@ -1107,6 +1111,7 @@ void cfg_net_boot(char ip[16], char mask[16])
 
 bool cfg_net_restart_due(void) { return net_ip != net_boot_ip || net_mask != net_boot_mask; }
 
+#if PMC_ENG_COMMANDS   // NET?, NET IP, PID?, PID, CFG (engineering)
 // NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
 // refused, so nobody sets an address that cuts off their own link; the
 // screen (Settings > Name and network) or the USB build sets it.
@@ -1222,12 +1227,12 @@ bool cfg_command(const char *line)
         pid_show();
         return true;
     }
-    if (strncmp(line, "PID ", 4) == 0) {
-        pid_set(line + 4);
-        return true;
-    }
     if (strncmp(line, "NET", 3) == 0 && (line[3] == ' ' || line[3] == '?')) {
         net_command(line + 3);
+        return true;
+    }
+    if (strncmp(line, "PID ", 4) == 0) {
+        pid_set(line + 4);
         return true;
     }
     if (strncmp(line, "CFG", 3) != 0 || (line[3] != ' ' && line[3] != '?' && line[3] != '\0'))
@@ -1266,3 +1271,4 @@ bool cfg_command(const char *line)
     }
     return true;
 }
+#endif

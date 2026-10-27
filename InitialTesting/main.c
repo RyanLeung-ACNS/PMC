@@ -35,13 +35,17 @@
 #include "valvepos.h"
 #include "trend.h"
 #include "baro.h"
+#include "remote.h"
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
  * read inside lv_timer_handler, so a long handler or loop pass is input lag.
  */
 extern uint32_t disp_flush_ms, disp_flush_px;
-static uint32_t perf_since, perf_loops, perf_gap_max, perf_handler_max, perf_last_end;
+static uint32_t perf_loops, perf_gap_max, perf_handler_max, perf_last_end;
+#if PMC_ENG_COMMANDS
+static uint32_t perf_since;
+#endif
 
 static void perf_note(uint32_t t0)
 {
@@ -53,7 +57,9 @@ static void perf_note(uint32_t t0)
     perf_loops++;
 }
 
-static bool perf_command(const char *line)
+#if PMC_ENG_COMMANDS
+// PERF? (engineering, remote.c).
+bool perf_command(const char *line)
 {
     if (strcmp(line, "PERF?") != 0)
         return false;
@@ -75,141 +81,7 @@ static bool perf_command(const char *line)
     disp_flush_ms = disp_flush_px = 0;
     return true;
 }
-
-// HELP (or ?): every command the link takes. Keep in step with README.md.
-// HELP prints the groups; HELP <group> prints one group, short enough to
-// read in the terminal without scrolling. Grouped by job (0.12.8, Ryan
-// 26 Oct); HELP AUTO and HELP PID still work, for CTRL and TUNE.
-static const char *const help_top[] = {
-    "Commands (upper case, one per line, CR or LF ends a line). Groups:",
-    "  HELP CTRL    target, AUTO and MANUAL, faults, events",
-    "  HELP VALVE   valve homing, % position, STOP, valve settings",
-    "  HELP TUNE    control parameters and the step test",
-    "  HELP MOT     valve motor and limit switch (engineering)",
-    "  HELP CAL     pressure calibration",
-    "  HELP CFG     save and load settings",
-    "  HELP DATA    readings, the DATA line, trend",
-    "  HELP SYS     version, identity, time, diagnostics",
-};
-static const char *const help_ctrl[] = {
-    "Control (AUTO needs the valve homed, no fault, a target set):",
-    "  CTRL SP <mbar>             target, 0.1 mbar, 0 to the sensor range",
-    "  CTRL AUTO                  start AUTO, bumpless",
-    "  CTRL MAN [<0-100>]         to MANUAL, valve ramps down and holds [then goes to %]",
-    "  CTRL RESET | CTRL?         clear latches whose cause has gone / list them",
-    "  CTRL OK                    acknowledge the warning (as the screen OK)",
-    "  EVT? [1-100]               last events (default 20)",
-    "In AUTO: F-6 no response, W-2 to MANUAL after 1800 s",
-};
-static const char *const help_valve[] = {
-    "Valve (nothing moves at boot; VALVE CAL first):",
-    "  VALVE?                     mode, position, settings, switch question",
-    "  VALVE CAL                  calibrate to the closed switch (0 %)",
-    "  VALVE CLOSED               take the valve as closed (0 %) where it stands",
-    "  VALVE GOTO <0-100>         go to % open, one decimal",
-    "  VALVE STOP                 stop now; in AUTO: MANUAL, nothing latched; cancels homing",
-    "  VALVE SETZERO | VALVE SKIP answer 'closed switch pressed': this is 0 % / keep the count",
-    "  VALVE SAVED? | VALVE RESTORE  position saved at the last standstill / use it (at start-up only)",
-    "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (CFG SAVE keeps)",
-};
-static const char *const help_tune[] = {
-    "Tuning (engineering; live, CFG SAVE keeps):",
-    "  PID?                       all control parameters",
-    "  PID KP|TI|OUTMIN|DB|BAND <v>  %/mbar, min (0 off), %, steps, mbar",
-    "  PID KDIR +1|-1             +1 opening raises the pressure",
-    "  TUNE STEP [<+-%>]          step test in MANUAL (default +1.0 %), suggests KP and TI",
-    "  TUNE? | TUNE STOP          progress and result / stop, valve back to the start",
-    "KP TI OUTMIN DB KDIR BAND can be set; KD TS STABLE TCHECK NRESP DPMIN TCONV CHECKMIN LEAD TLAG are fixed",
-};
-static const char *const help_data[] = {
-    "Readings and logging:",
-    "  SENSE?                     Power Monitor and Druck readings now",
-    "  BARO?                      room pressure from the Pressure 21 Click (S2)",
-    "  DATA ON | DATA OFF         once-a-second DATA line (off at boot)",
-    "  DATA?                      DATA column names",
-    "  TREND? | TREND DUMP <1-600>  trend store / the last N one-second samples",
-};
-static const char *const help_sys[] = {
-    "System:",
-    "  VER?                       firmware version and build time",
-    "  *IDN?                      identity, one line: PMC,MM4,<chip id>,<version> (no echo, no OK)",
-    "  TIME? | TIME SET YYYY-MM-DD HH:MM:SS",
-    "  TOUCH?                     touch controller counters",
-    "  PERF?                      main loop and display timing (resets the maxima), LVGL heap",
-};
-static const char *const help_cfg[] = {
-    "Settings (motor, valve, tuning, sensors and cals; changes are live, unsaved until saved):",
-    "  CFG?                       saved records, what was loaded, unsaved count",
-    "  CFG DIFF?                  settings that differ from the newest save",
-    "  CFG SAVE                   save everything (CAL SAVE does the same; refused in AUTO)",
-    "  CFG LOAD LAST|PREVIOUS     newest / previous save (refused while moving)",
-    "  CFG LOAD DEFAULTS          factory motor, valve and tuning settings, sensors kept",
-    "  CFG NAME? | CFG NAME <text>  cryostat name on the Home screen, up to 12 characters",
-    "  NET?                       Ethernet fallback address (used when no DHCP server answers)",
-    "  NET IP <address> <mask>    set it, e.g. NET IP 192.168.1.50 255.255.255.0; NET IP DEFAULT",
-    "                             USB only (Ethernet: on the screen); CFG SAVE, then restart",
-    "  CFG TEST CORRUPT|ERASE     bench test: spoil the newest record / erase both",
-};
-static const char *const help_cal[] = {
-    "Calibration:",
-    "  CAL?                       active cal and bench points",
-    "  CAL VAC [mbar]             capture the vacuum point (default 0 mbar, 0-50)",
-    "  CAL AIR <mbar>             capture the air point (500-1100 mbar)",
-    "  CAL SAVE                   save all settings, cal included (= CFG SAVE)",
-    "  CAL ERASE                  use nominal and save (old cal record erased)",
-    "  CAL NEW [id] / CAL PT <mV/V> <mbar> / CAL APPLY   enter a table by hand",
-};
-static const char *const help_mot[] = {
-    "Valve motor (+ opens, - closes):",
-    "  MOT?                       position, target, settings, limit",
-    "  MOT GOTO <pos> [sps]       absolute, own rate; retargets a running move",
-    "  MOT MOVE <steps>           relative, 1 to 700000 either way",
-    "  MOT STOP [RAMP] | MOT OFF  stop now [ramped] / stop and de-energise (in AUTO: MANUAL)",
-    "  MOT ZERO                   call this position 0",
-    "  MOT OVERRIDE [OFF]         next close ignores the limit (one move)",
-    "  LIM?                       limit switch state",
-    "  SUP?                       motor 12 V supply",
-    "Motor settings (refused during a move; CFG SAVE keeps):",
-    "  MOT RATE <16-1000>         run rate, steps/s",
-    "  MOT START <16-1000>        start rate, steps/s",
-    "  MOT ACCEL <10-20000>       steps/s^2",
-    "  MOT MODE WAVE|FULL|HALF    MOT HOLD 0|1    MOT DIR 0|1    MOT ORDER <abcd>",
-};
-
-static void help_print(const char *const *lines, size_t n)
-{
-    for (size_t i = 0; i < n; i++)
-        link_printf("%s\r\n", lines[i]);
-    link_printf("OK\r\n");
-}
-#define HELP_PRINT(a) help_print(a, sizeof a / sizeof a[0])
-
-static bool help_command(const char *line)
-{
-    if (strcmp(line, "HELP") == 0 || strcmp(line, "?") == 0)
-        HELP_PRINT(help_top);
-    else if (strcmp(line, "HELP CTRL") == 0 || strcmp(line, "HELP AUTO") == 0)
-        HELP_PRINT(help_ctrl);
-    else if (strcmp(line, "HELP VALVE") == 0)
-        HELP_PRINT(help_valve);
-    else if (strcmp(line, "HELP TUNE") == 0 || strcmp(line, "HELP PID") == 0)
-        HELP_PRINT(help_tune);
-    else if (strcmp(line, "HELP MOT") == 0 || strcmp(line, "HELP LIM") == 0)
-        HELP_PRINT(help_mot);
-    else if (strcmp(line, "HELP CAL") == 0)
-        HELP_PRINT(help_cal);
-    else if (strcmp(line, "HELP CFG") == 0)
-        HELP_PRINT(help_cfg);
-    else if (strcmp(line, "HELP DATA") == 0)
-        HELP_PRINT(help_data);
-    else if (strcmp(line, "HELP SYS") == 0)
-        HELP_PRINT(help_sys);
-    else if (strncmp(line, "HELP ", 5) == 0)
-        link_printf("ERR Expected: HELP, or HELP CTRL, VALVE, TUNE, MOT, CAL, CFG, DATA or SYS\r\n");
-    else
-        return false;
-    return true;
-}
+#endif
 
 /**
  * @brief Initializes board peripherals for display, touch, and LVGL timing.
@@ -251,11 +123,11 @@ void application_init()
     cal_init();
 
     // Click boards on the shield. Stepper coils off; the motor only moves
-    // on a MOT MOVE command.
+    // when the valve is moved (screen or link).
     clicks_init();
     limit_init();
     supply_init();   // motor 12 V on PA3
-    valve_init();   // NOT CALIBRATED: nothing moves until VALVE CAL or a MOT command
+    valve_init();   // NOT HOMED: nothing moves until homed or moved on the screen
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
     // The valve position saved at the last standstill: offered on the
@@ -313,7 +185,7 @@ int main(void)
     watchdog_start();
 
     ////////////////////////// LVGL timing routine (DO NOT REMOVE) //////////////////////////
-    char line[96];
+    char line[LINK_LINE_MAX + 1];
     uint32_t sense_ms = lv_tick_get();
     while (1)
     {
@@ -332,19 +204,9 @@ int main(void)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-        bool got = link_getline(line, sizeof line);
-        // Echo, so the log shows what was received; not for *IDN?, whose
-        // standard one-line reply instrument software reads as the first line.
-        if (got && strcmp(line, "*IDN?") != 0)
-            link_printf("> %s\r\n", line);
-        if (got && PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !link_line_reads(line)) {
-            link_printf("ERR Read only over the network, use the screen\r\n");
-            got = false;
-        }
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !baro_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
-            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
-            !sense_data_command(line))
-            link_printf("ERR Unknown command\r\n");
+        // The remote command set (remote.c): no echo, one reply line.
+        if (link_getline(line, sizeof line))
+            remote_line(line);
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();
         perf_note(t0);

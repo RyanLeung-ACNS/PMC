@@ -54,29 +54,26 @@ void sysinfo_restart(void)
 #endif
 }
 
-// *IDN? (0.12.2): the IEEE 488.2 identity query most instrument software
-// sends first. One line, maker,model,serial,firmware, with the STM32's
-// 96-bit unique ID as the serial; no echo and no OK, as the standard reply.
-static bool idn_command(const char *cmd)
+// The STM32's 96-bit unique ID as 24 hex digits: the serial in *IDN?
+// (remote.c).
+const char *sysinfo_chip_id(void)
 {
-    if (strcmp(cmd, "*IDN?") != 0)
-        return false;
+    static char id[25];
+    if (id[0])
+        return id;
 #ifdef __wasm__
     static const uint8_t uid[12] = { 0 };   // the simulator: no chip ID to read
 #else
     const volatile uint8_t *uid = (const volatile uint8_t *)0x1FFF7A10UL;
 #endif
-    char id[25];
     for (int i = 0; i < 12; i++)
         lv_snprintf(id + 2 * i, 3, "%02X", uid[i]);
-    link_printf("PMC,MM4,%s,%s\r\n", id, PMC_FW_VERSION);
-    return true;
+    return id;
 }
 
+#if PMC_ENG_COMMANDS
 bool sysinfo_command(const char *cmd)
 {
-    if (idn_command(cmd))
-        return true;
     if (strcmp(cmd, "VER?") != 0)
         return false;
     link_printf("%s\r\n", line);
@@ -88,3 +85,4 @@ bool sysinfo_command(const char *cmd)
     link_printf("OK\r\n");
     return true;
 }
+#endif

@@ -7,10 +7,16 @@
 #include "ethlink.h"
 #include "link.h"
 
-// Spaces and tabs at either end are dropped, so "MOT STOP " is MOT STOP.
+// Spaces and tabs at either end are dropped, so "STOP " is STOP.
 static bool line_take(link_line_t *l, char *out, size_t n)
 {
     size_t a = 0, b = l->len;
+    if (l->over) {
+        l->over = false;
+        l->len = 0;
+        lv_strlcpy(out, LINK_LINE_LONG, n);
+        return true;
+    }
     while (a < b && (l->text[a] == ' ' || l->text[a] == '\t'))
         a++;
     while (b > a && (l->text[b - 1] == ' ' || l->text[b - 1] == '\t'))
@@ -27,6 +33,8 @@ bool link_line_feed(link_line_t *l, char c, char *out, size_t n)
         return l->len > 0 && line_take(l, out, n);
     if (l->len < sizeof l->text - 1)
         l->text[l->len++] = c;
+    else
+        l->over = true;
     l->last_ms = lv_tick_get();
     return false;
 }
@@ -36,13 +44,29 @@ bool link_line_idle(link_line_t *l, uint32_t idle_ms, char *out, size_t n)
     return l->len > 0 && lv_tick_elaps(l->last_ms) >= idle_ms && line_take(l, out, n);
 }
 
-bool link_line_reads(const char *line)
+#if PMC_ENG_COMMANDS
+static bool eng_open;
+void link_eng_open(bool open) { eng_open = open; }
+#endif
+
+static void link_send(const char *s);
+
+void link_write(const char *s) { link_send(s); }
+
+void link_printf(const char *fmt, ...)
 {
-    size_t w = strcspn(line, " ");
-    if (w > 0 && line[w - 1] == '?')
-        return true;
-    return strcmp(line, "HELP") == 0 || strncmp(line, "HELP ", 5) == 0 || strcmp(line, "DATA ON") == 0 ||
-           strcmp(line, "DATA OFF") == 0 || strcmp(line, "TREND DUMP") == 0 || strncmp(line, "TREND DUMP ", 11) == 0;
+#if PMC_ENG_COMMANDS
+    char buf[256];
+    va_list args;
+    if (!eng_open)
+        return;
+    va_start(args, fmt);
+    lv_vsnprintf(buf, sizeof buf, fmt, args);
+    va_end(args);
+    link_send(buf);
+#else
+    (void)fmt;
+#endif
 }
 
 #if PMC_LINK_ETHERNET
@@ -54,18 +78,9 @@ const char *link_status(void)                { return ethlink_status(); }
 bool link_chip_ok(void)                      { return ethlink_link_up() && ethlink_ip()[0]; }
 
 const char *link_chip_text(void)            { return ethlink_chip_text(); }
-bool link_take_new_client(void)              { return ethlink_take_new_client(); }
 size_t link_tx_room(void)                    { return ethlink_tx_room(); }
 
-void link_printf(const char *fmt, ...)
-{
-    char buf[256];
-    va_list args;
-    va_start(args, fmt);
-    lv_vsnprintf(buf, sizeof buf, fmt, args);
-    va_end(args);
-    ethlink_printf("%s", buf);
-}
+static void link_send(const char *s)        { ethlink_printf("%s", s); }
 
 #else
 
@@ -76,24 +91,8 @@ const char *link_status(void)                { return usb_serial_status(); }
 const char *link_chip_text(void)              { return "USB"; }
 size_t link_tx_room(void)                    { return usb_serial_tx_room(); }
 
-bool link_take_new_client(void)
-{
-    static bool was_open;
-    bool open = strstr(usb_serial_status(), "port open") != NULL;
-    bool v = open && !was_open;
-    was_open = open;
-    return v;
-}
 bool link_chip_ok(void)                      { return !strstr(usb_serial_status(), "not enumerated"); }
 
-void link_printf(const char *fmt, ...)
-{
-    char buf[256];
-    va_list args;
-    va_start(args, fmt);
-    lv_vsnprintf(buf, sizeof buf, fmt, args);
-    va_end(args);
-    usb_serial_printf("%s", buf);
-}
+static void link_send(const char *s)        { usb_serial_printf("%s", s); }
 
 #endif

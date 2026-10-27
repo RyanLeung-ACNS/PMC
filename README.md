@@ -104,10 +104,10 @@ Steps are timed by TIM7 interrupts, so the motor runs smoothly while the screen 
 - **Limit switch** is the closing stop, read in firmware before every closing step; there is no hardware interlock (decided). A trip during a normal move stops it and asks "Set as 0 % / Skip" (W-1); the count is never zeroed on its own. Limit override lets one move close past an open switch.
 - **Motor settings**: changing the direction or coil order, or zeroing the motor count (`MOT ZERO`, the motor screen, a loaded record), clears the homing; the valve must be homed again. A step mode change keeps it: travel, back-off, clearance, offset and homing speeds are in full steps and scaled to half steps in HALF.
 - **Saved position**: written 2 s after the valve stops. Before a move starts the start count is written as "saved while moving" (read back and checked, one retry; if it cannot be written the move is refused), then the count again every 2 s while it moves, only when it has changed. A power cut mid-move therefore loses at most about 2 s of travel, and start-up says the position was saved while moving and how far out it may be. Losing calibration withdraws the entry. The log takes one sector erase per 256 entries over 16 sectors, about 26 years of continuous moving at 1 entry every 2 s. At start-up every slot of the log is read, so an entry after a failed write is still found.
-- **AUTO** (Start AUTO, or `CTRL AUTO`): needs the valve homed, no fault, a valid reading and a target. The first Start AUTO asks for the target and Set starts AUTO; later ones confirm the target kept or offer New target. The target changes from the Target box (over 5 mbar asks first). Once a second, after the reading, `ctrl.c` works out the valve command: PI in position form (D on the measurement, off), bumpless entry from where the valve is going, no integration past 100 % or AUTO min, while the switch blocks closing, or while the valve is more than 3000 steps short of the last command, and commands inside the deadband held. Each move runs at MOT RATE. A move the opposite way to the last one is held until the command is 0.1 % of travel from the valve (0.12.12), so the reading's noise no longer turns the motor round every second inside the drive's backlash. The status line reads Regulating to X, In band (within the band) and Stable (60 s in the band). Switch to MANUAL ramps the valve down and holds it where it stops.
+- **AUTO** (Start AUTO, or `MODE AUTO` over the link): needs the valve homed, no fault, a valid reading and a target. The first Start AUTO asks for the target and Set starts AUTO; later ones confirm the target kept or offer New target. The target changes from the Target box (over 5 mbar asks first). Once a second, after the reading, `ctrl.c` works out the valve command: PI in position form (D on the measurement, off), bumpless entry from where the valve is going, no integration past 100 % or AUTO min, while the switch blocks closing, or while the valve is more than 3000 steps short of the last command, and commands inside the deadband held. Each move runs at MOT RATE. A move the opposite way to the last one is held until the command is 0.1 % of travel from the valve (0.12.12), so the reading's noise no longer turns the motor round every second inside the drive's backlash. The status line reads Regulating to X, In band (within the band) and Stable (60 s in the band). Switch to MANUAL ramps the valve down and holds it where it stops.
 - **AUTO checks**: a response monitor over 30 s windows (the valve position through a 40 s lag, moves under 1000 steps not judged): F-6 after 5 windows with no pressure response. A wrong-way change counts as a response (the wrong-way faults and the above-range fault were removed in 0.11.20: in the flow-line model a lost helium supply then shows as F-6 after about 5 min, a stopped pump as W-2 after 30 min). W-2 after 1800 s outside the band stops the valve and switches to MANUAL, the valve idle; the strip shows W-2 until OK or the next Start AUTO (no PAUSED state since 0.11.25). Any fault in AUTO stops the valve and drops to MANUAL, holding where it stopped. Starting AUTO is still refused with the pressure above the sensor range.
 - **STOP** stops and holds the valve with no latch. In AUTO it also drops to MANUAL (logged as STOP).
-- **Faults** latch until Reset fault (or `CTRL RESET`), which clears only those whose cause has gone: F-1 no pressure signal, F-2 excitation outside 9.5 to 10.5 V, F-3 switch not found while homing, F-4 switch still pressed after moving off it, F-5 motion timeout, F-6 no pressure response (AUTO). The number order is the priority order. F-3 to F-6 block moves until reset; F-1 and F-2 do not.
+- **Faults** latch until Reset fault (or `ALRM RESET`), which clears only those whose cause has gone: F-1 no pressure signal, F-2 excitation outside 9.5 to 10.5 V, F-3 switch not found while homing, F-4 switch still pressed after moving off it, F-5 motion timeout, F-6 no pressure response (AUTO). The number order is the priority order. F-3 to F-6 block moves until reset; F-1 and F-2 do not.
 
 ## Screens
 
@@ -142,36 +142,65 @@ The trend and the event log are in RAM and empty after a restart.
 
 ## Build and flash
 
-- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` (the default from 0.12.18) gives TCP port 5000 (DHCP, or the fallback address if no DHCP server answers: the one saved from Settings > Name and network, else `PMC_FALLBACK_IP`, 169.254.10.50), and `0` gives the USB COM port. Port 5000 takes every command, as USB does; `PMC_LINK_WRITE 0` makes it read only (queries, HELP, DATA ON/OFF, TREND DUMP). The Ethernet build also runs a Modbus TCP server on port 502 (`docs/modbus-register-map.md`), with writes on (`PMC_MODBUS_WRITE 1`, from 0.12.6); `0` makes it read only. The two links can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
+- `InitialTesting/pmc_config.h` sets the PC link: `PMC_LINK_ETHERNET 1` (the default from 0.12.18) gives TCP port 8888 (5000 to 0.12.21; DHCP, or the fallback address if no DHCP server answers: the one saved from Settings > Name and network, else `PMC_FALLBACK_IP`, 169.254.10.50), and `0` gives the USB COM port. The port takes the remote command set, as USB does; `PMC_LINK_WRITE 0` makes it read only (queries; set commands answer ERR 211). `PMC_ENG_COMMANDS 1` makes a bench build with the engineering commands as well. The Ethernet build also runs a Modbus TCP server on port 502 (`docs/modbus-register-map.md`), with writes on (`PMC_MODBUS_WRITE 1`, from 0.12.6); `0` makes it read only. The two links can't run together, because RMII needs 50 MHz from MCO1 and USB needs 48 MHz from the same PLL.
 - The linker script `.meproject/setup/FileLinker/stm32f407zg.ld` is patched so `.ccmram` is `(NOLOAD)`, which keeps the LVGL heap that lives there out of the flash image. If NECTO ever regenerates this file, re-apply the patch.
 - Build Debug in NECTO. Release leaves the display blank: MikroE's prebuilt Release `lib_ssd1963.a` was compiled with a non-volatile GPIO register struct, so `ssd1963_write_command` loses its WR low and the SSD1963 never latches a command (bench, 0.3.33; disassembly, 0.8.9). From 0.8.10 (pixel loop from 0.8.11) the Debug build keeps the Debug SDK libraries and the hardware drivers at -O0 but compiles LVGL, the pixel loop `driver/display_px.c` and `ui*.c` at -O2 (`driver/display_lvgl.c` must stay -O0: it inlines the SDK's WR_LOW/WR_HIGH) (`InitialTesting/CMakeLists.txt`), so screens draw faster. About 630 KB of flash (0.10.4).
 - NECTO's build folders (`build-MM4/`, `build-Default Configuration/`, ...), `compile_commands.json` and the clangd index in `.cache/` are not tracked, so a NECTO build no longer blocks `git pull`. The one exception is `build-MM4/generated/` (screen code from `main_screen.mscr`), which `tools/ui-preview` compiles. NECTO also rewrites `.meproject/config.json` (it holds machine paths, but also the board and MCU selection, so it stays tracked): before a pull, `git stash` or `git checkout -- InitialTesting/.meproject/config.json`.
 - After `CMakeLists.txt` changes (new files), Clean before building in NECTO.
-- Flash over USB-C with mikroBootloader (no debugger). Check `VER?` after flashing.
+- Flash over USB-C with mikroBootloader (no debugger). Check `*IDN?` after flashing (the version is its last field).
 
 ## PC link commands
 
-Connect to the USB COM port (any baud rate, it is virtual) or, in the Ethernet build, TCP port 5000 (e.g. PuTTY in Raw mode). Send one command per line; CR, LF or CRLF all end a line. Commands are upper case and exact. The board echoes each line it receives as `> <line>`. Spaces at either end are ignored. Every command ends with exactly one final line, `OK` (alone for a query, or with a short result) or `ERR ...` (sentence case, saying what was expected or why not), after any data lines, which start with the group word (`VALVE`, `MOT`, `CFG`, ...). Anything that finishes later comes as an `EVT` line, so a program can read to the first `OK` or `ERR` (0.12.16). Settings answer `OK <NAME> <value> <unit>, unsaved`, e.g. `OK MOT RATE 300 sps, unsaved`. Pressures are in mbar and the limit switch is `pressed` or `free`. Type `HELP` (or `?`) on the board for the groups, then `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA` or `HELP SYS` (`HELP AUTO` and `HELP PID` still work, for CTRL and TUNE).
+From 0.13.0 the text link takes the remote command set only: what an operator can use and judge away from the cryostat. Homing, calibration, settings, tuning, saving and the motor are on the touch screen. The full description for a driver writer (for example a Frappy module) is the "mm4 Remote Commands" page; `InitialTesting/remote.c` is the code.
 
-Unprompted output: a `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` line once a second (after `DATA ON`; off at boot; empty fields have no value, `DATA?` lists the columns), status lines when their state changes (the motor and valve lines when a move starts or ends or a homing stage changes, not as the count runs; `SENSE?` gives the live sensor readings), `LIM free` / `LIM pressed` when the limit switch changes, and `F-5 motion timeout: ...` if a move runs longer than its distance / rate plus the ramps plus 2 s (the motor is stopped at once).
+Connect to TCP port 8888 in the Ethernet build (5000 up to 0.12.21; e.g. PuTTY in Raw mode), or the USB COM port in the USB build (any baud rate, it is virtual). One client at a time; a new connection replaces the old. Send upper case ASCII, a line ending in LF or CR LF, at most 96 characters. Replies end in CR LF.
+
+- No echo, and nothing is sent unasked: faults, warnings and switch changes go to the event log (`EVNT?`) and show in `ALRM?` and `MODE?`.
+- A query (ending in `?`) replies one line starting with its own words, the value then the unit: `PRES 4.625 mbar`, `VALV 34.12 %`, `VALV NONE` when there is no value. Pressure 3 dp, target 1 dp, valve 2 dp, room pressure 2 dp.
+- A set command replies nothing when it is accepted, and `ERR <code> <text>` when refused. End a line that sets something with a query (`PRES SP 5;MODE AUTO;MODE?`) to always get one line back.
+- Commands can share a line with `;`: they run in order, the query replies come back on one line joined by `;`, and the first `ERR` ends the line. `EVNT?` is the only multi-line reply (`EVNT <count>`, then that many lines) and must be on a line of its own.
+
+| Command | Reply or action |
+| --- | --- |
+| `PRES SP <mbar>` | Target, 0 to the sensor range, kept to 0.1 mbar. Does not start AUTO |
+| `MODE AUTO` / `MODE MANUAL` | Start regulating after the entry checks / stop regulating, the valve stays where it is |
+| `VALV SET <%>` | Move the valve, 0 to 100 % in 0.1 steps; MANUAL only, valve homed |
+| `STOP` | Stop the valve now; in AUTO it also ends AUTO. Cancels homing. The only stop |
+| `ALRM RESET` / `ALRM OK` | Clear the latched faults whose cause has gone (ERR 210 if one is still present) / acknowledge the warning, as the screen's OK |
+| `TIME SET <YYYY-MM-DD> <HH:MM:SS>` | Set the clock |
+| `PRES?` | `PRES 4.625 mbar` or `PRES NONE` |
+| `PRES SP?` | `PRES SP 5.0 mbar` or `PRES SP NONE` |
+| `MODE?` | `MODE MANUAL`, `MODE AUTO`, `MODE HOMING` or `MODE NOT HOMED` |
+| `VALV?` / `VALV MOVING?` | `VALV 34.12 %` or `VALV NONE` / `VALV MOVING 1` while moving or homing, else 0 |
+| `BARO?` | `BARO 1013.25 mbar` or `BARO NONE` (Pressure 21 Click not fitted or not reading) |
+| `ALRM?` | `ALRM NONE`, or the active alarms joined by `\|`, faults first: `<tag>,<0\|1>,<text>`. For a fault, 1 when `ALRM RESET` clears it now; for a warning, 1 when `ALRM OK` clears it, 0 while its cause is present (W-1 the switch question, W-3 controller hot) |
+| `EVNT? [<n>]` | `EVNT <n>`, then n lines `<age s>,<tag>,<text>`, newest first; default 1, at most 100 |
+| `NETW?` | `NETW DHCP\|FALLBACK,<address>,<mask>,<MAC>`; `NETW NONE` in the USB build |
+| `TIME?` | `TIME 2026-10-27 11:05:00` or `TIME NONE` |
+| `*IDN?` | `MercShore,iPC,<chip id>,<version>` |
+
+Error codes: 100 unknown command (every screen-only command), 101 expected form, 102 outside range, 103 line too long, 104 `EVNT?` not on its own line, 201 homing, STOP to cancel, 202 switch to MANUAL first, 203 reset the fault first, 204 home the valve first, 205 no valid pressure, 206 set a target first, 207 target outside the sensor range, 208 pressure above the sensor range, 209 control settings not set, 210 not reset, cause still present, 211 read only over the network (`PMC_LINK_WRITE 0`), 212 the valve cannot move now (motor supply off, the limit switch, a step test running) or the clock is not running.
+
+`tools/logger/log_druck.py` polls the set once a second, and `simulator/tests/tcp-board.js` serves the simulated board on port 8888 for trying a driver without hardware.
+
+### Engineering commands (bench build)
+
+A bench build (`PMC_ENG_COMMANDS 1` in `pmc_config.h`; the simulator builds this way) also takes the engineering commands below, under their old names. They reply in their own style: data lines, then one final `OK` or `ERR ...` line. The cryostat firmware (`PMC_ENG_COMMANDS 0`, the default) answers every one of them `ERR 100 Unknown command`. `HELP` lists them.
 
 | Command | What it does |
 | --- | --- |
-| `HELP` or `?` | List the command groups; `HELP CTRL`, `HELP VALVE`, `HELP TUNE`, `HELP MOT`, `HELP CAL`, `HELP CFG`, `HELP DATA`, `HELP SYS` list one group each |
-| `VER?` | Firmware version and build time |
-| `*IDN?` | Identity in one line, `PMC,MM4,<chip id>,<version>`, as instrument software expects: no echo and no `OK` |
-| `DATA OFF` / `DATA ON` | Pause or resume the DATA line; off at boot (the logger sends DATA ON) |
-| `DATA?` | The DATA column names |
-| `SENSE?` | The Power Monitor and Druck readings now (`BARO?` has the Pressure 21) |
-| `TIME?` | Read the real-time clock |
-| `TIME SET YYYY-MM-DD HH:MM:SS` | Set the clock, e.g. `TIME SET 2026-10-13 14:30:00` |
-| `BARO?` | Room pressure from the Pressure 21 Click (BMP581) in S2: reading, temperature, or why it is not read |
+| `HELP` | The engineering commands |
+| `VER?` | Firmware version and build time, MAC and IP |
+| `DATA?` / `DATA HDR?` | One CSV line of the last reading, `DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar` / the column names |
+| `SENSE?` | The Power Monitor and Druck readings now |
+| `BARO STATUS?` | The Pressure 21 Click's status: reading, temperature, or why it is not read |
 | `LIM?` | Valve limit switch: state, raw pin level, change count |
 | `SUP?` | Motor 12 V supply (PA3, x5 divider module): volts, state (ok, LOW below 10.5 V, HIGH above 14.0 V, OFF below 6.0 V), raw ADC and VREFINT counts |
 | `TOUCH?` | Touch controller read and error counters |
 | `PERF?` | Longest main loop and display timings since the last `PERF?`, and the LVGL heap (total, used, peak since boot, biggest free block, fragmentation) |
+| `TREND?` / `TREND DUMP <n>` | The trend buffer / its last n seconds |
 
-Settings store (motor, valve, control tuning, up to four pressure sensors each with its own cal, the cryostat name and the save time, in one record in serial flash; version 3 from 0.10.9, a version 2 record (0.9.0 to 0.10.8) loads with the name CF-11, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
+Settings store (engineering; Settings > Review and save on the screen) (motor, valve, control tuning, up to four pressure sensors each with its own cal, the cryostat name and the save time, in one record in serial flash; version 3 from 0.10.9, a version 2 record (0.9.0 to 0.10.8) loads with the name CF-11, and a 0.6.0 to 0.8.x record still loads as one 15 psi sensor). Changes over the link are live at once and unsaved until `CFG SAVE`. At power-up the newest valid record is loaded; with none, the factory defaults (and a cal saved by firmware 0.3.30 to 0.5.x, if any):
 
 | Command | What it does |
 | --- | --- |
@@ -182,15 +211,15 @@ Settings store (motor, valve, control tuning, up to four pressure sensors each w
 | `CFG LOAD DEFAULTS` | Factory motor, valve and tuning settings; the sensors and their cals are kept |
 | `CFG NAME <text>` / `CFG NAME?` | Set / show the cryostat name in the Home title (up to 12 characters; unsaved until `CFG SAVE`) |
 | `NET?` | Ethernet fallback address (used when no DHCP server answers) and the one in use since start-up |
-| `NET IP <address> <mask>` / `NET IP DEFAULT` | Set the fallback address, e.g. `NET IP 192.168.1.50 255.255.255.0`, or go back to `PMC_FALLBACK_IP`. Unsaved until `CFG SAVE`, used after a restart. Refused over port 5000 so nobody cuts off their own link: set it on the screen, or over USB |
+| `NET IP <address> <mask>` / `NET IP DEFAULT` | Set the fallback address, e.g. `NET IP 192.168.1.50 255.255.255.0`, or go back to `PMC_FALLBACK_IP`. Unsaved until `CFG SAVE`, used after a restart. Refused over Ethernet so nobody cuts off their own link: set it on the screen, or over USB |
 | `CFG TEST CORRUPT` / `CFG TEST ERASE` | Bench tests: spoil the newest record's CRC / erase both sectors |
 
-Calibration (Druck, through the INA228):
+Calibration (engineering; the Calibration screen on the cryostat) (Druck, through the INA228):
 
 | Command | What it does |
 | --- | --- |
 | `CAL?` | Active cal, whether it is saved, and the bench points held |
-| `CAL VAC [mbar]` | Capture the vacuum point over 5 readings. Default 0 mbar, range 0 to 50 mbar. Answers `OK capturing ...` at once; the result is a `CAL` event (`EVT ... CAL Vacuum point ... mV/V`) |
+| `CAL VAC [mbar]` | Capture the vacuum point over 5 readings. Default 0 mbar, range 0 to 50 mbar. Answers `OK capturing ...` at once; the result is a `CAL` event (`EVNT?`) |
 | `CAL AIR <mbar>` | Capture the air point at the reference reading, 500 to 1100 mbar. As `CAL VAC`, the result is a `CAL` event, then `Bench cal applied` once both points are held |
 | `CAL SAVE` | Same as `CFG SAVE`: saves all settings, the active cal included (it is only in RAM until then) |
 | `CAL ERASE` | Go back to nominal, erase the old 0.5.x cal record and save |
@@ -198,33 +227,27 @@ Calibration (Druck, through the INA228):
 
 A bench cal: pump down, `CAL VAC`; vent, `CAL AIR 1013.2` (your reference reading); check with `CAL?`; then `CAL SAVE`. Either point can be redone on its own.
 
-Valve (homing, position, STOP, faults). Nothing moves at power-up; the valve is NOT HOMED until `VALVE CAL` (homing):
+Valve, control and step test (engineering; the screen does all of this on the cryostat). Nothing moves at power-up; the valve is NOT HOMED until homed:
 
 | Command | What it does |
 | --- | --- |
-| `VALVE?` | Mode, count and % open, settings, latched faults, any waiting switch question |
+| `VALVE?` | Mode, count and % open, settings, latched faults, target and regulation state, any waiting switch question |
 | `VALVE CAL` | Home: off the switch if pressed, fast close to the switch, back off, slow close, back off again; that last point is 0 % |
-| `VALVE GOTO <0-100>` | Go to % open (one decimal), once homed |
-| `VALVE STOP` | Stop now; in AUTO it drops to MANUAL, nothing latched. Cancels homing and a step test. The one stop command (was `CTRL STOP` to 0.12.16) |
-| `VALVE CLOSED` | Take the valve as seated where it stands (the seat count, the back-off below 0 %), without the switch: only when you know it is seated (Home valve > Set position > Closed on the screen; Enter % takes a typed % the same way) |
+| `VALVE CLOSED` | Take the valve as seated where it stands (the seat count, the back-off below 0 %), without the switch: only when you know it is seated (Home valve > Set position > Closed on the screen) |
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-1) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The last saved valve position, whether it was saved at standstill or while moving, and whether it is on offer |
 | `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Home / Set position / Use X %". It is never used without the operator |
 | `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400, before and after the slow close), clearance (800), count at 0 % (0). `CFG SAVE` keeps them |
-| `CTRL SP <mbar>` | Target, kept to 0.1 mbar, 0 to the sensor range (not saved: none at start-up) |
-| `CTRL AUTO` | Start AUTO after the entry checks. In AUTO the DATA line carries the pressure, target and valve position, and `VALVE?` the regulation state; the motor status line is held back |
-| `CTRL MAN [<0-100>]` | To MANUAL: the valve ramps down and holds where it stops, then goes to % if given |
-| `PID?` | The control parameters (`HELP TUNE` says which can be set: KP, TI, OUTMIN, DB, KDIR and BAND; the rest are fixed in `ctrl.h`) |
+| `CTRL?` | Latched faults, highest priority first |
+| `PID?` | The control parameters (KP, TI, OUTMIN, DB, KDIR and BAND can be set; the rest are fixed in `ctrl.h`) |
 | `PID KP\|TI\|OUTMIN\|DB\|BAND <v>` | Gain (%/mbar, 4.00), integral time (min, 0.25; 0 off), AUTO min (%, 0.0), deadband (steps, 8), target band (mbar, 0.10). Live, AUTO included; `CFG SAVE` keeps them |
 | `PID KDIR +1\|-1` | Pressure response: +1 when opening the valve raises the pressure |
 | `TUNE STEP [<+-%>]` | Step test for KP and TI, in MANUAL with the valve homed: takes up the drive's slack (5 % the other way and back), waits for a steady pressure, steps the valve (default +1.0 % of travel, doubled until the pressure moves 0.2 mbar, up to 20 %), steps again the same way, records each step for 60 s or until settled, fits dead time and time constant, and suggests KP and TI by the Lambda rule. Applies nothing; the valve returns to where it started. Any other valve command, STOP, AUTO or a fault ends it (`InitialTesting/tune.h`) |
 | `TUNE?` \| `TUNE STOP` | Progress and the result / end the test, valve back to the start |
-| `CTRL RESET` | Clear the latched faults whose cause has gone |
-| `CTRL?` | Latched faults, highest priority first |
-| `CTRL OK` | Acknowledge the warning on the strip, as the screen OK and the Modbus OK coil do |
-| `EVT? [1-100]` | The last events (default 20), sent a line at a time as the link has room. Each event is also sent as it happens: `EVT <s> <tag> <text>` |
 
-Faults latch until `CTRL RESET`: F-1 no pressure signal, F-2 excitation outside 9.5 to 10.5 V, F-3 switch not found while homing, F-4 switch still pressed after moving off it, F-5 motion timeout, F-6 no pressure response (AUTO only). F-3 to F-6 stop the motor and refuse VALVE and MOT moves; from 0.9.10 the sensor faults do not, so the valve can be moved and homed with no Druck connected. F-1 and F-2 only reset once the cause has gone. In AUTO, VALVE and MOT moves, homing and the valve settings answer "Switch to MANUAL first" (`CTRL MAN`).
+Target, AUTO and MANUAL, valve moves, STOP, the alarm reset and OK and the event log are the remote set's commands in a bench build too (`PRES SP`, `MODE`, `VALV SET`, `STOP`, `ALRM`, `EVNT?`).
+
+Faults latch until `ALRM RESET` (or Reset on the screen): F-1 no pressure signal, F-2 excitation outside 9.5 to 10.5 V, F-3 switch not found while homing, F-4 switch still pressed after moving off it, F-5 motion timeout, F-6 no pressure response (AUTO only). F-3 to F-6 stop the motor and refuse moves; the sensor faults do not, so the valve can be moved and homed with no Druck connected. F-1 and F-2 only reset once the cause has gone. In AUTO, moves, homing and the valve settings answer "Switch to MANUAL first".
 
 Valve motor (Stepper 3, engineering; refused while homing or with a fault latched, except `MOT STOP` and `MOT OFF`):
 
@@ -235,7 +258,7 @@ Valve motor (Stepper 3, engineering; refused while homing or with a fault latche
 | `MOT GOTO <pos> [sps]` | Move to an absolute position, at its own rate if given (16 to 1000). During a move it retargets: a target further on extends the move, one behind ramps down and turns round |
 | `MOT STOP` | Stop at once (coils stay on if hold is on) |
 | `MOT STOP RAMP` | Ramp down at the normal deceleration, then stop |
-| `MOT OFF` | Stop and de-energise the coils. In AUTO, `MOT STOP`, `MOT STOP RAMP` and `MOT OFF` end AUTO first (MANUAL, as `VALVE STOP`) |
+| `MOT OFF` | Stop and de-energise the coils. In AUTO, `MOT STOP`, `MOT STOP RAMP` and `MOT OFF` end AUTO first (MANUAL, as `STOP`) |
 | `MOT ZERO` | Call the current position 0 |
 | `MOT OVERRIDE` | Let the next move close past an open limit switch (one move, not saved); `MOT OVERRIDE OFF` cancels |
 | `MOT RATE <16-1000>` | Run rate, steps/s |
@@ -252,8 +275,8 @@ The settings commands (`RATE` to `ORDER`, and `ZERO`) answer `ERR Busy, MOT STOP
 
 ## Tools
 
-- `tools/logger/log_druck.py <IP or COM>` logs the once-a-second DATA lines to CSV and reconnects on its own.
-- `tools/cal/druck_cal.py <IP or COM> show|zs|load|erase` manages the Druck calibration table in serial flash.
+- `tools/logger/log_druck.py <IP or COM>` polls the pressure, target, valve, mode, alarms and room pressure once a second into a CSV and reconnects on its own.
+- `tools/cal/druck_cal.py <IP or COM> show|zs|load|erase` manages the Druck calibration table in serial flash (a bench build only, 0.13.0 on).
 - `tools/ui-preview/build.sh` renders the screens (Home, Menu, keypad, dialogs, the stage 5 and 6 pages) to PNG on a PC (`out/new-*.png`), with the real settings store over a flash held in RAM, and checks the LVGL heap returns after opening and leaving screens.
 - `tools/ctrl-test/run.sh` runs `ctrl.c` on a PC against a C port of the simulator's flow line (helium pot, needle valve, pump, the motor ramp and the closed switch) and checks it against the simulator's own results: closed to 5 mbar, 5 to 4.5 and 4.5 to 10 mbar, targets 5, 7, 3 and 5 with no false trip, helium off (F-6), pump off (W-2 to MANUAL), a slipping drive (F-6) and the entry refusals.
 - `tools/cfg-test/run.sh` tests the settings store and the saved valve position on a PC against a flash held in RAM (version 1 record loading, saves, Previous save, refused combinations, sensors, sensor calibration, the position log wrapping).

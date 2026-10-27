@@ -9,6 +9,7 @@
 #include "limit.h"
 #include "stepper3.h"
 #include "supply.h"
+#include "pmc_config.h"
 #include "fixed.h"
 #include "cfg.h"
 #include "ctrl.h"
@@ -79,7 +80,7 @@ typedef struct {
 static event_t events[EVT_N];
 static uint32_t evt_count;     // total logged since boot
 
-#define EVT_LINE 120   // link room wanted before an EVT? line goes out
+#define EVT_LINE 128   // link room wanted before an EVNT? line goes out (and its size)
 static struct {
     bool active;
     uint32_t next, end, since;
@@ -88,8 +89,11 @@ static void evt_dump_task(void);
 
 static void evt_print(const event_t *e)
 {
-    link_printf("EVT %lu.%lu %s %s\r\n", (unsigned long)(e->t_ms / 1000),
-                (unsigned long)(e->t_ms % 1000 / 100), e->tag, e->text);
+    char l[EVT_LINE];
+    uint32_t age = lv_tick_elaps(e->t_ms);
+    lv_snprintf(l, sizeof l, "%lu.%lu,%s,%s\r\n", (unsigned long)(age / 1000), (unsigned long)(age % 1000 / 100),
+                e->tag, e->text);
+    link_write(l);
 }
 
 void valve_event(const char *tag, const char *fmt, ...)
@@ -102,7 +106,6 @@ void valve_event(const char *tag, const char *fmt, ...)
     lv_vsnprintf(e->text, sizeof e->text, fmt, args);
     va_end(args);
     evt_count++;
-    evt_print(e);
 }
 #define ev valve_event
 
@@ -188,8 +191,8 @@ static bool any_latched(void)
 
 static void update_lock(void)
 {
-    stepper3_lock(mode == VALVE_CALIBRATING ? "calibrating, VALVE STOP to cancel"
-                  : any_latched() ? "fault latched, CTRL RESET first"
+    stepper3_lock(mode == VALVE_CALIBRATING ? "Homing: STOP to cancel"
+                  : any_latched() ? "Reset the fault first"
                   : is_auto() ? "Switch to MANUAL first" : NULL);
 }
 
@@ -272,9 +275,9 @@ static void cal_creep(void)
 
 static bool cal_start(const char **err)
 {
-    if (mode == VALVE_CALIBRATING) { *err = "already calibrating"; return false; }
+    if (mode == VALVE_CALIBRATING) { *err = "Homing: STOP to cancel"; return false; }
     if (is_auto())                 { *err = "Switch to MANUAL first"; return false; }
-    if (any_latched())             { *err = "fault latched, CTRL RESET first"; return false; }
+    if (any_latched())             { *err = "Reset the fault first"; return false; }
     stepper3_stop();
     stepper3_override_cancel();
     question = false;
@@ -616,15 +619,16 @@ static void tune_tick(void)
     tune_send();
 }
 
+#if PMC_ENG_COMMANDS
 static bool tune_begin(float step_pct, const char **why)
 {
     if (mode == VALVE_CALIBRATING)  { *why = "Homing: STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (!calibrated)                { *why = "Home the valve first"; return false; }
-    if (any_latched())              { *why = "Fault latched: RESET first"; return false; }
+    if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (!pv_ok)                     { *why = "No pressure reading"; return false; }
     if (supply_off())               { *why = "Motor supply off"; return false; }
-    if (tune_running(&tun))         { *why = "Step test already running: TUNE STOP first"; return false; }
+    if (tune_running(&tun))         { *why = "Step test running: STOP first"; return false; }
     int32_t at = stepper3_busy() ? stepper3_target() : stepper3_position();
     *why = tune_start(&tun, at, pm(), step_pct, pv_mbar);
     if (*why)
@@ -700,6 +704,7 @@ static void tune_command(const char *a)
         link_printf("ERR Expected: TUNE STEP [<%%>] | TUNE STOP | TUNE?\r\n");
     }
 }
+#endif
 
 // Once a second, after the faults of this read.
 static void auto_step(void)
@@ -872,12 +877,12 @@ bool valve_restore(int32_t count, const char **why)
 // The operator's position: seated (closed), or a typed %.
 static bool set_by_hand(bool seated, int32_t pct100, const char **why)
 {
-    if (pct100 < 0 || pct100 > 10000) { *why = "outside 0 to 100 %"; return false; }
-    if (mode == VALVE_CALIBRATING) { *why = "homing, STOP to cancel"; return false; }
+    if (pct100 < 0 || pct100 > 10000) { *why = "Outside 0 to 100 %"; return false; }
+    if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
-    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    if (any_latched())              { *why = "Reset the fault first"; return false; }
     int32_t c = seated ? seat_count() : (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
-    if (stepper3_busy() || !stepper3_set_position(c)) { *why = "moving, wait for it to stop"; return false; }
+    if (stepper3_busy() || !stepper3_set_position(c)) { *why = "Wait for the valve to stop"; return false; }
     calibrated = true;
     ref_how = VALVE_REF_HAND;
     mode = VALVE_MANUAL;
@@ -992,12 +997,6 @@ void valve_stop(void)
        was_cal ? ", calibrating cancelled" : was_auto ? ", AUTO ended, MANUAL" : "");
 }
 
-static void stop_command(void)
-{
-    valve_stop();
-    link_printf("OK stopped at %ld\r\n", (long)stepper3_position());
-}
-
 int valve_reset(char *left, size_t n)
 {
     int any = 0;
@@ -1019,19 +1018,8 @@ int valve_reset(char *left, size_t n)
     return any;
 }
 
-static void reset_command(void)
-{
-    char left[40];
-    bool any = valve_reset(left, sizeof left);
-    bool kept = left[0] != '\0';
-    if (!any)
-        link_printf("OK no fault to reset\r\n");
-    else if (kept)
-        link_printf("ERR Not reset, cause still present: %s\r\n", left);
-    else
-        link_printf("OK reset%s\r\n", calibrated ? "" : ", valve position not set");
-}
-
+#if PMC_ENG_COMMANDS
+// CTRL? (engineering): the latched faults, highest priority first.
 static void faults_command(void)
 {
     bool any = false;
@@ -1046,29 +1034,24 @@ static void faults_command(void)
         link_printf("CTRL no faults\r\n");
     link_printf("OK\r\n");
 }
+#endif
 
-static void events_command(const char *a)
+// EVNT? <n> (remote.c): "EVNT <count>" now, then the newest count events,
+// newest first, as "<age s>,<tag>,<text>", a line at a time from
+// valve_task() as the link has room, so a slow reader does not hold up the
+// main loop (as TREND DUMP).
+void valve_events_send(int n)
 {
-    long n = 20;
-    while (*a == ' ')
-        a++;
-    if (*a) {
-        char *end;
-        n = strtol(a, &end, 10);
-        if (end == a || *end || n < 1 || n > EVT_N) {
-            link_printf("ERR Expected: EVT? [1-%d]\r\n", EVT_N);
-            return;
-        }
-    }
     uint32_t have = evt_count < EVT_N ? evt_count : EVT_N;
     if ((uint32_t)n > have)
-        n = (long)have;
-    // Sent from valve_task() a line at a time, as the link has room, so a
-    // slow reader does not hold up the main loop (as TREND DUMP).
-    edump.next = evt_count - (uint32_t)n;
-    edump.end = evt_count;
+        n = (int)have;
+    char c[24];
+    lv_snprintf(c, sizeof c, "EVNT %d\r\n", n);
+    link_write(c);
+    edump.next = evt_count;
+    edump.end = evt_count - (uint32_t)n;
     edump.since = lv_tick_get();
-    edump.active = true;
+    edump.active = n > 0;
 }
 
 static void evt_dump_task(void)
@@ -1076,52 +1059,25 @@ static void evt_dump_task(void)
     if (!edump.active)
         return;
     for (int lines = 0; lines < 8; lines++) {      // a few per loop pass
+        if (edump.next <= edump.end) {
+            edump.active = false;
+            return;
+        }
         if (link_tx_room() < EVT_LINE) {
             if (lv_tick_elaps(edump.since) >= 2000)
                 edump.active = false;               // nobody reading: drop the rest
             return;
         }
         edump.since = lv_tick_get();
-        if (edump.next >= edump.end) {
-            link_printf("EVT %lu since boot\r\nOK\r\n", (unsigned long)evt_count);
-            edump.active = false;
-            return;
-        }
-        uint32_t i = edump.next++;
+        uint32_t i = --edump.next;
         if (evt_count - i <= EVT_N)                 // not yet written over
             evt_print(&events[i % EVT_N]);
+        else
+            link_write("0.0,LOST,written over\r\n");   // keeps the count right
     }
 }
 
-// "12.3" -> 123 (0.1 units), 0 to 1000.
-static bool parse_pct10(const char *s, int32_t *out)
-{
-    long whole = 0, frac = 0;
-    int nd = 0;
-    bool digits = false;
-    while (*s == ' ')
-        s++;
-    while (*s >= '0' && *s <= '9' && whole <= 1000) {
-        whole = whole * 10 + (*s++ - '0');
-        digits = true;
-    }
-    if (*s == '.') {
-        s++;
-        while (*s >= '0' && *s <= '9') {
-            if (nd++ == 0)
-                frac = *s - '0';
-            s++;
-            digits = true;
-        }
-    }
-    while (*s == ' ')
-        s++;
-    if (!digits || *s || whole * 10 + frac > 1000)
-        return false;
-    *out = (int32_t)(whole * 10 + frac);
-    return true;
-}
-
+#if PMC_ENG_COMMANDS
 static void show(void)
 {
     char p[16], f[40];
@@ -1141,10 +1097,10 @@ static void show(void)
         link_printf("VALVE target %s mbar, band %s mbar%s\r\n", mbar_text(a, sizeof a, ctl.sp, 1),
                     fixed_fmt(b, sizeof b, cfg_tune(CFG_BAND), 2), reg[valve_regulation()]);
     } else {
-        link_printf("VALVE target not set (CTRL SP)\r\n");
+        link_printf("VALVE target not set (SP)\r\n");
     }
     if (question)
-        link_printf("VALVE question: limit switch pressed at count %ld (%s %%), VALVE SETZERO or VALVE SKIP\r\n",
+        link_printf("VALVE question: limit switch pressed at count %ld (%s %%), answer on the screen\r\n",
                     (long)question_at, pct_text(p, sizeof p, question_at));
     link_printf("OK\r\n");
 }
@@ -1165,7 +1121,7 @@ static void setting_command(const char *a)
         else if (is_auto())
             link_printf("ERR Switch to MANUAL first\r\n");
         else if (mode == VALVE_CALIBRATING || stepper3_busy())
-            link_printf("ERR Busy, VALVE STOP first\r\n");
+            link_printf("ERR Busy, STOP first\r\n");
         else {
             *settings[i].v = (int32_t)v;
             ev("CFG", "VALVE %s set to %ld", settings[i].name, v);
@@ -1176,6 +1132,7 @@ static void setting_command(const char *a)
     }
     link_printf("ERR Unknown VALVE command\r\n");
 }
+#endif
 
 const char *valve_setting_name(int i)
 {
@@ -1212,8 +1169,8 @@ bool valve_goto_pct10(int32_t pct10, const char **why)
 
 bool valve_goto_pct100(int32_t pct100, const char **why)
 {
-    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, VALVE STOP to cancel"; return false; }
-    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    if (mode == VALVE_CALIBRATING)  { *why = "Homing: STOP to cancel"; return false; }
+    if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (!calibrated)                { *why = "Home the valve first"; return false; }
     int32_t to = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
@@ -1225,8 +1182,8 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
 
 bool valve_move_steps(int32_t steps, const char **why)
 {
-    if (mode == VALVE_CALIBRATING)  { *why = "calibrating, VALVE STOP to cancel"; return false; }
-    if (any_latched())              { *why = "fault latched, CTRL RESET first"; return false; }
+    if (mode == VALVE_CALIBRATING)  { *why = "Homing: STOP to cancel"; return false; }
+    if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
     if (!stepper3_goto(from + steps)) { *why = stepper3_refusal(); return false; }
@@ -1301,9 +1258,9 @@ bool valve_question(int32_t *pct10)
 
 bool valve_answer(bool set_zero, const char **why)
 {
-    if (!question)          { *why = "no switch question waiting"; return false; }
+    if (!question)          { *why = "No switch question waiting"; return false; }
     if (set_zero && is_auto())       { *why = "Switch to MANUAL first"; return false; }
-    if (set_zero && stepper3_busy()) { *why = "moving, wait for it to stop"; return false; }
+    if (set_zero && stepper3_busy()) { *why = "Wait for the valve to stop"; return false; }
     question = false;
     if (set_zero) {
         int32_t d = stepper3_position() - question_at;
@@ -1361,39 +1318,18 @@ bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s)
 }
 
 
+#if PMC_ENG_COMMANDS
+/*
+ * Engineering commands (bench build, simulator; old names): homing, the
+ * switch answers, the valve settings, the AUTO end on MOT STOP, TUNE, and
+ * the VALVE? and CTRL? reports. The remote set is in remote.c.
+ */
 bool valve_command(const char *line)
 {
     const char *err;
-    char p[16];
 
-    if (strcmp(line, "VALVE STOP") == 0) {   // CTRL STOP to 0.12.16
-        stop_command();
-    } else if (strcmp(line, "CTRL AUTO") == 0) {
-        if (valve_start_auto(&err))
-            link_printf("OK AUTO at %s mbar\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
-        else
-            link_err(err);
-    } else if (strncmp(line, "CTRL MAN", 8) == 0 && (line[8] == ' ' || line[8] == '\0')) {
-        int32_t pct10 = -1;
-        if (line[8] && !parse_pct10(line + 8, &pct10))
-            link_printf("ERR Expected: CTRL MAN [<0-100>], one decimal\r\n");
-        else if (!valve_to_manual(&err))
-            link_err(err);
-        else if (pct10 >= 0 && !valve_goto_pct10(pct10, &err))
-            link_printf("ERR MANUAL, %s\r\n", err);
-        else
-            link_printf("OK MANUAL%s\r\n", pct10 >= 0 ? ", moving" : "");
-    } else if (strncmp(line, "CTRL SP ", 8) == 0) {
-        const char *s = line + 8;
-        int64_t v;
-        if (!fixed_parse(&s, 3, &v) || *s || v < INT32_MIN || v > INT32_MAX)
-            link_printf("ERR Expected: CTRL SP <mbar>\r\n");
-        else if (!valve_set_target((int32_t)v, &err))
-            link_err(err);
-        else
-            link_printf("OK target %s mbar\r\n", mbar_text(p, sizeof p, ctl.sp, 1));
-    } else if (is_auto() && (strcmp(line, "MOT STOP") == 0 || strcmp(line, "MOT STOP RAMP") == 0 ||
-                             strcmp(line, "MOT OFF") == 0)) {
+    if (is_auto() && (strcmp(line, "MOT STOP") == 0 || strcmp(line, "MOT STOP RAMP") == 0 ||
+                      strcmp(line, "MOT OFF") == 0)) {
         // In AUTO the motor commands end AUTO first, as the screen STOP does;
         // otherwise the loop would move the valve again at its next step.
         bool off = line[4] == 'O';
@@ -1402,28 +1338,15 @@ bool valve_command(const char *line)
             stepper3_off();
         link_printf("OK stopped at %ld%s, AUTO ended, MANUAL\r\n", (long)stepper3_position(),
                     off ? ", coils off" : "");
-    } else if (strcmp(line, "CTRL OK") == 0) {
-        // The screen OK and the Modbus OK coil: clear the strip warning.
-        if (warn[0]) {
-            ev("OK", "Warning OK (link): %s", warn);
-            valve_warning_clear();
-            link_printf("OK warning cleared\r\n");
-        } else {
-            link_printf("OK no warning\r\n");
-        }
     } else if (strncmp(line, "TUNE", 4) == 0) {
         tune_command(line + 4);
-    } else if (strcmp(line, "CTRL RESET") == 0) {
-        reset_command();
     } else if (strcmp(line, "CTRL?") == 0) {
         faults_command();
-    } else if (strncmp(line, "EVT?", 4) == 0) {
-        events_command(line + 4);
     } else if (strcmp(line, "VALVE?") == 0) {
         show();
     } else if (strcmp(line, "VALVE CAL") == 0) {
         if (cal_start(&err))
-            link_printf("OK calibrating, up to %lu s\r\n", (unsigned long)valve_cal_budget_s());
+            link_printf("OK homing, up to %lu s\r\n", (unsigned long)valve_cal_budget_s());
         else
             link_err(err);
     } else if (strcmp(line, "VALVE CLOSED") == 0) {
@@ -1431,15 +1354,6 @@ bool valve_command(const char *line)
             link_printf("OK seated, count %ld\r\n", (long)stepper3_position());
         else
             link_err(err);
-    } else if (strncmp(line, "VALVE GOTO", 10) == 0) {
-        int32_t pct10;
-        if (!parse_pct10(line + 10, &pct10))
-            link_printf("ERR Expected: VALVE GOTO <0-100>, one decimal\r\n");
-        else if (!valve_goto_pct10(pct10, &err))
-            link_err(err);
-        else
-            link_printf("OK going to %s %% (count %ld) from %ld\r\n",
-                        fixed_fmt(p, sizeof p, pct10, 1), (long)stepper3_target(), (long)stepper3_position());
     } else if (strcmp(line, "VALVE SETZERO") == 0 || strcmp(line, "VALVE SKIP") == 0) {
         bool zero = line[6] == 'S' && line[7] == 'E';
         if (!valve_answer(zero, &err))
@@ -1448,10 +1362,12 @@ bool valve_command(const char *line)
             link_printf("OK count %ld\r\n", (long)stepper3_position());
         else
             link_printf("OK count kept\r\n");
-    } else if (strncmp(line, "VALVE ", 6) == 0) {
-        setting_command(line + 6);
+    } else if (strncmp(line, "VALVE ", 6) == 0 && strcmp(line, "VALVE SAVED?") != 0 &&
+               strcmp(line, "VALVE RESTORE") != 0) {
+        setting_command(line + 6);   // SAVED? and RESTORE: valvepos.c
     } else {
         return false;
     }
     return true;
 }
+#endif

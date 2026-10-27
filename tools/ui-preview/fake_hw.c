@@ -99,7 +99,7 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
 void link_init(void) {}
 void link_task(void) {}
 bool link_getline(char *buf, size_t n) { (void)buf; (void)n; return false; }
-const char *link_status(void) { return "Ethernet: 192.168.1.23 port 5000, client connected"; }
+const char *link_status(void) { return "Ethernet: 192.168.1.23 port 8888, client connected"; }
 const char *link_chip_text(void) { return "192.168.1.23"; }
 bool link_chip_ok(void) { return true; }
 bool link_take_new_client(void) { return false; }

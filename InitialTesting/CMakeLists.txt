@@ -62,6 +62,8 @@ add_executable(InitialTesting
     tune.c
     sense.h
     sense.c
+    remote.h
+    remote.c
     extflash.h
     extflash.c
     cal.h

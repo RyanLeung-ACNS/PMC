@@ -31,7 +31,9 @@ static cal_rec_t cal_default = {
 static char sensor_serial[12] = PMC_DRUCK_SERIAL;
 
 static cal_rec_t active;
-static cal_rec_t staging;
+#if PMC_ENG_COMMANDS
+static cal_rec_t staging;   // CAL NEW / CAL PT / CAL APPLY
+#endif
 static bool active_is_default = true;
 static bool active_saved;          // active matches what is in flash
 static bool flash_ok;
@@ -217,6 +219,7 @@ int cal_capture_left(void) { return cap.what ? CAPTURE_N - cap.n : 0; }
  * Commands
  * ------------------------------------------------------------------------ */
 
+#if PMC_ENG_COMMANDS   // CAL? and the CAL commands (engineering)
 static void show(void)
 {
     char r[20], p[20];
@@ -224,7 +227,7 @@ static void show(void)
                       active_is_default ? "default" : active_saved ? "flash" : "ram", active.id,
                       (unsigned long)active.npts, flash_ok ? "ok" : "missing");
     if (old_version)
-        link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo CAL VAC and CAL AIR\r\n",
+        link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo the bench cal on the screen\r\n",
                     (unsigned long)old_version);
     if (!active_is_default && active.kind == CAL_KIND_BENCH) {
         fixed_fmt(p, sizeof p, active.p_mmbar[0], 3);
@@ -238,10 +241,11 @@ static void show(void)
     for (uint32_t i = 0; i < active.npts; i++) {
         fixed_fmt(r, sizeof r, active.r_ppb[i], 6);
         fixed_fmt(p, sizeof p, active.p_mmbar[i], 3);
-        link_printf("CAL PT %s %s\r\n", r, p);
+        link_printf("CAL point %s mV/V %s mbar\r\n", r, p);
     }
     link_printf("OK\r\n");
 }
+#endif
 
 /*
  * Bench two-point cal, through the INA228 as wired:
@@ -255,6 +259,7 @@ static void show(void)
  * both points are held the two-point table is applied (RAM only, then CAL
  * SAVE). Either point can be redone alone; the other is kept.
  */
+#if PMC_ENG_COMMANDS
 static void capture_start(int what, const char *s)
 {
     int64_t p = 0;
@@ -275,6 +280,7 @@ static void capture_start(int what, const char *s)
     link_printf("OK capturing %s point, %d readings, keep the pressure steady\r\n",
                 vac ? "vacuum" : "air", CAPTURE_N);
 }
+#endif
 
 bool cal_capture(int what, int32_t p_mmbar, const char **why)
 {
@@ -360,6 +366,7 @@ void cal_update(const clicks_state_t *s)
         bench_apply();
 }
 
+#if PMC_ENG_COMMANDS
 // Back to nominal: erase the old record too, then save the settings so
 // neither comes back at the next start-up.
 static void erase(void)
@@ -381,7 +388,9 @@ bool cal_command(const char *line)
 
     if (strcmp(a, "?") == 0) {
         show();
-    } else if (valve_auto()) {
+        return true;
+    }
+    if (valve_auto()) {
         link_printf("ERR Switch to MANUAL first\r\n");   // a cal change moves the reading AUTO uses
     } else if (strncmp(a, " NEW", 4) == 0) {
         const char *id = a + 4;
@@ -427,3 +436,4 @@ bool cal_command(const char *line)
     }
     return true;
 }
+#endif

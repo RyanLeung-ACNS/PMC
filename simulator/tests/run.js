@@ -1,6 +1,9 @@
 // Bench scenarios against the firmware build (pmc-wasm.js), in node:
 //   node simulator/tests/run.js [--png <dir>]
-// Each case boots a new board and checks the firmware's own console lines.
+// Each case boots a new board and checks the firmware's replies. From 0.13.0
+// the board sends nothing unasked, so a case reads the event log (EVNT?).
+// The simulator builds with the engineering commands (VALVE CAL, PID, ...);
+// remote-only.js checks the operator build without them.
 const { load } = require('./sim-node.js');
 const pngDir = process.argv.includes('--png') ? process.argv[process.argv.indexOf('--png') + 1] : null;
 let failed = 0;
@@ -8,24 +11,31 @@ function check(name, ok, detail) {
   console.log((ok ? 'ok   ' : 'FAIL ') + name + (ok || !detail ? '' : '\n     ' + detail));
   if (!ok) failed++;
 }
+// The last n events, newest last.
+const events = (s, n = 100) => s.cmd('EVNT? ' + n, 2000);
+// VALVE CAL is an engineering command (the simulator builds with them).
 function homed(s) {
   s.boot(); s.set(5, 40000); s.run(2000);
-  const out = s.cmd('VALVE CAL', 120000);
-  if (!/Homed in/.test(out)) throw new Error('homing failed:\n' + out.slice(-800));
+  s.cmd('VALVE CAL', 120000);
+  const ev = events(s, 10);
+  if (!/Homed in/.test(ev)) throw new Error('homing failed:\n' + ev.slice(-800));
   return s;
 }
 function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '.png')); }
 
 { // Boot: NOT HOMED, the supply seen, nothing moves.
   const s = load(); s.boot(); s.set(5, 40000); s.run(3000);
-  check('boot NOT HOMED', /Valve: NOT HOMED/.test(s.out), s.out);
-  check('boot motor supply seen', /SUP ok/.test(s.out), s.out);
+  check('boot sends nothing unasked', s.out === '', s.out);
+  const st = s.cmd('MODE?;VALV?;VALV MOVING?;ALRM?'), ev = events(s);
+  check('boot NOT HOMED', st === 'MODE NOT HOMED;VALV NONE;VALV MOVING 0;ALRM NONE\r\n', st);
+  check('boot motor supply seen', /SUP,Motor supply on/.test(ev), ev);
   check('boot no motion', s.get(5) === 40000);
   shot(s, 'boot');
 }
 { // Homing from the screen: Home valve, then Home in the question.
   const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
   s.tap(415, 72); s.tap(346, 147); s.run(120000);
+  s.out += events(s, 10);
   // After homing the needle sits 0 or 400 full steps (the final back-off) above the switch. The count is
   // that distance up to 0.12.11 and 0 from 0.12.12 (0 % is the point after the back-off).
   const off = s.get(5) / 2 - s.get(30);
@@ -39,80 +49,139 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
 }
 { // MANUAL go-to and the needle follows the coils.
   const s = homed(load());
-  s.cmd('VALVE GOTO 25', 60000);
+  s.cmd('VALV SET 25', 60000);
   const full = s.get(5) / 2;
   // The needle is the count plus the back-off when 0 % is above the switch (0.12.12).
-  check('GOTO 25 % moves the needle 25 % of 66048', Math.abs(s.get(30) - 16512) <= 1 && [0, 400].includes(full - s.get(30)), 'needle ' + full + ', count ' + s.get(30));
+  check('VALV SET 25 % moves the needle 25 % of 66048', Math.abs(s.get(30) - 16512) <= 1 && [0, 400].includes(full - s.get(30)), 'needle ' + full + ', count ' + s.get(30));
 }
 { // Motor supply off: moves refused, said on the screen and the console.
   const s = homed(load());
   const n0 = s.get(5); s.set(12, 0); s.run(2000);
-  const out = s.cmd('VALVE GOTO 10', 2000);
-  check('supply off seen', /SUP OFF/.test(s.out + out) || /supply off/i.test(out), out);
+  const out = s.cmd('VALV SET 10', 2000);
+  check('supply off seen', /^ERR 212 Motor supply off/m.test(out) && /Motor supply off/.test(events(s, 5)), out);
   check('supply off: no move', s.get(5) === n0);
   shot(s, 'supply-off');
 }
 { // F-1: Druck unplugged.
   const s = homed(load()); s.set(8, 0); s.run(5000);
-  const ev = s.cmd('EVT? 5');
+  const ev = events(s, 5);
   check('F-1 Druck unplugged', /F-1/.test(ev), ev);
   shot(s, 'f01');
 }
 { // F-2: excitation out of 9.5-10.5 V.
   const s = homed(load()); s.set(10, 9.2); s.run(5000);
-  const ev = s.cmd('EVT? 5');
+  const ev = events(s, 5);
   check('F-2 excitation low', /F-2/.test(ev), ev);
 }
 { // F-3: the switch never trips during homing.
   const s = load(); s.boot(); s.set(5, 40000); s.set(7, 2); s.run(2000);
-  const out = s.cmd('VALVE CAL', 400000);
+  s.cmd('VALVE CAL', 400000);
+  const out = events(s, 5);
   check('F-3 limit not found', /F-3/.test(out), out.slice(-600));
 }
 { // F-4: homing from the switch, which stays pressed after the clearance move.
   const s = homed(load()); s.set(7, 1);
-  const out = s.cmd('VALVE CAL', 60000);
+  s.cmd('VALVE CAL', 60000);
+  const out = events(s, 5);
   check('F-4 limit stuck', /F-4/.test(out), out.slice(-600));
 }
 { // AUTO at 5 mbar settles.
   const s = homed(load());
-  s.cmd('CTRL SP 5'); s.cmd('CTRL AUTO');
-  s.out = ''; s.run(400000);
-  // The once-a-second AUTO line goes in 0.11.52 (PR #19); VALVE? says it from then on.
-  const line = s.out.split('\n').filter(l => l.startsWith('AUTO')).pop() || '';
-  const v = s.cmd('VALVE?');
-  check('AUTO 5 mbar stable', /Stable/.test(line) || /target 5\.0 m(B|bar), band [0-9.]+ m(B|bar), stable/.test(v), line + '\n' + v);
+  s.cmd('PRES SP 5'); s.cmd('MODE AUTO');
+  s.run(400000);
+  const v = s.cmd('VALVE?'), d = s.cmd('PRES?;PRES SP?;MODE?;VALV?;ALRM?');
+  check('AUTO 5 mbar stable', /target 5\.0 mbar, band [0-9.]+ mbar, stable/.test(v), v);
+  check('poll in AUTO', /^PRES [45]\.\d{3} mbar;PRES SP 5\.0 mbar;MODE AUTO;VALV \d+\.\d\d %;ALRM NONE\r\n$/.test(d), d);
   shot(s, 'auto');
 }
 { // F-6: the needle slips in AUTO, so the pressure does not follow.
   const s = homed(load());
-  s.cmd('CTRL SP 5'); s.cmd('CTRL AUTO'); s.run(300000);
-  s.set(6, 0); s.cmd('CTRL SP 8');
-  s.out = ''; s.run(600000);
-  check('F-6 no response', /F-6/.test(s.out), s.out.split('\n').filter(l => /EVT|AUTO/.test(l)).slice(-5).join('\n'));
+  s.cmd('PRES SP 5'); s.cmd('MODE AUTO'); s.run(300000);
+  s.set(6, 0); s.cmd('PRES SP 8');
+  s.run(600000);
+  const ev = events(s, 10);
+  check('F-6 no response', /F-6/.test(ev), ev);
   shot(s, 'f06');
 }
 { // W-2: the rotary pump stops in AUTO; the pressure never comes back into band.
   const s = homed(load());
-  s.cmd('CTRL SP 5'); s.cmd('CTRL AUTO'); s.run(300000);
+  s.cmd('PRES SP 5'); s.cmd('MODE AUTO'); s.run(300000);
   s.set(4, 0);
-  s.out = ''; s.run(1900000);
-  check('W-2 to MANUAL', /W-2/.test(s.out), s.out.split('\n').filter(l => /EVT/.test(l)).slice(-5).join('\n'));
+  s.run(1900000);
+  const ev = events(s, 10), st = s.cmd('MODE?;ALRM?');
+  check('W-2 to MANUAL', /W-2/.test(ev) && /^MODE MANUAL;ALRM W-2,1,/.test(st), ev + st);
   shot(s, 'w02');
 }
 { // W-3: controller hot.
   const s = homed(load()); s.set(13, 57); s.run(3000);
-  const ev = s.cmd('EVT? 3');
-  check('W-3 controller hot', /W-3 Controller hot/.test(ev), ev);
+  const ev = events(s, 3);
+  check('W-3 controller hot', /W-3,Controller hot/.test(ev) && /^ALRM W-3,0,Controller hot\r\n$/.test(s.cmd('ALRM?')), ev);
   shot(s, 'w03');
 }
 { // Settings and the saved position survive a power cycle (serial flash).
   const s = homed(load());
-  s.cmd('VALVE GOTO 10', 20000); s.cmd('PID KP 3'); s.cmd('CFG SAVE', 1000); s.run(5000);
+  s.cmd('VALV SET 10', 20000); s.cmd('PID KP 3'); s.cmd('CFG SAVE', 1000); s.run(5000);
   const flash = s.flash(), needle = s.get(5);
   const t = load(); t.x.sim_bench_init(); t.boot(flash); t.set(5, needle); t.run(3000);
   const pid = t.cmd('PID?'), vp = t.cmd('VALVE SAVED?');
   check('settings kept over a power cycle', /KP 3/.test(pid) || /3\.0+ %\/mbar/.test(pid), pid);
   check('valve position offered after a power cycle', /10\.0|6604|6605/.test(vp), vp);
+}
+{ // The remote set (0.13.0): the reply rules of the handover page.
+  const s = homed(load());
+  const one = c => s.cmd(c, 1000);
+  // R1, R2, R5: no echo; a query gives one line starting with its own words.
+  const qs = ['PRES?', 'PRES SP?', 'MODE?', 'VALV?', 'VALV MOVING?', 'BARO?', 'ALRM?', 'NETW?', 'TIME?'];
+  const bad = qs.map(q => [q, one(q)]).filter(([q, r]) => !(r.startsWith(q.slice(0, -1) + ' ') && /^[^\r\n]*\r\n$/.test(r)))
+    .map(([q, r]) => q + ' -> ' + JSON.stringify(r));
+  check('queries: one line, own words first', bad.length === 0, bad.join('\n     '));
+  // R2: set commands silent when accepted.
+  const sets = ['PRES SP 5', 'MODE MANUAL', 'VALV SET 30', 'STOP', 'ALRM OK', 'ALRM RESET', 'TIME SET 2026-10-27 12:00:00'];
+  const loud = sets.map(c => [c, s.cmd(c, c.startsWith('VALV') ? 60000 : 1000)]).filter(([, r]) => r !== '').map(([c, r]) => c + ' -> ' + JSON.stringify(r));
+  check('set commands silent', loud.length === 0, loud.join('\n     '));
+  check('TIME SET then TIME?', /^TIME 2026-10-27 12:00:\d\d\r\n$/.test(one('TIME?')), one('TIME?'));
+  // R4, R6, R7: a query confirms the value taken; fixed decimals; chaining.
+  check('PRES SP 5.04;PRES SP? gives 5.0', one('PRES SP 5.04;PRES SP?') === 'PRES SP 5.0 mbar\r\n', one('PRES SP?'));
+  const poll = one('PRES?;PRES SP?;MODE?;VALV?;ALRM?');
+  check('chained poll', /^PRES \d+\.\d{3} mbar;PRES SP 5\.0 mbar;MODE MANUAL;VALV 30\.00 %;ALRM NONE\r\n$/.test(poll), poll);
+  check('BARO? and NETW? NONE in the simulator', one('BARO?;NETW?') === 'BARO NONE;NETW NONE\r\n');
+  check('*IDN?', /^MercShore,iPC,[0-9A-F]{24},\d+\.\d+\.\d+\r\n$/.test(one('*IDN?')), one('*IDN?'));
+  // EVNT?: the count line, then that many lines, newest first.
+  const ev = s.cmd('EVNT? 3', 2000).split('\r\n');
+  check('EVNT? 3', ev[0] === 'EVNT 3' && ev.slice(1, 4).every(l => /^\d+\.\d,[A-Z0-9-]+,/.test(l)) && ev.length === 5 && ev[4] === '',
+    ev.join(' | '));
+  check('EVNT? defaults to 1', s.cmd('EVNT?', 2000).split('\r\n').length === 3);
+  // R8: ERR <code> <text>, the first refusal ends the line.
+  const errs = [['NO SUCH', 100], ['PRES SP x', 101], ['PRES SP 2000', 102], ['X'.repeat(97), 103], ['MODE?;EVNT? 2', 104],
+    ['EVNT? 0', 102], ['VALV SET 101', 102], ['VALV SET', 101], ['MODE', 101], ['TIME SET 2026-13-01 00:00:00', 101],
+    ['PRES? 5', 100], ['pres?', 100]];
+  const wrong = errs.map(([c, n]) => [c, n, one(c)]).filter(([c, n, r]) => !new RegExp('(^|;)ERR ' + n + ' [A-Z][^;\\r\\n]*\\r\\n$').test(r))
+    .map(([c, n, r]) => c.slice(0, 20) + ' -> ' + JSON.stringify(r) + ' (want ' + n + ')');
+  check('error codes 100-104', wrong.length === 0, wrong.join('\n     '));
+  check('first refusal ends the line', one('PRES SP 2000;PRES SP?') === 'ERR 102 Outside 0 to 1034.2 mbar\r\n', one('PRES SP 2000;PRES SP?'));
+  // The page's example: AUTO, then VALV SET refused until MANUAL.
+  check('MODE AUTO;MODE?', one('MODE AUTO;MODE?') === 'MODE AUTO\r\n', one('MODE?'));
+  check('ERR 202 in AUTO', one('VALV SET 40;VALV MOVING?') === 'ERR 202 Switch to MANUAL first\r\n');
+  check('MODE MANUAL;VALV SET 40;VALV MOVING?', one('MODE MANUAL;VALV SET 40;VALV MOVING?') === 'VALV MOVING 1\r\n');
+  s.run(30000);
+  check('STOP in AUTO ends AUTO', (one('MODE AUTO'), one('STOP;MODE?')) === 'MODE MANUAL\r\n');
+  // 201 while homing, 204 not homed, 206 no target, 210 cause present.
+  s.cmd('VALVE CAL', 200);
+  check('MODE HOMING, moving', one('MODE?;VALV MOVING?') === 'MODE HOMING;VALV MOVING 1\r\n', one('MODE?'));
+  check('ERR 201 while homing', one('VALV SET 10') === 'ERR 201 Homing, STOP to cancel\r\n', one('VALV SET 10'));
+  one('STOP');
+  const u = load(); u.boot(); u.run(2000);
+  check('ERR 204 not homed', u.cmd('PRES SP 5;MODE AUTO;MODE?') === 'ERR 204 Home the valve first\r\n', u.cmd('MODE?'));
+  check('VALV SET not homed', u.cmd('VALV SET 40') === 'ERR 204 Home the valve first\r\n', u.cmd('VALV SET 40'));
+  const t = homed(load());
+  check('ERR 206 no target', t.cmd('MODE AUTO') === 'ERR 206 Set a target first\r\n');
+  t.set(8, 0); t.run(5000);
+  check('ERR 210 cause present', /^ERR 210 Not reset, cause still present: F-1\r\n$/.test(t.cmd('ALRM RESET')), t.cmd('ALRM RESET'));
+  check('ALRM? fault flag 0 while its cause is present', /^ALRM F-1,0,/.test(t.cmd('ALRM?')), t.cmd('ALRM?'));
+  t.set(8, 1); t.run(5000);
+  check('ALRM? fault flag 1 once it can reset', /^ALRM F-1,1,/.test(t.cmd('ALRM?')), t.cmd('ALRM?'));
+  check('ALRM RESET clears it', t.cmd('ALRM RESET;ALRM?') === 'ALRM NONE\r\n', t.cmd('ALRM?'));
+  check('nothing sent unasked over a run', (t.cmd('PRES SP 5;MODE AUTO', 60000), t.out === ''), t.out);
 }
 console.log(failed ? failed + ' failed' : 'all passed');
 process.exit(failed ? 1 : 0);
