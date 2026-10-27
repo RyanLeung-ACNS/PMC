@@ -15,7 +15,7 @@ either target takes control, as SECoP expects.
 
 It uses the remote command set, which the firmware gets in the same release
 as this driver. Every command gets one reply line: the value now in force
-(PRES SP 5 -> PRES SP 5.0 mbar), or ERR <code> <text>. Each reading is its own query
+(PRES SP 5 -> 5.0 mbar), or ERR <code> <text>. Each reading is its own query
 (PRES?, PRES SP?, MODE?, VALV?, VALV MOVING?, BARO?, ALRM?), and each poll
 chains its queries on one line with ';'. Nothing here
 homes the valve, calibrates, changes a setting or drives the motor. Those
@@ -43,8 +43,8 @@ class Mm4IO(StringIO):
 
     def get(self, *queries):
         """Values of one-value queries, sent as one chained line, without
-        their leading words or unit: get('PRES?', 'MODE?') -> ['4.625',
-        'AUTO']. None where the board answers NONE."""
+        their unit: get('PRES?', 'MODE?') -> ['4.625', 'AUTO']. None where
+        the board answers NONE."""
         parts = self.do(';'.join(queries)).split(';')
         for part in parts:
             if part.startswith('ERR'):
@@ -52,11 +52,7 @@ class Mm4IO(StringIO):
         if len(parts) != len(queries):
             raise CommunicationFailedError(f'{len(parts)} replies to {len(queries)} queries')
         values = []
-        for query, part in zip(queries, parts):
-            words = query[:-1]
-            if not part.startswith(words + ' '):
-                raise CommunicationFailedError(f'unexpected reply to {query}: {part}')
-            value = part[len(words) + 1:]
+        for value in parts:
             if value == 'NONE':
                 value = None
             elif value.endswith((' mbar', ' %')):
