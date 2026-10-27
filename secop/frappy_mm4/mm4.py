@@ -46,9 +46,8 @@ DEFAULT_COLUMNS = ['t_s', 'p_mbar', 'target_mbar', 'valve_pct', 'mode', 'alarm',
 class Mm4IO(StringIO):
     """Line link to the mm4 text port.
 
-    Every command line gets one final line starting OK or ERR; *IDN? gets
-    one line and no OK. Any other line before the final one is kept as the
-    reply body (DATA? and DATA HDR?) or, if unexpected, logged and skipped.
+    Every command line gets exactly one reply line: the value now in force,
+    or ERR <code> <text> if refused.
     """
     end_of_line = '\n'   # the board ends lines with CR LF; CR is stripped
     timeout = 3
@@ -60,61 +59,23 @@ class Mm4IO(StringIO):
 
     def connectStart(self):
         super().connectStart()
-        final, lines = self.query(COMMANDS['header'])
-        for line in lines:
-            m = re.match(r'DATA HDR ([a-zA-Z_][\w,]*)$', line)
-            if m and final.startswith('OK'):
-                self.columns = m.group(1).split(',')
-
-    def _readline(self):
-        reply = self._conn.readline(self.timeout)
-        return reply.decode(self.encoding).strip()
-
-    def query(self, command):
-        """Send one line; return (final OK/ERR line, DATA lines before it)."""
-        self.check_connection()
-        try:
-            with self._lock:
-                garbage = self._conn.flush_recv()
-                if garbage:
-                    self.comLog('garbage: %r', garbage)
-                self._conn.send(command.encode(self.encoding) + self._eol_write)
-                self.comLog('> %s', command)
-                lines = []
-                while True:
-                    line = self._readline()
-                    if command == '*IDN?' and line.startswith('PMC,'):
-                        self.comLog('< %s', line)
-                        return line, []
-                    if line.startswith(('OK', 'ERR')):
-                        self.comLog('< %s', line)
-                        return line, lines
-                    if line.startswith('DATA'):
-                        lines.append(line)
-                    elif line:
-                        self.comLog('< %s (not a reply)', line)
-        except Exception as e:
-            self.closeConnection()
-            raise CommunicationFailedError(repr(e)) from None
-
-    def communicate(self, command, noreply=False):
-        final, _ = self.query(command)
-        return final
+        m = re.match(r'DATA HDR ([a-zA-Z_][\w,]*)$', self.communicate(COMMANDS['header']))
+        if m:
+            self.columns = m.group(1).split(',')
 
     def do(self, key, *args):
         """Run one of the COMMANDS; an ERR reply is raised to the client."""
-        final, _ = self.query(COMMANDS[key].format(*args))
-        if final.startswith('ERR'):
-            raise ImpossibleError(final[3:].strip())
-        return final
+        reply = self.communicate(COMMANDS[key].format(*args))
+        if reply.startswith('ERR'):
+            raise ImpossibleError(reply[3:].strip())
+        return reply
 
     def fresh_data(self):
         """The DATA fields now, from DATA?."""
-        final, lines = self.query(COMMANDS['data'])
-        for line in lines:
-            if line.startswith('DATA,'):
-                return dict(zip(self.columns, line[5:].split(',')))
-        raise CommunicationFailedError(f'no DATA line in the reply to DATA? ({final})')
+        reply = self.communicate(COMMANDS['data'])
+        if reply.startswith('DATA,'):
+            return dict(zip(self.columns, reply[5:].split(',')))
+        raise CommunicationFailedError(f'no DATA line in the reply to DATA? ({reply})')
 
 
 def number(text):

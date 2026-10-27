@@ -3,8 +3,8 @@
     python fake_mm4.py [port]
 
 It answers as the firmware with the remote command set will: no echo,
-nothing sent unasked, one final OK or ERR line per command, and DATA?
-answers with one DATA line.
+nothing sent unasked, and one reply line per command (the value now in
+force, or ERR <code> <text>).
 
 Only the remote command set is modelled. The valve is homed at start, and
 the pressure follows the valve with a lag (0.2 mbar per % open).
@@ -41,7 +41,7 @@ class Board:
         with self.lock:
             t = time.time() - self.t0
             sp = f'{self.sp:.1f}'
-            return (f'DATA,{t:.1f},{self.p:.2f},{sp},{self.valve:.2f},{self.mode},{self.alarm},'
+            return (f'DATA,{t:.1f},{self.p:.3f},{sp},{self.valve:.2f},{self.mode},{self.alarm},'
                     f'0.012345,10012,31.2,1013.25')
 
     def command(self, line):
@@ -50,7 +50,7 @@ class Board:
             if line == '*IDN?':
                 return ['PMC,MM4,0x3600273C,0.13.0']
             if line == 'DATA HDR?':
-                return [f'DATA HDR {COLUMNS}', 'OK']
+                return [f'DATA HDR {COLUMNS}']
             if line.startswith('SP '):
                 try:
                     v = float(line[3:])
@@ -59,33 +59,33 @@ class Board:
                 if not 0 <= v <= 1034:
                     return ['ERR 102 Outside 0 to 1034 mbar']
                 self.sp = round(v, 1)
-                return ['OK']
+                return [f'SP {self.sp:.1f} mbar']
             if line == 'MODE AUTO':
                 if self.alarm.startswith('F'):
                     return ['ERR 203 Reset the fault first']
                 self.mode = 'AUTO'
-                return ['OK']
+                return ['MODE AUTO']
             if line == 'MODE MANUAL':
                 if self.mode == 'AUTO':
                     self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['OK']
+                return ['MODE MANUAL']
             if line.startswith('VALVE SET '):
                 if self.mode == 'AUTO':
                     return ['ERR 202 Switch to MANUAL first']
                 self.goal = max(0.0, min(100.0, float(line[10:])))
-                return ['OK']
+                return [f'VALVE SET {self.goal:.1f} %']
             if line == 'STOP':
                 self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['OK']
+                return ['STOP']
             if line == 'ALARM RESET':
                 self.alarm = ''
-                return ['OK']
+                return ['ALARM RESET']
             if line == 'ALARM OK':
-                return ['OK']
+                return ['ALARM OK']
         if line == 'DATA?':
-            return [self.data_line(), 'OK']
+            return [self.data_line()]
         return [f'ERR 100 Unknown command: {line}']
 
 
