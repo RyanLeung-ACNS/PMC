@@ -3,8 +3,8 @@
     python fake_mm4.py [port]
 
 It answers as the firmware with the remote command set will: no echo,
-nothing sent unasked, and one reply line per command (the value now in
-force, or ERR <code> <text>).
+nothing sent unasked, ';' chaining, and one reply line per command (the value now in
+force, or ERR <code> <text>), each reading its own query.
 
 Only the remote command set is modelled. The valve is homed at start, and
 the pressure follows the valve with a lag (0.2 mbar per % open).
@@ -14,9 +14,6 @@ import socket
 import sys
 import threading
 import time
-
-COLUMNS = 't_s,p_mbar,target_mbar,valve_pct,mode,alarm,baro_mbar'
-
 
 class Board:
     def __init__(self):
@@ -37,19 +34,36 @@ class Board:
             self.valve += max(-5 * dt, min(5 * dt, d))
             self.p += (0.2 * self.valve - self.p) * min(1.0, dt / 3.0)
 
-    def data_line(self):
-        with self.lock:
-            t = time.time() - self.t0
-            sp = f'{self.sp:.1f}'
-            return (f'DATA,{t:.1f},{self.p:.3f},{sp},{self.valve:.2f},{self.mode},{self.alarm},1013.25')
+    def chain(self, line):
+        """One reply line for a line of commands separated by ';'. At the
+        first ERR the rest is skipped."""
+        replies = []
+        for part in line.split(';'):
+            reply = self.command(part.strip())[0]
+            replies.append(reply)
+            if reply.startswith('ERR'):
+                break
+        return ';'.join(replies)
 
     def command(self, line):
         """Reply lines for one command line."""
         with self.lock:
             if line == '*IDN?':
                 return ['PMC,MM4,0x3600273C,0.13.0']
-            if line == 'DATA HDR?':
-                return [f'DATA HDR {COLUMNS}']
+            if line == 'SENSE?':
+                return [f'SENSE {self.p:.3f} mbar']
+            if line == 'SP?':
+                return [f'SP {self.sp:.1f} mbar']
+            if line == 'MODE?':
+                return [f'MODE {self.mode}']
+            if line == 'VALVE?':
+                return [f'VALVE {self.valve:.2f} %']
+            if line == 'VALVE MOVING?':
+                return [f'VALVE MOVING {int(abs(self.goal - self.valve) > 0.005)}']
+            if line == 'BARO?':
+                return ['BARO 1013.25 mbar']
+            if line == 'ALARM?':
+                return [f'ALARM {self.alarm},1,Test alarm' if self.alarm else 'ALARM NONE']
             if line.startswith('SP '):
                 try:
                     v = float(line[3:])
@@ -83,8 +97,6 @@ class Board:
                 return ['ALARM RESET']
             if line == 'ALARM OK':
                 return ['ALARM OK']
-        if line == 'DATA?':
-            return [self.data_line()]
         return [f'ERR 100 Unknown command: {line}']
 
 
@@ -119,7 +131,7 @@ def client(board, conn):
                 i = min(x for x in (buf.find(b'\n'), buf.find(b'\r')) if x >= 0)
                 line, buf = buf[:i].decode().strip(), buf[i + 1:]
                 if line:
-                    conn.sendall(''.join(r + '\r\n' for r in board.command(line)).encode())
+                    conn.sendall((board.chain(line) + '\r\n').encode())
     except OSError:
         pass
     finally:

@@ -59,16 +59,17 @@ screen. The driver has no way to reach them.
 
 The driver needs the firmware with the remote command set (`SP`,
 `MODE AUTO`, `MODE MANUAL`, `VALVE SET`, `STOP`, `ALARM RESET`, `ALARM OK`,
-`DATA?`, `DATA HDR?`). That firmware and this driver are released together;
+`SENSE?`, `SP?`, `MODE?`, `VALVE?`, `VALVE MOVING?`, `BARO?`, `ALARM?`). That firmware and this driver are released together;
 firmware 0.12.21 and earlier does not answer these commands.
 
 ## Things to know
 
 - The board takes one connection on port 8888 at a time, and a new one
   replaces the old. While the Frappy server is connected, close any terminal
-  and the DATA logger (`tools/logger`).
-- Readings come from `DATA?` each poll (pressure every second, valve every
-  2 s), one DATA line per poll.
+  and the logger (`tools/logger`).
+- Each reading is its own query, and each poll chains its queries on one
+  line: the pressure poll (every second) sends `SENSE?;SP?;MODE?;ALARM?`, the
+  valve poll (every 2 s) `VALVE?;MODE?;VALVE MOVING?`.
 - An `ERR` from the board comes back to the SECoP client as an error with
   the board's text, for example `Switch to MANUAL first`.
 - The driver has been tested against `tests/fake_mm4.py` only, not yet
