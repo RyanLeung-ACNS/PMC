@@ -2,7 +2,11 @@
 
 A [Frappy](https://github.com/SampleEnvironment/frappy) driver so a SECoP
 server can read and drive the mm4. It talks to the board's text port (TCP
-5000). Nothing in the firmware changes.
+5000).
+
+This is a reference implementation of the suggested SECoP mapping in the
+mm4 Remote Commands handover, for whoever writes the production driver. The
+handover is the specification of the commands, replies and error codes.
 
 ## What the SECoP client sees
 

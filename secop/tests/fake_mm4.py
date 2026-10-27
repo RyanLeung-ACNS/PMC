@@ -59,7 +59,7 @@ class Board:
                 if not 0 <= v <= 1034:
                     return ['ERR 102 Outside 0 to 1034 mbar']
                 self.sp = round(v, 1)
-                return [f'OK SP {self.sp:.1f}']
+                return ['OK']
             if line == 'MODE AUTO':
                 if self.alarm.startswith('F'):
                     return ['ERR 203 Reset the fault first']
