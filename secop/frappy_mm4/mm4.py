@@ -15,8 +15,8 @@ either target takes control, as SECoP expects.
 
 It uses the remote command set, which the firmware gets in the same release
 as this driver. Every command gets one reply line: a query its words and
-value (PRES? -> PRES 4.625 mbar), a set command its words, the value now in
-force and OK (PRES SP 5 -> PRES SP 5.0 mbar OK), a refusal ERR <code> <text>.
+value (PRES? -> PRES 4.625 mbar), a set command its words and the value now
+in force (PRES SP 5 -> PRES SP 5.0 mbar), a refusal ERR <code> <text>.
 Each reading is its own query
 (PRES?, PRES SP?, MODE?, VALV?, VALV MOVING?, BARO?, ALRM?), and each poll
 chains its queries on one line with ';'. Nothing here

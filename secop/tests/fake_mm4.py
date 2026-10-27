@@ -4,8 +4,8 @@
 
 It answers as the firmware with the remote command set will: no echo,
 nothing sent unasked, ';' chaining, and one reply line per command: a query
-gives its words and value (PRES 4.625 mbar), a set command its words, the value
-now in force and OK (PRES SP 5.0 mbar OK), a refusal ERR <code> <text>.
+gives its words and value (PRES 4.625 mbar), a set command its words and the
+value now in force (PRES SP 5.0 mbar), a refusal ERR <code> <text>.
 
 Only the remote command set is modelled. The valve is homed at start, and
 the pressure follows the valve with a lag (0.2 mbar per % open).
@@ -73,31 +73,31 @@ class Board:
                 if not 0 <= v <= 1034:
                     return ['ERR 102 Outside 0 to 1034 mbar']
                 self.sp = round(v, 1)
-                return [f'PRES SP {self.sp:.1f} mbar OK']
+                return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE AUTO':
                 if self.alarm.startswith('F'):
                     return ['ERR 203 Reset the fault first']
                 self.mode = 'AUTO'
-                return ['MODE AUTO OK']
+                return ['MODE AUTO']
             if line == 'MODE MANUAL':
                 if self.mode == 'AUTO':
                     self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['MODE MANUAL OK']
+                return ['MODE MANUAL']
             if line.startswith('VALV SET '):
                 if self.mode == 'AUTO':
                     return ['ERR 202 Switch to MANUAL first']
                 self.goal = max(0.0, min(100.0, float(line[9:])))
-                return [f'VALV SET {self.goal:.1f} % OK']
+                return [f'VALV SET {self.goal:.1f} %']
             if line == 'STOP':
                 self.goal = self.valve
                 self.mode = 'MANUAL'
-                return ['STOP OK']
+                return ['STOP']
             if line == 'ALRM RESET':
                 self.alarm = ''
-                return ['ALRM RESET OK']
+                return ['ALRM RESET']
             if line == 'ALRM OK':
-                return ['ALRM OK OK']
+                return ['ALRM OK']
         return [f'ERR 100 Unknown command: {line}']
 
 
