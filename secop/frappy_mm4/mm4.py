@@ -15,8 +15,8 @@ either target takes control, as SECoP expects.
 
 It uses the remote command set, which the firmware gets in the same release
 as this driver. Every command gets one reply line: the value now in force
-(SP 5 -> SP 5.0 mbar), or ERR <code> <text>. Each reading is its own query
-(SENSE?, SP?, MODE?, VALVE?, VALVE MOVING?, BARO?, ALARM?), and each poll
+(PRES SP 5 -> PRES SP 5.0 mbar), or ERR <code> <text>. Each reading is its own query
+(PRES?, PRES SP?, MODE?, VALVE?, VALVE MOVING?, BARO?, ALARM?), and each poll
 chains its queries on one line with ';'. Nothing here
 homes the valve, calibrates, changes a setting or drives the motor. Those
 stay on the touch screen.
@@ -43,7 +43,7 @@ class Mm4IO(StringIO):
 
     def get(self, *queries):
         """Values of one-value queries, sent as one chained line, without
-        their leading words or unit: get('SENSE?', 'MODE?') -> ['4.625',
+        their leading words or unit: get('PRES?', 'MODE?') -> ['4.625',
         'AUTO']. None where the board answers NONE."""
         parts = self.do(';'.join(queries)).split(';')
         for part in parts:
@@ -95,7 +95,7 @@ class Pressure(HasOutputModule, HasIO, Drivable):
                           FloatRange(0, unit='mbar'), readonly=False, default=0.5)
 
     def read_value(self):
-        p, sp, mode, alarm = self.io.get('SENSE?', 'SP?', 'MODE?', 'ALARM?')
+        p, sp, mode, alarm = self.io.get('PRES?', 'PRES SP?', 'MODE?', 'ALARM?')
         p, sp = number(p), number(sp)
         if sp is not None:
             self.target = sp
@@ -132,7 +132,7 @@ class Pressure(HasOutputModule, HasIO, Drivable):
         return IDLE, 'MANUAL'
 
     def write_target(self, value):
-        self.io.do(f'SP {value:.1f}')
+        self.io.do(f'PRES SP {value:.1f}')
         self.io.do('MODE AUTO')
         self.activate_control()
         return value

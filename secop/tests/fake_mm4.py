@@ -50,10 +50,10 @@ class Board:
         with self.lock:
             if line == '*IDN?':
                 return ['PMC,MM4,0x3600273C,0.13.0']
-            if line == 'SENSE?':
-                return [f'SENSE {self.p:.3f} mbar']
-            if line == 'SP?':
-                return [f'SP {self.sp:.1f} mbar']
+            if line == 'PRES?':
+                return [f'PRES {self.p:.3f} mbar']
+            if line == 'PRES SP?':
+                return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE?':
                 return [f'MODE {self.mode}']
             if line == 'VALVE?':
@@ -64,15 +64,15 @@ class Board:
                 return ['BARO 1013.25 mbar']
             if line == 'ALARM?':
                 return [f'ALARM {self.alarm},1,Test alarm' if self.alarm else 'ALARM NONE']
-            if line.startswith('SP '):
+            if line.startswith('PRES SP '):
                 try:
-                    v = float(line[3:])
+                    v = float(line[8:])
                 except ValueError:
-                    return ['ERR 101 Expected: SP <mbar>']
+                    return ['ERR 101 Expected: PRES SP <mbar>']
                 if not 0 <= v <= 1034:
                     return ['ERR 102 Outside 0 to 1034 mbar']
                 self.sp = round(v, 1)
-                return [f'SP {self.sp:.1f} mbar']
+                return [f'PRES SP {self.sp:.1f} mbar']
             if line == 'MODE AUTO':
                 if self.alarm.startswith('F'):
                     return ['ERR 203 Reset the fault first']
