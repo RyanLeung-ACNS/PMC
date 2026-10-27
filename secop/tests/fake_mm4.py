@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 
-COLUMNS = 't_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar'
+COLUMNS = 't_s,p_mbar,target_mbar,valve_pct,mode,alarm,baro_mbar'
 
 
 class Board:
@@ -41,8 +41,7 @@ class Board:
         with self.lock:
             t = time.time() - self.t0
             sp = f'{self.sp:.1f}'
-            return (f'DATA,{t:.1f},{self.p:.3f},{sp},{self.valve:.2f},{self.mode},{self.alarm},'
-                    f'0.012345,10012,31.2,1013.25')
+            return (f'DATA,{t:.1f},{self.p:.3f},{sp},{self.valve:.2f},{self.mode},{self.alarm},1013.25')
 
     def command(self, line):
         """Reply lines for one command line."""

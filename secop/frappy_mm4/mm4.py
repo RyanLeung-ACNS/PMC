@@ -39,8 +39,7 @@ COMMANDS = {
 }
 
 # The DATA columns, used until DATA HDR? has answered.
-DEFAULT_COLUMNS = ['t_s', 'p_mbar', 'target_mbar', 'valve_pct', 'mode', 'alarm',
-                   'ratio_mV_per_V', 'exc_mV', 'die_C', 'baro_mbar']
+DEFAULT_COLUMNS = ['t_s', 'p_mbar', 'target_mbar', 'valve_pct', 'mode', 'alarm', 'baro_mbar']
 
 
 class Mm4IO(StringIO):
