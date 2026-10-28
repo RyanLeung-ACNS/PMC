@@ -23,6 +23,10 @@ void touch_poll(void);
 // Returns false if the line is not TOUCH?.
 bool touch_command(const char *line);
 
+// While a press is down: a second finger on the glass, and where (x, y may
+// be NULL). Not given to LVGL; Motor override's Limit override reads it.
+bool touch_second(int32_t *x, int32_t *y);
+
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

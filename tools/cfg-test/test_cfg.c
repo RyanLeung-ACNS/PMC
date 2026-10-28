@@ -492,15 +492,15 @@ static void test_net(void)
     }
     CHECK(cfg_command("NET IP DEFAULT") && cfg_command("NET?"));
 
-    // Remote control (0.13.4): Off by default, live at once and unsaved,
-    // kept by a save, Off again from a version 4 record.
-    CHECK(!cfg_remote());
+    // Remote control (0.13.4): On by default (0.13.7), live at once and
+    // unsaved, Off kept by a save, On again from a version 4 record.
+    CHECK(cfg_remote());
     int u1 = cfg_unsaved();
-    cfg_set_remote(true);
-    CHECK(cfg_remote() && cfg_unsaved() == u1 + 1);
+    cfg_set_remote(false);
+    CHECK(!cfg_remote() && cfg_unsaved() == u1 + 1);
     CHECK(cfg_save_with(v, set, &why) && cfg_unsaved() == 0);
     reboot();
-    CHECK(cfg_remote());
+    CHECK(!cfg_remote());
     {
         uint32_t size5, a5 = 0;
         int sl = 0;
@@ -525,7 +525,7 @@ static void test_net(void)
         reboot();
         uint32_t rev;
         const char *at;
-        CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a5 && !cfg_remote());
+        CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a5 && cfg_remote());
     }
 
     // Homing return (0.13.6): a version 5 record loads it as its back-off.

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lvgl.h"
@@ -583,7 +584,7 @@ static void restart_cb(lv_event_t *e)
 
 static void settings_build(lv_obj_t *scr)
 {
-    static const char *const names[5] = { "Name and network", "Choose sensor", "Valve setup", "Control tuning",
+    static const char *const names[5] = { "System", "Choose sensor", "Valve setup", "Control tuning",
                                           "Review and save" };
     const ui_screen_t *const to[5] = { &ui_scr_namenet, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
                                        &ui_scr_review };
@@ -614,7 +615,7 @@ static void settings_refresh(void)
         lv_snprintf(t, sizeof t, "In use: %s", sensor_name(p, sizeof p, s.serial));
         ui_btn_text(st.tile[1], "Choose sensor", t);
     }
-    ui_btn_text(st.tile[0], "Name and network", cfg_name()[0] ? cfg_name() : "None");
+    ui_btn_text(st.tile[0], "System", cfg_name()[0] ? cfg_name() : "None");
     lv_snprintf(t, sizeof t, "%s turns", value_text(d, sizeof d, CFG_POSMAX, live(CFG_POSMAX)));
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
@@ -768,19 +769,37 @@ static void nm_refresh(void)
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
 
 /* --------------------------------------------------------------------------
- * Name and network (Settings, 0.12.13): the cryostat name and the Ethernet
- * fallback address, the one used when no DHCP server answers (Ryan, 26 Oct).
+ * System (Settings; Name and network 0.12.13 to 0.13.6, renamed 0.13.7,
+ * Ryan 28 Oct): the cryostat name, the Ethernet fallback address (used when
+ * no DHCP server answers, Ryan 26 Oct), the address in use, the MAC, the
+ * firmware and its build date, and the Remote control switch.
  * ------------------------------------------------------------------------ */
-static struct { lv_obj_t *name, *net, *now, *mac, *fw, *remote; } nn;
+static struct { lv_obj_t *name, *net, *now, *mac, *fw, *remote, *rsw, *rtext; } nn;
 
 static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
 
-// Remote control (0.13.4, Ryan 28 Oct, network plan A): one press turns it
-// On or Off, live at once, kept by Save settings like the name.
+// Remote control (0.13.4, Ryan 28 Oct, network plan A): a toggle switch
+// since 0.13.7; a press anywhere on the card turns it On or Off, live at
+// once, kept by Save settings like the name.
 static void remote_cb(lv_event_t *e)
 {
     (void)e;
     cfg_set_remote(!cfg_remote());
+    lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
+}
+
+// "0.13.7, built 28/10/26" from the compiler's "Oct 28 2026" (DD/MM/YY).
+static const char *fw_text(void)
+{
+    static char t[32];
+    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    const char *d = __DATE__;
+    int mon = 0;
+    for (int i = 0; i < 12; i++)
+        if (strncmp(d, months + 3 * i, 3) == 0)
+            mon = i + 1;
+    lv_snprintf(t, sizeof t, "%s, built %02d/%02d/%.2s", PMC_FW_VERSION, atoi(d + 4), mon, d + 9);
+    return t;
 }
 
 static void nn_build(lv_obj_t *scr)
@@ -790,8 +809,20 @@ static void nn_build(lv_obj_t *scr)
     nn.now = ui_info(scr, 10, RY[1], 226, RH, "Address in use");
     // The MAC, for a DHCP reservation (Ryan, 28 Oct).
     nn.mac = ui_info(scr, 244, RY[1], 226, RH, "MAC address");
-    nn.remote = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Remote control", remote_cb, NULL);
-    nn.fw = ui_info(scr, 244, RY[2], 226, RH, "Firmware");
+    nn.fw = ui_info(scr, 10, RY[2], 226, RH, "Firmware");
+    // Remote control: the name and what it means, the switch on the right.
+    lv_obj_t *c = nn.remote = ui_card(scr, 244, RY[2], 226, RH);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(c, remote_cb, LV_EVENT_PRESSED, NULL);
+    ui_label(c, 10, 5, 150, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "Remote control");
+    nn.rtext = ui_label(c, 10, 26, 150, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_t *sw = nn.rsw = lv_switch_create(c);
+    lv_obj_set_size(sw, 52, 28);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_remove_flag(sw, LV_OBJ_FLAG_CLICKABLE);   // the card takes the press
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0xC3CDD7), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sw, UI_BLUE, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_anim_duration(sw, 0, 0);
 }
 
 static void nn_refresh(void)
@@ -813,13 +844,15 @@ static void nn_refresh(void)
     ui_set_text(nn.now, "None, USB build");
     ui_set_text(nn.mac, "None, USB build");
 #endif
-    ui_set_text(nn.fw, PMC_FW_VERSION);
-    ui_btn_text(nn.remote, "Remote control", cfg_remote() ? "On: the network can set" : "Off: the network can only read");
+    ui_set_text(nn.fw, fw_text());
+    if (lv_obj_has_state(nn.rsw, LV_STATE_CHECKED) != cfg_remote())
+        lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
+    ui_set_text(nn.rtext, cfg_remote() ? "On: network can set" : "Off: network read only");
     ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, cfg_net_restart_due()
                  ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
 }
 
-const ui_screen_t ui_scr_namenet = { "Name and network", nn_build, nn_refresh, NULL };
+const ui_screen_t ui_scr_namenet = { "System", nn_build, nn_refresh, NULL };
 
 /* Fallback address: digits and dots for the address and the mask; Use puts
  * them in use for the next restart, unsaved until Save settings. */

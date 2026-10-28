@@ -836,7 +836,7 @@ static void diag_refresh(void)
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
     // Raw readings only (0.13.2, Ryan 28 Oct); the firmware, address, MAC
-    // and Restart are on Settings > Name and network. The strip is Home's
+    // and Restart are on Settings > System. The strip is Home's
     // status line from 0.13.4 (Ryan, 28 Oct).
     ui_set_text(dp.v[5], ui_fmt1(buf, sizeof buf, s->die_mc));
     ui_status_line();

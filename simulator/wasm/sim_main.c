@@ -157,6 +157,21 @@ void lv_port_indev_init(void)
 
 void touch_poll(void) {}
 
+// A second finger (sim_touch2), seen only while the first is down, as on
+// the board.
+static int touch2_x, touch2_y, touch2_down;
+
+bool touch_second(int32_t *x, int32_t *y)
+{
+    if (!touch_down || !touch2_down)
+        return false;
+    if (x && y) {
+        *x = touch2_x;
+        *y = touch2_y;
+    }
+    return true;
+}
+
 // No Pressure 21 in the simulator (baro.c is not built): BARO STATUS? as
 // on a board without the Click (BARO? replies BARO NONE).
 bool baro_command(const char *line)
@@ -282,6 +297,7 @@ EXPORT(sim_flash_erase_all) void sim_flash_erase_all(void) { memset(flash, 0xFF,
 EXPORT(sim_fb) uint16_t *sim_fb(void) { return fb; }
 EXPORT(sim_frames) uint32_t sim_frames(void) { return frames; }
 EXPORT(sim_touch) void sim_touch(int x, int y, int down) { touch_x = x; touch_y = y; touch_down = down; }
+EXPORT(sim_touch2) void sim_touch2(int x, int y, int down) { touch2_x = x; touch2_y = y; touch2_down = down; }
 
 EXPORT(sim_rx_buf) char *sim_rx_buf(void) { static char b[256]; return b; }
 EXPORT(sim_rx) void sim_rx(int n)
@@ -410,5 +426,5 @@ EXPORT(sim_run) void sim_run(int ms)
 }
 
 EXPORT(sim_version) const char *sim_version(void) { return PMC_FW_VERSION; }
-// The Remote control switch, for tests (the screen's Settings > Name and network).
+// The Remote control switch, for tests (the screen's Settings > System).
 EXPORT(sim_remote) void sim_remote(int on) { cfg_set_remote(on != 0); }

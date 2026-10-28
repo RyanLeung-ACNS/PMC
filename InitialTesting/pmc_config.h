@@ -24,8 +24,8 @@
 #define PMC_LINK_WRITE    1
 
 // Remote control switch (0.13.4, Ryan 28 Oct, network plan A): set commands
-// on the text link need Settings > Name and network > Remote control On, as
-// do Modbus writes (PMC_MODBUS_WRITE). Off by default. PMC_LINK_WRITE and
+// on the text link need Settings > System > Remote control On, as
+// do Modbus writes (PMC_MODBUS_WRITE). On by default from 0.13.7. PMC_LINK_WRITE and
 // PMC_MODBUS_WRITE 0 still mean never. 1 for the Ethernet build; the USB
 // link is local and not switched. The simulator builds with 1, as the board.
 #ifndef PMC_REMOTE_SWITCH
@@ -43,7 +43,7 @@
 #endif
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.13.6"
+#define PMC_FW_VERSION    "0.13.7"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).

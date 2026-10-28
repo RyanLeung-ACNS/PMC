@@ -9,6 +9,7 @@
 #include "limit.h"
 #include "valve.h"
 #include "ui.h"
+#include "lv_port_indev.h"
 
 /*
  * Settings > Motor override (0.11.32: option B, Ryan 22 Oct; three tabs
@@ -19,8 +20,9 @@
  * tab: the tabs Move / Speed / Coils (x10 w226) and the position card (x244
  * w226). Below it:
  *   Move   Hold to run (move while pressed, on by default) or a step size 1 to 10k, one
- *          choice; then Limit override (closes past the switch while held),
- *          Close, Open and Set zero
+ *          choice; then Limit override, Close, Open and Set zero. Limit
+ *          override is a two-finger deadman: hold it and press Close or
+ *          Open with another finger (Close then goes past the switch)
  *   Speed  Run, Start and Accel [-] value [+], and the time for a full open or close
  *   Coils  Mode WAVE/FULL/HALF, Hold torque, Coils off, Coil order, Direction
  * Coil order, Direction and Set zero ask first while the valve is homed.
@@ -45,8 +47,15 @@ static struct {
     lv_obj_t *size[6], *mode[3], *turns, *travel;
     lv_obj_t *rate, *start, *accel, *adj[6];
     lv_obj_t *close, *open, *zero, *over, *hold, *off, *order, *dir;
-    lv_obj_t *held;   // the Close, Open or Limit override button driving a hold move
+    lv_obj_t *held;   // the Close or Open button driving a hold move
+    lv_obj_t *held2;  // Close or Open under the second finger, Limit override held
+    lv_timer_t *two;  // reads the second finger while the screen is open
 } m;
+// Limit override is held (accepted on press); a second finger may move.
+static bool over_on;
+// The second finger has been off the glass since Limit override was
+// pressed, so its next touch is a fresh press.
+static bool second_up;
 // Hold to run (move while pressed) is the first choice in the step size row
 // (0.13.2, Ryan 28 Oct: it looked apart as its own button). On by default
 // each time the page opens.
@@ -104,6 +113,7 @@ static int order_index(void)
 }
 
 static void motor_fast(void);
+static void motor_refresh(void);
 
 /* --------------------------------------------------------------------------
  * Events (on press; a greyed button does nothing)
@@ -146,17 +156,13 @@ static void move_event(lv_event_t *e)
     motor_fast();
 }
 
-// Hold move released (or the finger slid off): ramp down where it is; the
-// limit override's close stops at once and the override ends.
+// Hold move released (or the finger slid off): ramp down where it is.
 static void hold_end(void)
 {
     if (!m.held)
         return;
     m.held = NULL;
-    if (stepper3_override()) {
-        bool stopped = stepper3_override_cancel();
-        valve_event("LIM", "Limit override released (screen)%s", stopped ? ", valve stopped" : "");
-    } else if (stepper3_busy()) {
+    if (stepper3_busy()) {
         stepper3_stop_ramped();
         link_printf("MOT screen: hold move released\r\n");
     }
@@ -287,30 +293,138 @@ static void off_event(lv_event_t *e)
     motor_fast();
 }
 
-// Limit override is a deadman (0.13.2, Ryan 28 Oct; it armed the next close
-// from 0.12.19): while it is held the valve closes past the switch at the
-// run rate, and releasing it stops at once and ends the override. The
-// screen follows one finger, so the button drives the close itself.
+// Limit override is a two-finger deadman (0.13.7, Ryan 28 Oct; one finger
+// closed past the switch from 0.13.2, and it armed the next close from
+// 0.12.19). Held alone it does nothing. While it is held, a second finger
+// pressing Close closes past the switch, and Open opens, by the move
+// choice (Hold to run or a step). The move stops when either finger lifts
+// or the second slides off its button: a close past the switch at once,
+// an open ramped down. LVGL follows one finger (the one on Limit
+// override); the second comes from touch_second() and is read by two_poll.
 static void override_event(lv_event_t *e)
 {
-    if (ui_btn_disabled(e) || stepper3_busy())
+    if (ui_btn_disabled(e))
         return;
     const char *why = stepper3_locked();
-    if (!why) {
-        stepper3_override_arm();
-        if (stepper3_move(-HOLD_MOVE)) {
-            m.held = m.over;
-            valve_event("LIM", "Limit override held (screen): closing past the switch");
-        } else {
-            stepper3_override_cancel();
-            why = stepper3_refusal();
-        }
-    }
     if (why) {
         link_printf("MOT screen: override refused, %s\r\n", why);
         ui_msg(why);
+        return;
     }
-    motor_fast();
+    over_on = true;
+    second_up = !touch_second(NULL, NULL);   // a finger already down waits to lift
+    valve_event("LIM", "Limit override held (screen): press Close or Open to move");
+    motor_refresh();
+}
+
+static bool inside(lv_obj_t *b, int32_t x, int32_t y)
+{
+    lv_area_t a;
+    lv_obj_get_coords(b, &a);
+    return x >= a.x1 && x <= a.x2 && y >= a.y1 && y <= a.y2;
+}
+
+// The second finger's move ends: a close past the switch stops at once and
+// the override ends; an open ramps down.
+static void two_end(void)
+{
+    lv_obj_t *b = m.held2;
+    if (!b)
+        return;
+    m.held2 = NULL;
+    lv_obj_remove_state(b, LV_STATE_PRESSED);
+    if (stepper3_override()) {
+        bool stopped = stepper3_override_cancel();
+        valve_event("LIM", "Limit override move ended (screen)%s", stopped ? ", valve stopped" : "");
+    } else if (stepper3_busy()) {
+        stepper3_stop_ramped();
+        link_printf("MOT screen: override move released\r\n");
+    }
+}
+
+// Second finger pressed b (Close or Open) while Limit override is held.
+// False while a move is still running, so it is tried again.
+static bool two_start(lv_obj_t *b)
+{
+    if (stepper3_busy())
+        return false;
+    bool close = b == m.close;
+    int32_t steps = (hold_on ? HOLD_MOVE : step_sizes[size_sel]) * (close ? -1 : 1);
+    const char *why = stepper3_locked();
+    if (!why) {
+        if (close)
+            stepper3_override_arm();
+        if (stepper3_move(steps)) {
+            m.held2 = b;
+            lv_obj_add_state(b, LV_STATE_PRESSED);
+            valve_event("LIM", close ? "Limit override (screen): closing past the switch"
+                                     : "Limit override (screen): opening");
+            return true;
+        }
+        if (close)
+            stepper3_override_cancel();
+        why = stepper3_refusal();
+    }
+    link_printf("MOT screen: override move refused, %s\r\n", why);
+    ui_msg(why);
+    return true;
+}
+
+static void over_release(lv_event_t *e)
+{
+    (void)e;
+    if (!over_on)
+        return;
+    over_on = false;
+    bool moving = m.held2 != NULL;
+    two_end();
+    if (!moving)
+        valve_event("LIM", "Limit override released (screen)");
+    motor_refresh();
+}
+
+static void two_poll(lv_timer_t *t)
+{
+    (void)t;
+    int32_t x = 0, y = 0;
+    bool down = touch_second(&x, &y);
+    // Released, even if the release event was missed.
+    if (over_on && !lv_obj_has_state(m.over, LV_STATE_PRESSED))
+        over_release(NULL);
+    if (!over_on)
+        return;
+    if (m.held2) {
+        if (!down || !inside(m.held2, x, y)) {
+            two_end();
+            motor_fast();
+        }
+        return;
+    }
+    if (!down) {
+        second_up = true;
+        return;
+    }
+    if (!second_up)
+        return;
+    lv_obj_t *b = inside(m.close, x, y) ? m.close : inside(m.open, x, y) ? m.open : NULL;
+    if (!b) {
+        second_up = false;   // landed elsewhere: lift it and press again
+        return;
+    }
+    if (two_start(b)) {
+        second_up = false;
+        motor_fast();
+    }
+}
+
+static void two_delete(lv_event_t *e)
+{
+    (void)e;
+    if (m.two)
+        lv_timer_delete(m.two);
+    m.two = NULL;
+    two_end();
+    over_on = false;
 }
 
 static void tab_show(void);
@@ -433,11 +547,17 @@ static void motor_build(lv_obj_t *scr)
     lv_obj_set_style_border_color(m.over, UI_WARN, 0);
     m.close = btn(p, 127, y3, 109, LV_SYMBOL_LEFT " Close", move_event, -1);
     m.open = btn(p, 244, y3, 109, "Open " LV_SYMBOL_RIGHT, move_event, 1);
-    lv_obj_t *const held_btns[3] = { m.over, m.close, m.open };
-    for (int i = 0; i < 3; i++) {
+    lv_obj_t *const held_btns[2] = { m.close, m.open };
+    for (int i = 0; i < 2; i++) {
         lv_obj_add_event_cb(held_btns[i], release_event, LV_EVENT_RELEASED, NULL);
         lv_obj_add_event_cb(held_btns[i], release_event, LV_EVENT_PRESS_LOST, NULL);
     }
+    lv_obj_add_event_cb(m.over, over_release, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(m.over, over_release, LV_EVENT_PRESS_LOST, NULL);
+    // The second finger, every 20 ms; the timer goes with the screen.
+    over_on = false;
+    m.two = lv_timer_create(two_poll, 20, NULL);
+    lv_obj_add_event_cb(m.over, two_delete, LV_EVENT_DELETE, NULL);
     m.zero = btn(p, 361, y3, 109, "Set zero", zero_event, 0);
 
     // Speed: the three rates.
@@ -516,7 +636,7 @@ static void motor_fast(void)
     // is on; Set zero and Limit override while the motor is locked. A
     // move does not grey the row (0.12.19, Ryan 27 Oct: the buttons seemed
     // to hide themselves); a press during a move does nothing.
-    bool ov = stepper3_override();
+    bool ov = stepper3_override() || over_on;
     ui_btn_enable(m.close, !stepper3_limit_open() || ov || m.held == m.close);
     ui_btn_enable(m.open, true);
     ui_btn_enable(m.zero, !stepper3_locked());
@@ -578,6 +698,11 @@ static void motor_refresh(void)
         warn = true;
     }
     lv_snprintf(t, sizeof t, "%s. %s", st, ls);
+    // Limit override held, nothing moving yet: what the second finger does.
+    if (over_on && !m.held2) {
+        lv_snprintf(t, sizeof t, "Limit override held: press Close or Open");
+        warn = true;
+    }
     // The status line's icons (arrows, valve symbol), without its sparkline.
     ui_strip_set(warn ? UI_STRIP_WARN : UI_STRIP_INFO, d > 0 ? LV_SYMBOL_UP : d < 0 ? LV_SYMBOL_DOWN : UI_ICON_VALVE, t);
     motor_fast();

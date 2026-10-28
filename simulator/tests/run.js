@@ -127,17 +127,32 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('settings kept over a power cycle', /KP 3/.test(pid) || /3\.0+ %\/mbar/.test(pid), pid);
   check('valve position offered after a power cycle', /10\.0|6604|6605/.test(vp), vp);
 }
-{ // Limit override is a deadman (0.13.2): held, it closes past a pressed switch; released, it stops at once.
+{ // Limit override is a two-finger deadman (0.13.7): held alone it does nothing; held, a second
+  // finger on Close closes past a pressed switch, on Open opens; either finger lifting stops it.
   const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
   s.tap(415, 184); s.tap(379, 184); s.tap(298, 184); s.tap(318, 147);   // Menu > Settings > Motor override > Open
   s.set(7, 1); s.run(500);                                              // switch stuck pressed
   s.tap(186, 184, 1000);
-  const blocked = s.get(30) === 0;                                      // Close refused
-  s.x.sim_touch(64, 184, 1); s.run(3000); const held = s.get(30);
-  s.x.sim_touch(64, 184, 0); s.run(300); const rel = s.get(30); s.run(1000);
-  check('limit override closes while held', blocked && held < -500, 'count ' + held);
-  check('limit override stops on release', s.get(30) === rel && !/override/.test(s.cmd('MOT?')), s.get(30) + ' vs ' + rel);
+  const c0 = s.get(30), blocked = c0 === 0;                             // Close alone refused
+  const over = (d) => s.x.sim_touch(64, 184, d), second = (px, d) => s.x.sim_touch2(px, 184, d);
+  over(1); s.run(2000); const alone = s.get(30);
+  check('limit override alone does nothing', blocked && alone === c0 && !/Closing|Opening/.test(s.cmd('MOT?')), 'count ' + alone);
+  second(415, 1); s.run(1000); second(415, 0); s.run(200);              // second finger on Set zero
+  check('second finger elsewhere does nothing', s.get(30) === c0, 'count ' + s.get(30));
+  second(186, 1); s.run(3000); const held = s.get(30);
+  check('override + Close closes past the switch', held < -500, 'count ' + held);
   shot(s, 'override');
+  second(186, 0); s.run(300); const rel = s.get(30); s.run(1000);
+  check('lifting the second finger stops at once', s.get(30) === rel && !/override/.test(s.cmd('MOT?')), s.get(30) + ' vs ' + rel);
+  second(186, 1); s.run(2000); const again = s.get(30);
+  over(0); s.run(300); const rel2 = s.get(30); s.run(1000);
+  check('lifting the override finger stops the close', again < rel - 300 && s.get(30) === rel2, again + ' ' + rel2 + ' ' + s.get(30));
+  second(186, 0); s.run(300);
+  s.x.sim_touch(186, 184, 1); s.run(1000); s.x.sim_touch(186, 184, 0); s.run(500);
+  check('Close alone still refused after', s.get(30) === rel2, 'count ' + s.get(30));
+  over(1); s.run(200); second(298, 1); s.run(2000); const opened = s.get(30);
+  second(298, 0); over(0); s.run(2000);
+  check('override + Open opens', opened > rel2 + 300, opened + ' vs ' + rel2);
 }
 { // The remote set (0.13.0): the reply rules of the handover page.
   const s = homed(load());
@@ -195,15 +210,18 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('ALRM RESET clears it', t.cmd('ALRM RESET;ALRM?') === 'ALRM NONE\r\n', t.cmd('ALRM?'));
   check('nothing sent unasked over a run', (t.cmd('PRES SP 5;MODE AUTO', 60000), t.out === ''), t.out);
 }
-{ // Remote control switch (0.13.4): Off, the link takes queries only; On from the screen, it takes sets.
+{ // Remote control switch (0.13.4): On by default (0.13.7); Off, the link takes queries only; On from the screen, it takes sets.
+  const d = load(); d.boot(); d.run(1000);   // boot() leaves the switch as the firmware starts it
+  check('switch On by default', d.cmd('PRES SP 5;PRES SP?') === 'PRES SP 5.0 mbar\r\n', d.cmd('PRES SP?'));
   const s = load(); s.boot(undefined, { remote: false }); s.set(5, 40000); s.run(2000);
   check('switch Off: PRES SP refused', s.cmd('PRES SP 5') === 'ERR 211 Read only over the network\r\n', s.cmd('PRES SP 5'));
   check('switch Off: STOP refused', s.cmd('STOP') === 'ERR 211 Read only over the network\r\n');
   check('switch Off: queries answer', s.cmd('MODE?;PRES SP?') === 'MODE NOT HOMED;PRES SP NONE\r\n', s.cmd('MODE?;PRES SP?'));
-  s.tap(415, 184); s.tap(379, 184); s.tap(120, 72); s.tap(120, 184);   // Menu, Settings, Name and network, Remote control
+  s.tap(415, 184); s.tap(379, 184); s.tap(120, 72); s.tap(357, 184);   // Menu, Settings, System, Remote control
   check('switch On from the screen: PRES SP taken', s.cmd('PRES SP 5;PRES SP?') === 'PRES SP 5.0 mbar\r\n', s.cmd('PRES SP?'));
   check('switch On is a NET event', /NET,Remote control on \(screen\)/.test(events(s, 5)), events(s, 5));
-  s.tap(120, 184);
+  shot(s, 'system');
+  s.tap(357, 184);
   check('switch Off again: refused', s.cmd('PRES SP 6') === 'ERR 211 Read only over the network\r\n');
 }
 { // Homing return (0.13.6): its own setting, the step 4 move off the switch; 0 % is there.

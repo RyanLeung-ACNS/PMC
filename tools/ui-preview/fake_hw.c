@@ -211,3 +211,6 @@ bool supply_fitted(void) { return true; }
 // W-3 (sense.h): set by the "hot" scenario.
 bool fake_hot;
 bool sense_hot(int32_t *die_mc) { *die_mc = 57300; return fake_hot; }
+
+// No second finger in the previews.
+bool touch_second(int32_t *x, int32_t *y) { (void)x; (void)y; return false; }

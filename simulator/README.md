@@ -125,4 +125,6 @@ Chosen by Ryan from the option renders (`previews/layout-options/`, final `17-ho
 
 The v62 tests (`workflows.js`, `regression.js`, `audit.js`, `wp023.js`) drove that page with Playwright and are in git with it; they were removed in 0.11.38 with the page.
 
-From 0.13.4 the simulator has the board's Remote control switch (Settings > Name and network), Off at power-up: the page's console then answers set commands with ERR 211 until it is turned On on the screen. The node tests turn it On first (`boot(flash, { remote: false })` leaves it Off).
+From 0.13.4 the simulator has the board's Remote control switch (Settings > System). From 0.13.7 it is On at power-up, as on the board; turned Off on the screen, the page's console answers set commands with ERR 211. `boot(flash, { remote: false })` in the node tests turns it Off.
+
+From 0.13.7 the simulator takes a second finger, for the two-finger Limit override (Settings > Motor override): on a touchscreen, put a second finger down; with a mouse, Shift+click holds a press down until the next Shift+click, and a plain click is then the second finger. The node tests use `sim_touch2(x, y, down)`.

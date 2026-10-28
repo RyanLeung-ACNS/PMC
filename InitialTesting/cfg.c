@@ -180,8 +180,9 @@ static char cname[CFG_NAME_LEN + 1] = FACTORY_NAME;
 // Live fallback address (unsaved until a save, like the name), and the one
 // loaded at start-up, which the Ethernet link uses until the next restart.
 static uint32_t net_ip, net_mask, net_boot_ip, net_boot_mask;
-// Live Remote control switch (0.13.4): Off until a save with it On is loaded.
-static bool remote_on;
+// Live Remote control switch (0.13.4): On by default (0.13.7, Ryan 28 Oct),
+// as a saved record says once one is loaded.
+static bool remote_on = true;
 
 static const uint32_t slot_addr[2] = { CFG_ADDR_A, CFG_ADDR_B };
 static cfg_rec_t slot[2];        // as read from each sector (version 1 converted)
@@ -343,15 +344,18 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     r->sens[0].has_cal = v->has_cal;
     r->sens[0].cal = v->cal;
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
+    r->remote = 1;
 }
 
 // A version 2 to 5 record as version 6. They are version 6 without the
 // return (valve[6]) and without the fields after crc_at; the return is
-// their back-off, so homing ends where it did. Fields they lack are 0: the
-// build's fallback address, Remote control Off.
+// their back-off, so homing ends where it did. Fields they lack are 0 (the
+// build's fallback address), except Remote control, On as the default; a
+// version 5 record has its own.
 static void from_old(const void *v, size_t tune_at, size_t crc_at, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
+    r->remote = 1;                                                 // version 5 overwrites it
     memcpy(r, v, tune_at);                                         // header, mot, valve[0..5]
     memcpy(r->tune, (const uint8_t *)v + tune_at, crc_at - tune_at);   // tune on
     r->valve[6] = r->valve[3];
@@ -643,7 +647,7 @@ void cfg_init(void)
     sens[0].serial = FACTORY_SERIAL;
     sens[0].psi10 = FACTORY_PSI10;
     net_ip = net_mask = 0;
-    remote_on = false;
+    remote_on = true;
     // The cal found by cal_init() (old record, or nominal) is the factory sensor's.
     tell_cal();
     capture(&factory);
@@ -1202,7 +1206,7 @@ void cfg_set_remote(bool on)
 #if PMC_ENG_COMMANDS   // NET?, NET IP, PID?, PID, CFG (engineering)
 // NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
 // refused, so nobody sets an address that cuts off their own link; the
-// screen (Settings > Name and network) or the USB build sets it.
+// screen (Settings > System) or the USB build sets it.
 static void net_command(const char *a)
 {
     char t[2][48];
@@ -1221,7 +1225,7 @@ static void net_command(const char *a)
         return;
     }
 #if PMC_LINK_ETHERNET
-    link_printf("ERR NET IP is set on the screen (Settings > Name and network), not over the network\r\n");
+    link_printf("ERR NET IP is set on the screen (Settings > System), not over the network\r\n");
 #else
     uint32_t ip = 0, mask = 0;
     const char *why;

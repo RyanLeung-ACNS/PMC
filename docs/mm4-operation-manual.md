@@ -49,7 +49,7 @@ The controller has no hardware interlock. The closing stop is the firmware readi
 - **The limit switch can trip early.** It is a force-actuated normally closed contact. Ice on the valve, or a stiff drive, can press it before the needle reaches the seat. The controller cannot tell an early trip from the seat. When the switch trips during a normal move the controller stops and asks the operator (W-1, section 9). Only a person at the cryostat can judge which it was.
 - **STOP** on the bottom row of every screen stops the valve at once and holds it. In AUTO it also switches to MANUAL. Nothing latches, so operation can resume straight away.
 - **Nothing moves at power-up.** The valve is NOT HOMED until the operator homes it or sets its position. The controller never uses a saved position on its own.
-- **Limit override** (Settings > Motor override) drives the valve closed past an open limit switch. It works only while the button is held and stops at once on release. Use it only when the switch is known to be stuck and the valve is known to be off the seat.
+- **Limit override** (Settings > Motor override) drives the valve closed past an open limit switch. It takes two fingers: hold Limit override, then press Close with another finger. Holding Limit override alone does nothing. The valve moves only while both are held and stops at once when either lifts. Open also works while it is held. Use it only when the switch is known to be stuck and the valve is known to be off the seat.
 - **Motor supply.** The Stepper 3 Click has no current limit. The motor supply must be a regulated 12 V. Do not feed 12 V into the Boost 10 Click, which takes 5 V from the board and makes the 10 V Druck excitation.
 - **Remote writes are on.** Anyone who can reach the controller's IP address on port 5000 or port 502 can set the target, move the valve in MANUAL, start AUTO and stop. Keep the controller on the instrument network only.
 
@@ -117,7 +117,7 @@ Every screen has the same frame: a header with Back and Home buttons, the title,
 | Valve homing | Menu > Calibrate > Valve homing | Home valve, and the three ways to set the position without homing: Set as 0 %, Set as other %, Use last saved. Help |
 | Calibrate sensor | Menu > Calibrate > Sensor | The two-point calibration: Capture vacuum, Capture air, and the saved and captured readings side by side |
 | Diagnostics | Menu > System > Diagnostics | Live readings and hardware state: firmware version, Druck signal and excitation, board temperature, motor and limit switch, link and IP address |
-| Settings | Menu > System > Settings | Name and network, Choose sensor, Valve setup, Control tuning, Review and save (with Load settings), Motor override (section 10) |
+| Settings | Menu > System > Settings | System, Choose sensor, Valve setup, Control tuning, Review and save (with Load settings), Motor override (section 10) |
 
 Display formats: pressure to 1 decimal in mbar, valve position and keypad entries to 2 decimals in %, dates DD/MM/YY.
 
@@ -258,7 +258,7 @@ Settings are commissioning items, not daily operation. Edits on the screen are d
 
 | Page | Settings | Notes |
 | --- | --- | --- |
-| Name and network | Cryostat name (up to 12 characters, shown in the Home title). Fallback IP address and mask | The name is in use at once and unsaved until Save settings. The fallback address is used when no DHCP server answers, after Save settings and a restart. Default puts the build's address back. The page shows the address in use |
+| System | Cryostat name (up to 12 characters, shown in the Home title). Fallback IP address and mask. Remote control switch (On by default). Firmware version and build date | The name is in use at once and unsaved until Save settings. The fallback address is used when no DHCP server answers, after Save settings and a restart. Default puts the build's address back. The page shows the address in use |
 | Choose sensor | Up to four Druck sensors, each with serial number, range in psi and its own calibration. Sensor in use | A new sensor starts uncalibrated. Calibrate puts it in use and opens Calibrate sensor |
 | Valve setup, Valve tab | 100 % travel in output turns (4 by default, 16512 steps per turn). Motor direction | Changing the direction clears the homing. Home again after saving |
 | Valve setup, Homing tab | Back-off (400 full steps), fast close speed (400 steps/s), slow close speed (25 steps/s) | Homing step distances and speeds |
@@ -277,9 +277,9 @@ The Ethernet build (the one for the cryostat) runs two servers on one cable and 
 
 ### Network and IP address
 
-The controller asks for an address by DHCP. If no DHCP server answers within 10 s it uses the fallback address: the one saved under Settings > Name and network, or the build's default 169.254.10.50/16. The header shows the address in use, or NO CABLE, DHCP..., NET NO CLK or NET NO PHY while it has none. Diagnostics shows the link and the address. The hostname is pmc.
+The controller asks for an address by DHCP. If no DHCP server answers within 10 s it uses the fallback address: the one saved under Settings > System, or the build's default 169.254.10.50/16. The header shows the address in use, or NO CABLE, DHCP..., NET NO CLK or NET NO PHY while it has none. Diagnostics shows the link and the address. The hostname is pmc.
 
-To set the fallback address, type it and the mask on the Name and network page (or NET IP over USB), then Save settings and restart. NET IP is refused over port 5000 so a remote user cannot cut off their own link. On a laptop with a fixed address, put the laptop and the fallback address on the same subnet.
+To set the fallback address, type it and the mask on the System page (or NET IP over USB), then Save settings and restart. NET IP is refused over port 5000 so a remote user cannot cut off their own link. On a laptop with a fixed address, put the laptop and the fallback address on the same subnet.
 
 Ethernet and Modbus were proven on the bench on 26 October 2026 with the laptop on a fixed address.
 

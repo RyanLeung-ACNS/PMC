@@ -77,8 +77,9 @@ void cfg_net_boot(char ip[16], char mask[16]);
 bool cfg_net_restart_due(void);   // the live address differs from the one in use
 
 // Remote control (0.13.4): Off, the network can only read (remote.c ERR 211,
-// Modbus exception 1). Off by default and in records before version 5. Set
-// live, unsaved until a save, like the name; a change is a NET event.
+// Modbus exception 1). On by default and in records before version 5 (0.13.7;
+// Off to 0.13.6). Set live, unsaved until a save, like the name; a change is
+// a NET event.
 bool cfg_remote(void);
 void cfg_set_remote(bool on);
 

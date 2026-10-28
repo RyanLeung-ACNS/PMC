@@ -64,6 +64,10 @@ static void touchpad_init(void)
  * position (the nearest point within TOUCH_SAME_PX of where it was); other
  * touches are ignored. When that finger lifts the press ends, and the next
  * press waits until no finger is on the glass.
+ *
+ * A second finger is kept apart for the Limit override (0.13.7, Ryan 28
+ * Oct): while the followed finger is down, touch_second() gives the other
+ * touch nearest it. It never reaches LVGL; Motor override reads it itself.
  */
 #define TOUCH_SAME_PX 60
 
@@ -71,7 +75,10 @@ static bool touch_now, touch_latched, touch_wait_up;
 static lv_coord_t touch_x, touch_y;
 static uint32_t touch_multi;    // polls that saw more than one touch, for TOUCH?
 
-static bool touch_follow(const tp_touch_item_t *t, uint8_t n, lv_coord_t *x, lv_coord_t *y)
+static bool touch2_now;
+static lv_coord_t touch2_x, touch2_y;
+
+static bool touch_follow(const tp_touch_item_t *t, uint8_t n, lv_coord_t *x, lv_coord_t *y, int32_t *idx)
 {
     int32_t best = -1, best_d = 0;
     for (uint8_t i = 0; i < n; i++) {
@@ -87,7 +94,39 @@ static bool touch_follow(const tp_touch_item_t *t, uint8_t n, lv_coord_t *x, lv_
         return false;
     *x = (lv_coord_t)t->point[best].coord_x;
     *y = (lv_coord_t)t->point[best].coord_y;
+    *idx = best;
     return true;
+}
+
+// The touch nearest the followed one, other than it.
+static void touch_other(const tp_touch_item_t *t, uint8_t n, int32_t skip)
+{
+    int32_t best = -1, best_d = 0;
+    for (uint8_t i = 0; i < n; i++) {
+        if ((int32_t)i == skip)
+            continue;
+        int32_t dx = (int32_t)t->point[i].coord_x - touch_x;
+        int32_t dy = (int32_t)t->point[i].coord_y - touch_y;
+        int32_t d = dx * dx + dy * dy;
+        if (best < 0 || d < best_d) {
+            best = i;
+            best_d = d;
+        }
+    }
+    touch2_now = best >= 0;
+    if (touch2_now) {
+        touch2_x = (lv_coord_t)t->point[best].coord_x;
+        touch2_y = (lv_coord_t)t->point[best].coord_y;
+    }
+}
+
+bool touch_second(int32_t *x, int32_t *y)
+{
+    if (touch2_now && x && y) {
+        *x = touch2_x;
+        *y = touch2_y;
+    }
+    return touch2_now;
 }
 
 void touch_poll(void)
@@ -110,13 +149,14 @@ void touch_poll(void)
     if(n > 1)
         touch_multi++;
 
+    int32_t idx = 0;
     if(n == 0) {
         touch_now = false;
         touch_wait_up = false;
     } else if(touch_now) {
         // Follow the finger that started the press; if it lifted, end the
         // press even though another finger is still down.
-        if(!touch_follow(&t, n, &touch_x, &touch_y)) {
+        if(!touch_follow(&t, n, &touch_x, &touch_y, &idx)) {
             touch_now = false;
             touch_wait_up = true;
         }
@@ -127,6 +167,10 @@ void touch_poll(void)
         touch_presses++;
         touch_latched = true;
     }
+    if(touch_now)
+        touch_other(&t, n, idx);
+    else
+        touch2_now = false;
     if(touch_now)
         touch_latched = true;
     touch_was_pressed = touch_now;
