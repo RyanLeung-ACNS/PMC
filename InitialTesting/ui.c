@@ -1464,7 +1464,7 @@ static void question_check(void)
  * ui_init, so the panel never shows what its memory held at power-up.
  * From 0.13.10 (Ryan 28 Oct: "a black screen and an old style loading
  * screen" with a parody logo) an old PC's power-on self test: white and
- * grey 8x16 text on black, the Helium Star top right, and one line per
+ * grey 8x16 text on black, the MercShore iPC logo top right (0.13.12), and one line per
  * start-up check as main.c makes it, a failed one in amber. Deleted by
  * ui_init. */
 #define SPL_GREY  0xAAAAAA
@@ -1507,33 +1507,34 @@ void ui_splash(void)
     lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(s, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
-    // The Helium Star (an Energy Star parody), 5 px pixels, runs of one row
-    // drawn as one rectangle.
-    static const char *const star[] = {
-        "......xxxx......", ".....xxxxxx.....", ".....xxxxxx.....", "xxxxxxxxxxxxxxxx",
-        ".xxxxxxxxxxxxxx.", "..xxxxxxxxxxxx..", "...xxxxxxxxxx...", "...xxxx..xxxx...",
-        "..xxx......xxx..", ".xx..........xx.",
+    // The MercShore iPC logo (0.13.12, Ryan 28 Oct): a mercury drop over the
+    // shore's waves, 4 px pixels, each run in a row drawn as one rectangle;
+    // a silver, b white highlight, c ice blue.
+    static const char *const logo[] = {
+        ".......aa.......", "......aaaa......", ".....aaaaaa.....", "....aaaaaaaa....",
+        "...aaaaaaaaaa...", "..aaaaaaaabaaa..", "..aaaaaaaabbaa..", "..aaaaaaaaabaa..",
+        "..aaaaaaaaaaaa..", "...aaaaaaaaaa...", "....aaaaaaaa....", "................",
+        "cc...cc...cc...c", ".cc.cc.cc.cc.cc.", "..ccc...ccc...cc",
     };
-    for (int r = 0; r < 10; r++)
-        for (int c = 0; star[r][c];) {
-            int run = 0;
-            while (star[r][c + run] == 'x')
+    static const uint32_t pal[3] = { 0xC8D0D8, 0xFFFFFF, 0x7FD4FF };
+    for (int r = 0; r < 15; r++)
+        for (int c = 0; logo[r][c];) {
+            char ch = logo[r][c];
+            int run = 1;
+            while (logo[r][c + run] == ch)
                 run++;
-            if (run) {
+            if (ch != '.') {
                 lv_obj_t *o = plain(s);
-                lv_obj_set_pos(o, 392 + c * 5, 8 + r * 5);
-                lv_obj_set_size(o, run * 5, 5);
+                lv_obj_set_pos(o, 380 + c * 4, 6 + r * 4);
+                lv_obj_set_size(o, run * 4, 4);
                 lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-                lv_obj_set_style_bg_color(o, lv_color_hex(0x55FF55), 0);
-                c += run;
-            } else {
-                c++;
+                lv_obj_set_style_bg_color(o, lv_color_hex(pal[ch - 'a']), 0);
             }
+            c += run;
         }
-    spl_text(420, 26, 0x000000, "He");
-    spl_text(376, 62, 0x55FF55, "HELIUM STAR");
+    spl_text(400, 68, 0xFFFFFF, "iPC");
     spl_text(8, 4, 0xFFFFFF, "MercShore iPC BIOS v" PMC_FW_VERSION);   // *IDN? MercShore,iPC
-    spl_text(8, 20, SPL_GREY, "(C) 2026 Needle Valve Megatrends");
+    spl_text(8, 20, SPL_GREY, "(C) 2026 MercShore");
     spl_text(8, 52, SPL_GREY, "STM32F407 CPU");
     spl_text(8, 68, SPL_GREY, "Memory : 128 KB SRAM, 64 KB CCM");
     splash_foot = spl_text(8, 236, SPL_GREY, "Press DEL to run SETUP (it will not help)");
