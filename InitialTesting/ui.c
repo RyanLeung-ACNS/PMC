@@ -397,6 +397,7 @@ static int back_n;
 static bool overlay_tv;         // the overlay is a text page (Help): strip shown greyed
 static int overlay_q;           // the overlay is a question: 1 closed switch, 2 saved position
 static bool kp_open;            // the overlay is the keypad
+static char kp_head[40];        // its heading in the header: the title up to the comma
 static void kp_side(void);
 static void question_check(void);
 static lv_obj_t *overlay_new(void);
@@ -436,9 +437,9 @@ void ui_back(void)
 static void home_event(lv_event_t *e)
 {
     (void)e;
-    if (overlay)
+    if (overlay && !kp_open)
         return;   // greyed under a popup: Back closes the popup first
-    ui_home();
+    ui_home();    // from a keypad too: the entry is dropped (0.13.18)
 }
 
 static void unsaved_event(lv_event_t *e)
@@ -726,12 +727,15 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
         seen = trend_seconds();
         lv_obj_invalidate(strip_spark);
     }
-    if (lv_obj_get_x(strip_text) != x || lv_obj_get_width(strip_text) != w) {
-        lv_obj_set_x(strip_text, x);
+    // Aligned only when it moves: aligning on every refresh redrew the
+    // text twice a refresh for nothing (0.13.18).
+    static int32_t text_x = -1;
+    if (text_x != x || lv_obj_get_width(strip_text) != w) {
+        text_x = x;
         lv_obj_set_width(strip_text, w);
+        lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
     }
     ui_set_text(strip_text, text);
-    lv_obj_align(strip_text, LV_ALIGN_LEFT_MID, x, 0);
     // Under a popup the strip stays, updating, greyed and without its buttons.
     show(strip_ok, ok && !overlay);
     show(strip_act, act && !overlay);
@@ -772,14 +776,19 @@ static void frame_refresh(void)
     show(back_btn, !home || overlay);
     // Home stays in place under a popup, greyed (0.12.18, Ryan: it seemed
     // to disappear); Back closes the popup.
-    show(home_btn, !home);
+    // A keypad is a page of its own: Home is there and works, on Home too
+    // (0.13.18, Ryan 28 Oct: Go to and Setpoint on Home had none).
+    show(home_btn, !home || kp_open);
     static int home_dim = -1;
-    if (home_dim != (overlay != NULL)) {
-        home_dim = overlay != NULL;
+    if (home_dim != (overlay != NULL && !kp_open)) {
+        home_dim = overlay != NULL && !kp_open;
         lv_obj_set_style_text_color(lv_obj_get_child(home_btn, 0), home_dim ? UI_IDLE : lv_color_white(), 0);
     }
     show(pmc_lbl, home && !overlay);
-    show(title_lbl, !home);
+    // A keypad's heading is its own title (0.13.18, Ryan: on Home the
+    // header was blank, elsewhere it kept the page's name).
+    const char *ttl = kp_open ? kp_head : cur->title;
+    show(title_lbl, !home || kp_open);
     const char *mode_txt = nf ? "FAULT" : valve_mode_name();
     // NOT HOMED is wider than the button column: the badge grows left.
     bool wide = m == VALVE_NOT_CAL && !nf;
@@ -797,7 +806,8 @@ static void frame_refresh(void)
     }
     int32_t right = uns ? ux - 8 : 353;   // the mode badge starts at 361
     static int32_t fit_right;
-    static const char *fit_mode, *fit_title;
+    static const char *fit_mode;
+    static char fit_title[40];
     // Home's title: "<cryostat> pressure controller" (Settings > Cryostat name).
     static char home_title[CFG_NAME_LEN + 24], fit_name[CFG_NAME_LEN + 1] = "\x01";
     bool renamed = strcmp(cfg_name(), fit_name) != 0;
@@ -810,13 +820,13 @@ static void frame_refresh(void)
         ui_set_text(pmc_lbl, home_title);
     }
     ui_set_text(mode_lbl, mode_txt);
-    if (renamed || mode_txt != fit_mode || (!home && cur->title != fit_title) || right != fit_right) {
+    if (renamed || mode_txt != fit_mode || ((!home || kp_open) && strcmp(ttl, fit_title) != 0) || right != fit_right) {
         fit_mode = mode_txt;
         fit_right = right;
-        if (!home) {
-            fit_title = cur->title;
-            ui_set_text(title_lbl, cur->title);
-            title_fit(title_lbl, cur->title, 2 * HDR_BTN_W + 4, right);
+        if (!home || kp_open) {
+            lv_strlcpy(fit_title, ttl, sizeof fit_title);
+            ui_set_text(title_lbl, ttl);
+            title_fit(title_lbl, ttl, 2 * HDR_BTN_W + 4, right);
         }
         // Home's title sits on the left (Ryan, 16 Oct: centred left the
         // top left empty); it is centred in the gap only if it is too long.
@@ -1133,6 +1143,10 @@ void ui_keypad_ex(const ui_kp_t *k)
     memset(&kp, 0, sizeof kp);
     kp.k = *k;
     kp_open = true;
+    lv_strlcpy(kp_head, k->title ? k->title : "", sizeof kp_head);
+    char *comma = strstr(kp_head, ", ");
+    if (comma)
+        *comma = '\0';
 
     lv_obj_t *card = ui_card(o, 10, 8, 343, 48);
     kp.title = ui_label(card, 10, 6, 180, &ui_font_12, UI_TEXT, LV_TEXT_ALIGN_LEFT, k->title);
