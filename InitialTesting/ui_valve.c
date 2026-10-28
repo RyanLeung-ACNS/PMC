@@ -25,6 +25,7 @@
 static const char *why_not_manual(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
+    if (supply_off()) return "Motor supply off";   // greys the moves (H2)
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
     if (valve_auto()) return "Switch to MANUAL first";
     if (valve_mode() != VALVE_MANUAL) return "Home the valve or set its position first";
@@ -409,6 +410,7 @@ static void calib_refresh(void)
     calib_fast();
     ui_btn_text(cp.start, calib ? "Homing" : "Home valve", NULL);
     ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
+    ui_btn_primary(cp.start, !valve_calibrated());   // filled only while needed (H5)
 
     bool can = !setpos_why();
     int32_t q;

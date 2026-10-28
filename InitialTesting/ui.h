@@ -51,6 +51,8 @@ lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
                  ui_btn_kind_t kind, const char *text, lv_event_cb_t cb, void *user);
 void ui_btn_text(lv_obj_t *btn, const char *text, const char *small);
 void ui_btn_enable(lv_obj_t *btn, bool on);
+// Filled (primary) or plain, for a button whose role changes with the state.
+void ui_btn_primary(lv_obj_t *btn, bool on);
 bool ui_btn_disabled(lv_event_t *e);
 
 lv_obj_t *ui_card(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h);
@@ -94,8 +96,10 @@ typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } u
 // icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
 // NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
 // and fault lines take the triangle. UI_ICON_MODE: the status line's icon,
-// picked from the valve state.
+// picked from the valve state. UI_ICON_TREND: no icon, with the pressure
+// sparkline.
 #define UI_ICON_MODE   "\x01m"
+#define UI_ICON_TREND  "\x01p"
 #define UI_ICON_VALVE  "\x01v"
 #define UI_ICON_TARGET "\x01t"
 void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);

@@ -1,4 +1,5 @@
 #include <string.h>
+#include "supply.h"
 
 #include "lvgl.h"
 #include "clicks.h"
@@ -567,14 +568,20 @@ static void home_refresh(void)
         ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
-        ui_btn_text(mode_btn, "Start AUTO", NULL);   // a fault is refused on press
-        ui_btn_enable(mode_btn, true);
+        // Greyed while it would be refused (HMI review H1, 28 Oct); a press
+        // still says why.
+        ui_btn_text(mode_btn, "Start AUTO", NULL);
+        ui_btn_enable(mode_btn, !valve_fault_count() && !supply_off());
+        ui_btn_primary(mode_btn, true);
     } else if (m == VALVE_AUTO) {
+        // Plain in AUTO: nothing is expected of the operator (H4).
         ui_btn_text(mode_btn, "Switch to\nMANUAL", NULL);
         ui_btn_enable(mode_btn, true);
+        ui_btn_primary(mode_btn, false);
     } else {
         ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
+        ui_btn_primary(mode_btn, true);
     }
 
     ui_status_line();
@@ -622,16 +629,17 @@ void ui_status_line(void)
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
-        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct); a
-        // position set rather than homed says so (Ryan, 23 Oct).
+        // Idle: a position set rather than homed says so (Ryan, 23 Oct);
+        // homed, the pressure sparkline named, not the valve reading the
+        // tiles already show (HMI review H3, 28 Oct).
         char t[48], v[16];
         valve_ref_t how = valve_reference();
         ui_fmt2(v, sizeof v, valve_pct_milli());
-        if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED)
+        if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED) {
             lv_snprintf(t, sizeof t, "%s %%, %s", v, how == VALVE_REF_HAND ? "entered" : "last saved");
-        else
-            lv_snprintf(t, sizeof t, "Valve at %s %%", v);
-        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
+            ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
+        } else
+            ui_strip_set(UI_STRIP_INFO, UI_ICON_TREND, "Pressure, last 5 min");
     }
 }
 

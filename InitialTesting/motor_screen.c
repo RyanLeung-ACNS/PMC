@@ -174,14 +174,14 @@ static void release_event(lv_event_t *e)
  * before. A mode change keeps the homing (the count is rescaled). */
 static char ask_text[64];
 
-static void guarded(const char *what, void (*act)(void))
+static void guarded(const char *what, const char *ok, void (*act)(void))
 {
     if (!valve_calibrated()) {
         act();
         return;
     }
     snprintf(ask_text, sizeof ask_text, "%s? This clears the homing.", what);
-    ui_confirm(ask_text, "Change", act);
+    ui_confirm(ask_text, ok, act);
 }
 
 static void mode_event(lv_event_t *e)
@@ -238,7 +238,7 @@ static void order_event(lv_event_t *e)
 {
     if (ui_btn_disabled(e))
         return;
-    guarded("Change the coil order", do_order);
+    guarded("Change the coil order", "Change", do_order);
 }
 
 static void do_dir(void)
@@ -252,7 +252,7 @@ static void dir_event(lv_event_t *e)
 {
     if (ui_btn_disabled(e))
         return;
-    guarded("Reverse the direction", do_dir);
+    guarded("Reverse the direction", "Change", do_dir);
 }
 
 static void hold_event(lv_event_t *e)
@@ -277,7 +277,7 @@ static void zero_event(lv_event_t *e)
 {
     if (ui_btn_disabled(e) || stepper3_busy())
         return;
-    guarded("Set this position as 0 steps", do_zero);
+    guarded("Set this position as 0 steps", "Set zero", do_zero);
 }
 
 static void off_event(lv_event_t *e)
@@ -538,8 +538,9 @@ static void motor_fast(void)
     ui_btn_enable(m.hold, !busy);
 }
 
-// The strip: the motor state, then the limit switch and whether closing is
-// allowed. A latched fault, an armed override or a message shows over it.
+// The strip: the motor state, then the limit switch (released or pressed,
+// the words of Diagnostics; HMI review H7) and whether closing is allowed.
+// A latched fault, an armed override or a message shows over it.
 static void motor_refresh(void)
 {
     char t[96];
@@ -550,12 +551,12 @@ static void motor_refresh(void)
     const char *ls;
     bool warn = false;
     if (!stepper3_limit_fitted())
-        ls = lim == LIMIT_CLOSED ? "Limit closed, stop off" : lim == LIMIT_OPEN ? "Limit OPEN, stop off"
-                                                                                : "Limit not read yet";
+        ls = lim == LIMIT_CLOSED ? "Switch released, stop off" : lim == LIMIT_OPEN ? "Switch pressed, stop off"
+                                                                                   : "Switch not read yet";
     else if (lim == LIMIT_CLOSED)
-        ls = "Limit closed, closing allowed";
+        ls = "Switch released, closing allowed";
     else {
-        ls = lim == LIMIT_OPEN ? "Limit OPEN, closing blocked" : "Limit not read yet, closing blocked";
+        ls = lim == LIMIT_OPEN ? "Switch pressed, closing blocked" : "Switch not read yet, closing blocked";
         warn = true;
     }
     lv_snprintf(t, sizeof t, "%s. %s", st, ls);
