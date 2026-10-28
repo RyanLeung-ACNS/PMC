@@ -594,7 +594,7 @@ static void build_frame(void)
     // status line (Home and the operator screens; Ryan, 21 Oct).
     strip_spark = ui_spark(strip, 192, 6, 139, 36, false);
     lv_obj_add_flag(strip_spark, LV_OBJ_FLAG_HIDDEN);
-    strip_ok = ui_btn(strip, 279, 4, 60, 40, UI_SECONDARY, "OK", ok_event, NULL);
+    strip_ok = ui_btn(strip, 239, 4, 100, 40, UI_SECONDARY, "OK", ok_event, NULL);   // as wide as the action (0.13.21)
     strip_act = ui_btn(strip, 239, 4, 100, 40, UI_PRIMARY, "", act_event, NULL);
 
     stop_btn = ui_btn(frame, 361, 216, 109, 48, UI_RED, "STOP", NULL, NULL);
@@ -715,7 +715,7 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
     bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
     int32_t x = icon ? 36 : 12;
-    int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
+    int32_t w = (spark ? strip_w - 155 : act || ok ? strip_w - 107 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
         lv_obj_set_x(strip_spark, strip_w - 151);
@@ -726,10 +726,12 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
     if (geo_w != strip_w || geo_b != bw) {
         geo_w = strip_w;
         geo_b = bw;
-        lv_obj_set_pos(strip_ok, strip_w - 64, 4 + bw);
-        lv_obj_set_size(strip_ok, 60 - bw, 40 - 2 * bw);
-        lv_obj_set_pos(strip_act, strip_w - 104, 4 + bw);
-        lv_obj_set_size(strip_act, 100 - bw, 40 - 2 * bw);
+        // One width, 96, for OK and every action, border or not (0.13.21,
+        // Ryan 29 Oct); only the height gives way to a border.
+        lv_obj_set_pos(strip_ok, strip_w - 100 - bw, 4 + bw);
+        lv_obj_set_size(strip_ok, 96, 40 - 2 * bw);
+        lv_obj_set_pos(strip_act, strip_w - 100 - bw, 4 + bw);
+        lv_obj_set_size(strip_act, 96, 40 - 2 * bw);
     }
     // Reset fault white with red lettering on the fault's black (0.13.19,
     // Ryan: not the blue of the other actions).
