@@ -570,7 +570,7 @@ static void do_restart(void)
 {
     valve_stop();
     valve_event("SYS", "Restart from the screen");
-    ui_msg("Restarting.");
+    ui_msg_no_ok("Restarting.");   // nothing to acknowledge (Ryan, 28 Oct)
     lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
     lv_timer_set_repeat_count(t, 1);
 }

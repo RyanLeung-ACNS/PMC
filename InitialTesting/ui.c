@@ -404,6 +404,7 @@ static const ui_screen_t *cur = &ui_scr_home;
 
 static char msg_text[96];
 static uint32_t msg_until;
+static bool msg_ok;   // the message has its OK (not Restarting, 0.13.15)
 
 static ui_strip_kind_t line_kind;
 static const char *line_icon;
@@ -611,6 +612,7 @@ static void show(lv_obj_t *o, bool on)
 
 void ui_msg(const char *text)
 {
+    msg_ok = true;
     lv_strlcpy(msg_text, text, sizeof msg_text);
     // Refusal reasons shared with the link start in lower case there; on
     // the screen every message starts with a capital (Ryan, 26 Oct).
@@ -620,6 +622,12 @@ void ui_msg(const char *text)
     msg_until = lv_tick_get() + (valve_fault_count() ? 2000 : 5000);
     if (!msg_until)
         msg_until = 1;
+}
+
+void ui_msg_no_ok(const char *text)
+{
+    ui_msg(text);
+    msg_ok = false;
 }
 
 void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text)
@@ -869,7 +877,7 @@ static void frame_refresh(void)
     show(strip, (!overlay || !kp_open) && !quiet);
     char buf[96];
     if (msg_until) {
-        strip_draw(UI_STRIP_WARN, NULL, msg_text, true, false);
+        strip_draw(UI_STRIP_WARN, NULL, msg_text, msg_ok, false);
     } else if (valve_fault_first(&tag, &text)) {
         if (nf > 1)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);

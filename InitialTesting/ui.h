@@ -99,6 +99,7 @@ void ui_service(void);         // Settings > Motor override (motor_screen.c)
 // Status strip. A message shows for 5 s with an OK, over the screen's own
 // line; refusals use it. The strip's action button is Home's.
 void ui_msg(const char *text);
+void ui_msg_no_ok(const char *text);   // the same without the OK (Restarting)
 typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } ui_strip_kind_t;
 // icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
 // NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
