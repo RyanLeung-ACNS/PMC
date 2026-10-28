@@ -332,6 +332,15 @@ int main(int argc, char **argv)
     memset(flash, 0xFF, 8u << 20);
     if (strcmp(st, "nosave"))
         seed_flash();
+    if (!strcmp(st, "splash")) {   // the start-up screen, half way (0.13.3)
+        ui_splash();
+        ui_splash_step(2, 4);
+        FILE *f = fopen(argv[2], "wb");
+        if (!f) { perror(argv[2]); return 1; }
+        fwrite(fb, sizeof fb, 1, f);
+        fclose(f);
+        return 0;
+    }
     cal_init();
     cfg_init();
     ui_init();

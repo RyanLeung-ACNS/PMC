@@ -161,7 +161,7 @@ int main(int argc, char **argv)
     CHECK(!strcmp(ctrl_check(&C, &K, false, false, true, 1, FS), "Home the valve first"), "refused unhomed");
     CHECK(!strcmp(ctrl_check(&C, &K, true, true, true, 1, FS), "Reset the fault first"), "refused with a fault");
     CHECK(!strcmp(ctrl_check(&C, &K, true, false, false, 1, FS), "No valid pressure"), "refused without a reading");
-    CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, 1, FS), "Set a target first"), "refused without a target");
+    CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, 1, FS), "Set a setpoint first"), "refused without a setpoint");
     CHECK(!ctrl_set_sp(&C, FS + 1, FS, 0), "target above the range rejected");
     ctrl_set_sp(&C, 5, FS, 0);
     CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, FS + 1, FS), "Pressure above the sensor range"), "refused above the range");

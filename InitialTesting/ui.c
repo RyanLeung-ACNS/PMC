@@ -56,7 +56,8 @@ static void num_font(lv_font_t *f, const lv_font_t *base)
 #define UI_CHEV    lv_color_hex(0x7B8794)
 
 static lv_style_t st_btn, st_btn_pr, st_btn_dis, st_act, st_act_pr, st_act_small,
-                  st_red, st_red_pr, st_dark, st_dark_pr, st_card, st_stop_op, st_stop_op_pr;
+                  st_red, st_red_pr, st_dark, st_dark_pr, st_card, st_stop_op, st_stop_op_pr,
+                  st_out, st_out_pr;
 #define ST_DIS LV_STATE_USER_1   // greyed, still clickable so it can say why
 
 static void styles_init(void)
@@ -106,6 +107,18 @@ static void styles_init(void)
     lv_style_set_pad_all(&st_stop_op, -3);      // the word keeps its place
     lv_style_init(&st_stop_op_pr);
     lv_style_set_bg_color(&st_stop_op_pr, lv_color_hex(0xF6D5D5));
+
+    // Switch to MANUAL in AUTO (0.13.3, Ryan 28 Oct): Start AUTO's colours
+    // the other way round, edged as STOP outside AUTO.
+    lv_style_init(&st_out);
+    lv_style_set_bg_color(&st_out, UI_CARD);
+    lv_style_set_text_color(&st_out, UI_BLUE);
+    lv_style_set_border_side(&st_out, LV_BORDER_SIDE_FULL);
+    lv_style_set_border_width(&st_out, 3);
+    lv_style_set_border_color(&st_out, UI_BLUE);
+    lv_style_set_pad_all(&st_out, -3);      // the word keeps its place
+    lv_style_init(&st_out_pr);
+    lv_style_set_bg_color(&st_out_pr, lv_color_hex(0xD5E2EC));
 
     lv_style_init(&st_dark);
     lv_style_set_bg_color(&st_dark, UI_TEXT);
@@ -346,6 +359,21 @@ void ui_btn_primary(lv_obj_t *b, bool on)
         lv_obj_remove_style(b, &st_act, 0);
         lv_obj_remove_style(b, &st_act_pr, LV_STATE_PRESSED);
         lv_obj_remove_flag(b, LV_OBJ_FLAG_USER_2);
+    }
+}
+
+void ui_btn_outline(lv_obj_t *b, bool on)
+{
+    if (on == lv_obj_has_flag(b, LV_OBJ_FLAG_USER_3))
+        return;
+    if (on) {
+        lv_obj_add_style(b, &st_out, 0);
+        lv_obj_add_style(b, &st_out_pr, LV_STATE_PRESSED);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_USER_3);
+    } else {
+        lv_obj_remove_style(b, &st_out, 0);
+        lv_obj_remove_style(b, &st_out_pr, LV_STATE_PRESSED);
+        lv_obj_remove_flag(b, LV_OBJ_FLAG_USER_3);
     }
 }
 
@@ -797,12 +825,14 @@ static void frame_refresh(void)
         else    lv_obj_remove_state(stop_btn, LV_STATE_USER_2);
     }
     // Mode badge: red and filled with a latched fault, filled white in
-    // AUTO (dark lettering), outlined white in every other mode.
+    // AUTO (dark lettering), outlined white in MANUAL and while homing.
     static int badge_kind = -1;
-    // NOT HOMED outlined as the other modes (Ryan, 24 Oct; had none).
-    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : 0;
+    // NOT HOMED in plain lettering, no outline (Ryan, 28 Oct; outlined
+    // from 24 Oct).
+    int kind = nf ? 2 : m == VALVE_AUTO ? 1 : wide ? 3 : 0;
     if (kind != badge_kind) {
         badge_kind = kind;
+        lv_obj_set_style_border_width(mode_lbl, kind == 3 ? 0 : 2, 0);
         lv_obj_set_style_bg_opa(mode_lbl, kind == 1 || kind == 2 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_set_style_bg_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
         lv_obj_set_style_border_color(mode_lbl, kind == 2 ? UI_FAULT : lv_color_white(), 0);
@@ -1417,6 +1447,47 @@ static void question_check(void)
 /* --------------------------------------------------------------------------
  * Start-up
  * ------------------------------------------------------------------------ */
+/* Start-up screen (0.13.3, Ryan 28 Oct): from the first frame until
+ * ui_init, so the panel never shows what its memory held at power-up. The
+ * Home colours and header, the firmware version and a bar that main.c
+ * steps as each part of the board starts. Deleted by ui_init. */
+static lv_obj_t *splash_scr, *splash_fill;
+
+void ui_splash(void)
+{
+    lv_obj_t *s = splash_scr = lv_screen_active();
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s, UI_BG, 0);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
+    lv_obj_t *h = plain(s);
+    lv_obj_set_size(h, 480, 40);
+    lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(h, UI_TEXT, 0);
+    ui_label(h, 12, 11, 400, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "Pressure controller");
+    ui_label(s, 0, 104, 480, &ui_font_26, UI_TEXT, LV_TEXT_ALIGN_CENTER, "Starting");
+    lv_obj_t *t = plain(s);
+    lv_obj_set_pos(t, 120, 150);
+    lv_obj_set_size(t, 240, 8);
+    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(t, UI_CARD, 0);
+    lv_obj_set_style_radius(t, 4, 0);
+    splash_fill = plain(t);
+    lv_obj_set_size(splash_fill, 0, 8);
+    lv_obj_set_style_bg_opa(splash_fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(splash_fill, UI_BLUE, 0);
+    lv_obj_set_style_radius(splash_fill, 4, 0);
+    ui_label(s, 0, 176, 480, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_CENTER, "Firmware " PMC_FW_VERSION);
+    lv_refr_now(NULL);
+}
+
+void ui_splash_step(int n, int of)
+{
+    if (!splash_fill || of <= 0)
+        return;
+    lv_obj_set_width(splash_fill, 240 * n / of);
+    lv_refr_now(NULL);
+}
+
 void ui_init(void)
 {
     num_font(&ui_num_16, &ui_font_16);
@@ -1428,6 +1499,10 @@ void ui_init(void)
     ui_scr_home.build(home_scr);
     build_frame();
     lv_screen_load(home_scr);
+    if (splash_scr) {
+        lv_obj_delete(splash_scr);
+        splash_scr = splash_fill = NULL;
+    }
     frame_refresh();
     lv_timer_create(refresh_timer, 500, NULL);
     lv_timer_create(fast_timer, 100, NULL);

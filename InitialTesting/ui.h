@@ -53,6 +53,7 @@ void ui_btn_text(lv_obj_t *btn, const char *text, const char *small);
 void ui_btn_enable(lv_obj_t *btn, bool on);
 // Filled (primary) or plain, for a button whose role changes with the state.
 void ui_btn_primary(lv_obj_t *btn, bool on);
+void ui_btn_outline(lv_obj_t *btn, bool on);   // white, blue edge and word
 bool ui_btn_disabled(lv_event_t *e);
 
 lv_obj_t *ui_card(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h);
@@ -82,6 +83,8 @@ typedef struct {
     void (*fast)(void);
 } ui_screen_t;
 
+void ui_splash(void);          // start-up screen, right after the display driver
+void ui_splash_step(int n, int of);   // its bar: n of of parts started
 void ui_init(void);            // after the drivers and valve/cfg init
 void ui_open(const ui_screen_t *s);
 bool ui_showing(const ui_screen_t *s);   // that screen is up

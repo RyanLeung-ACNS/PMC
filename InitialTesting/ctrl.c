@@ -39,8 +39,8 @@ const char *ctrl_check(const ctrl_t *c, const ctrl_tune_t *k, bool homed, bool f
     if (!homed)                     return "Home the valve first";
     if (fault)                      return "Reset the fault first";
     if (!pv_ok)                     return "No valid pressure";
-    if (!c->sp_set)                 return "Set a target first";
-    if (c->sp < 0 || c->sp > fs)    return "Target outside the sensor range";
+    if (!c->sp_set)                 return "Set a setpoint first";
+    if (c->sp < 0 || c->sp > fs)    return "Setpoint outside the sensor range";
     if (pv > fs)                    return "Pressure above the sensor range";
     if (!k->kdir)                   return "Pressure response not set";
     if (!(k->kp > 0) || k->ti < 0)  return "Tuning not set";

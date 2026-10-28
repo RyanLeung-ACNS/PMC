@@ -250,7 +250,7 @@ static bool start_set(int32_t v10, const char **why)
 
 static void keypad_start(void)
 {
-    ui_kp_t k = { .title = "Target for AUTO, mB", .info = range_info(), .dec = 1, .min = 0,
+    ui_kp_t k = { .title = "Setpoint for AUTO, mB", .info = range_info(), .dec = 1, .min = 0,
                   .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
                   .live_dec = 1, .on_set = start_set };
     ui_keypad_ex(&k);
@@ -274,8 +274,8 @@ static bool sp_set(int32_t v10, const char **why)
     if (v10 - now > (int32_t)(CTRL_SP_CONFIRM * 10) || now - v10 > (int32_t)(CTRL_SP_CONFIRM * 10)) {
         static char q[64];
         char b[16];
-        lv_snprintf(q, sizeof q, "Change target to %s mB?", ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
-        ui_confirm(q, "Change\ntarget", sp_change);
+        lv_snprintf(q, sizeof q, "Change setpoint to %s mB?", ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
+        ui_confirm(q, "Change\nsetpoint", sp_change);
         return true;
     }
     return valve_set_target(v10 * 100, why);
@@ -283,7 +283,7 @@ static bool sp_set(int32_t v10, const char **why)
 
 static void keypad_sp(void)
 {
-    ui_kp_t k = { .title = "Target, mB", .info = range_info(), .dec = 1, .min = 0,
+    ui_kp_t k = { .title = "Setpoint, mB", .info = range_info(), .dec = 1, .min = 0,
                   .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
                   .live_dec = 1, .on_set = sp_set };
     ui_keypad_ex(&k);
@@ -324,7 +324,7 @@ static void target_event(lv_event_t *e)
     if (valve_auto())
         keypad_sp();
     else
-        ui_msg(valve_mode() == VALVE_MANUAL ? "Target is used in AUTO: Start AUTO asks for it"
+        ui_msg(valve_mode() == VALVE_MANUAL ? "Setpoint is used in AUTO: Start AUTO asks for it"
                                             : not_manual_why());
 }
 
@@ -470,7 +470,7 @@ static void mode_event(lv_event_t *e)
         keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
     else if (m == VALVE_MANUAL) {
         lv_snprintf(q, sizeof q, "Start AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
-        ui_ask3(q, "Cancel", NULL, "New\ntarget", keypad_start, "Start\nAUTO", start_auto);
+        ui_ask3(q, "Cancel", NULL, "New\nsetpoint", keypad_start, "Start\nAUTO", start_auto);
     } else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
@@ -507,7 +507,7 @@ static void reset_event(lv_event_t *e)
 /* Build and refresh ------------------------------------------------------ */
 static void home_build(lv_obj_t *scr)
 {
-    make_tile(scr, &pt, 10, "Pressure", "mB", "Target", true, target_event);
+    make_tile(scr, &pt, 10, "Pressure", "mB", "Setpoint", true, target_event);
     make_tile(scr, &vt, 186, "Valve", "%", "Go to", false, goto_event);
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
@@ -567,20 +567,25 @@ static void home_refresh(void)
         lv_snprintf(buf, sizeof buf, "%d of 4", step < 1 ? 1 : step);
         ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
+        ui_btn_outline(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
         // Greyed while it would be refused (HMI review H1, 28 Oct); a press
         // still says why.
         ui_btn_text(mode_btn, "Start AUTO", NULL);
         ui_btn_enable(mode_btn, !valve_fault_count() && !supply_off());
+        ui_btn_outline(mode_btn, false);
         ui_btn_primary(mode_btn, true);
     } else if (m == VALVE_AUTO) {
-        // Plain in AUTO: nothing is expected of the operator (H4).
+        // Not filled in AUTO: nothing is expected of the operator (H4);
+        // outlined in Start AUTO's blue (Ryan, 28 Oct: plain white was not liked).
         ui_btn_text(mode_btn, "Switch to\nMANUAL", NULL);
         ui_btn_enable(mode_btn, true);
         ui_btn_primary(mode_btn, false);
+        ui_btn_outline(mode_btn, true);
     } else {
         ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
+        ui_btn_outline(mode_btn, false);
         ui_btn_primary(mode_btn, true);
     }
 

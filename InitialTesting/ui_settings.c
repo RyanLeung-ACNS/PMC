@@ -136,7 +136,7 @@ static const field_t F[CFG_N] = {
     [CFG_OUTMIN]  = { "AUTO min", "% open", 1, K_NUM, "AUTO never closes the valve below this" },
     [CFG_DB]      = { "Deadband", "steps", 0, K_NUM, "AUTO skips moves smaller than this" },
     [CFG_KDIR]    = { "Pressure response", NULL, 0, K_TOGGLE, "How the pressure moves when the valve opens; a needle valve feeding the pot normally raises it" },
-    [CFG_BAND]    = { "Target band", "mB", 2, K_NUM, "Within this of the target reads Within target band" },
+    [CFG_BAND]    = { "Setpoint band", "mB", 2, K_NUM, "Within this of the setpoint reads Within setpoint band" },
     [CFG_SENSOR]  = { "Sensor in use", NULL, 0, K_CHOICE, "The sensor read for the pressure" },
 };
 

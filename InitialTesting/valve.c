@@ -732,7 +732,7 @@ static void auto_step(void)
         break;
     case CTRL_W06:
         auto_end("W-6 Valve driven the wrong way: check KDIR");
-        ev("W-6", "At %s %% for %d s, pressure off target the wrong way: KDIR? AUTO ended, valve idle",
+        ev("W-6", "At %s %% for %d s, pressure off setpoint the wrong way: KDIR? AUTO ended, valve idle",
            pct_text(pc, sizeof pc, stepper3_position()), CTRL_TWRONG_S);
         break;
     case CTRL_F06:
@@ -767,7 +767,7 @@ bool valve_start_auto(const char **why)
     over_n = 0;
     update_lock();
     char a[16], p[16];
-    ev("MODE", "%s at target %s mbar, valve %s %%", "Auto",
+    ev("MODE", "%s at setpoint %s mbar, valve %s %%", "Auto",
        mbar_text(a, sizeof a, ctl.sp, 1), pct_text(p, sizeof p, now));
     return true;
 }
@@ -792,14 +792,14 @@ bool valve_set_target(int32_t mmbar, const char **why)
     int32_t fs = valve_range_mmbar();
     char a[16], b[16];
     if (mmbar < 0 || mmbar > fs) {
-        ev("SP", "Target %s rejected, allowed 0 to %s mbar", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
+        ev("SP", "Setpoint %s rejected, allowed 0 to %s mbar", fixed_fmt(a, sizeof a, fixed_round(mmbar, 2), 1),
            fixed_fmt(b, sizeof b, fixed_round(fs, 2), 1));
-        *why = "Target outside the sensor range";
+        *why = "Setpoint outside the sensor range";
         return false;
     }
     int32_t v = (int32_t)fixed_round(mmbar, 2);   // 0.1 mbar
     ctrl_set_sp(&ctl, (float)v / 10.0f, range_mbar(), lv_tick_get());
-    ev("SP", "Target %s mbar", fixed_fmt(a, sizeof a, v, 1));
+    ev("SP", "Setpoint %s mbar", fixed_fmt(a, sizeof a, v, 1));
     return true;
 }
 
