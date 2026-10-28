@@ -11,7 +11,7 @@ Map version 1, firmware 0.12.0 (writes on from 0.12.6). Ethernet build only (`PM
 
 ## Writes
 
-`PMC_MODBUS_WRITE` in `pmc_config.h` is 1 from 0.12.6, so anyone who can reach port 502 can set the target and run the valve. With `PMC_MODBUS_WRITE 0` the server is read only and every write (FC5, FC16) answers exception 1. A write to an address outside the map answers exception 2 either way.
+`PMC_MODBUS_WRITE` in `pmc_config.h` is 1 from 0.12.6, so anyone who can reach port 502 can set the target and run the valve. From 0.13.4 writes also need Settings > Name and network > Remote control On on the screen (Off by default, kept by Save settings); while it is Off every write answers exception 1 and the reads go on as before. With `PMC_MODBUS_WRITE 0` the server is read only and every write (FC5, FC16) answers exception 1, whatever the switch says. A write to an address outside the map answers exception 2 either way.
 
 With writes on, the writable registers and command coils go through the same calls as the screen buttons, so the same checks and refusals apply. A write the controller refuses answers exception 4 and logs a NET event with the reason ("Switch to MANUAL first", "No target set", ...). Each accepted write is logged as a NET event with the client's IP address.
 
@@ -59,7 +59,7 @@ Reading past address 25 answers exception 2, so read 0 to 25 (26 registers) in o
 | 5 | 21 | A fault is latched |
 | 6 | 22 | A warning is showing (W-1 to W-6) |
 | 7 | 23 | Target set |
-| 8 | 24 | Remote writes on (`PMC_MODBUS_WRITE 1`) |
+| 8 | 24 | Remote writes on (`PMC_MODBUS_WRITE 1` and Remote control On, 0.13.4) |
 | 9 | 25 | Motor 12 V supply on (always 1 without the supply sense) |
 
 ### Faults and warnings (registers 5 and 6)

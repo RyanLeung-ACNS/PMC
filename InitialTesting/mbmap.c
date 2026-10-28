@@ -5,6 +5,7 @@
 #include "clicks.h"
 #include "fixed.h"
 #include "lvgl.h"   // lv_tick_get, lv_strlcpy
+#include "cfg.h"
 #include "modbus.h"
 #include "sense.h"
 #include "stepper3.h"
@@ -65,9 +66,11 @@ static float get_f32(const uint16_t *v)
     return f;
 }
 
+// PMC_MODBUS_WRITE 0 refuses writes whatever the Remote control switch
+// says; with 1, writes need the switch On (0.13.4).
 bool mbmap_writes_allowed(void)
 {
-    return PMC_MODBUS_WRITE != 0;
+    return PMC_MODBUS_WRITE != 0 && cfg_remote();
 }
 
 void mbmap_begin(void)

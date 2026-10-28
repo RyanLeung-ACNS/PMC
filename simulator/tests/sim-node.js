@@ -20,7 +20,9 @@ function load(file) {
   const sim = {
     x, halted: () => halted,
     out: '',
-    boot(flash) {
+    // opts.remote: false leaves Remote control Off, as a new board; by
+    // default the tests turn it On first, so the link takes set commands.
+    boot(flash, opts = {}) {
       // application_init() runs once per instance, as on the board: use a new load() per boot.
       if (sim.booted) throw new Error('boot() twice on one instance: use a new load()');
       sim.booted = true;
@@ -29,6 +31,7 @@ function load(file) {
       if (flash) f.set(flash); else f.fill(0xff);
       const d = new Date(2026, 9, 24, 14, 0, 0);
       x.sim_boot(0, d.getTime() / 1000 - d.getTimezoneOffset() * 60);
+      if (opts.remote !== false) x.sim_remote(1);
     },
     run(ms) { for (let t = 0; t < ms; t += 100) { x.sim_run(Math.min(100, ms - t)); sim.drain(); } },
     drain() { const n = x.sim_tx_len(); if (n) { sim.out += Buffer.from(new Uint8Array(x.memory.buffer, x.sim_tx(), n)).toString(); x.sim_tx_clear(); } },

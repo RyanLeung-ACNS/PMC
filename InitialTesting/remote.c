@@ -12,11 +12,11 @@
 #include "sense.h"
 #include "valve.h"
 #include "remote.h"
+#include "cfg.h"
 #if PMC_LINK_ETHERNET
 #include "ethlink.h"
 #endif
 #if PMC_ENG_COMMANDS
-#include "cfg.h"
 #include "cal.h"
 #include "limit.h"
 #include "supply.h"
@@ -353,7 +353,9 @@ static void part(const char *c, bool chained)
     }
     if (query(c))
         return;
-    if (PMC_LINK_ETHERNET && !PMC_LINK_WRITE && !is_query) {
+    // Over the network, set commands (STOP included) need PMC_LINK_WRITE 1
+    // and the Remote control switch On (0.13.4); a USB link is local.
+    if (PMC_REMOTE_SWITCH && !is_query && (!PMC_LINK_WRITE || !cfg_remote())) {
         refuse(211, "Read only over the network");
         return;
     }

@@ -72,6 +72,11 @@ firmware 0.12.21 and earlier does not answer these commands.
   valve poll (every 2 s) `VALV?;MODE?;VALV MOVING?`.
 - An `ERR` from the board comes back to the SECoP client as an error with
   the board's text, for example `Switch to MANUAL first`.
+- From firmware 0.13.4 the board takes set commands over the network only
+  while Settings > Name and network > Remote control is On (Off on a new
+  board, kept by Save settings). While Off, the readings still update and
+  every change (target, mode, valve, stop, alarm reset) comes back as
+  `Read only over the network` (ERR 211).
 - The driver has been tested against `tests/fake_mm4.py` only, not yet
   against a board.
 

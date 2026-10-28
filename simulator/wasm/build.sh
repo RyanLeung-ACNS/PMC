@@ -18,7 +18,7 @@ ZIG=${ZIG:-"python3 -m ziglang"}
 ENG=${PMC_ENG_COMMANDS:-1}
 mkdir -p "$OUT/lvgl" "$OUT/patched"
 
-CFLAGS="-target wasm32-wasi -O2 -w -DPMC_MOTOR_SENSE=1 -DPMC_LINK_ETHERNET=0 -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
+CFLAGS="-target wasm32-wasi -O2 -w -DPMC_MOTOR_SENSE=1 -DPMC_LINK_ETHERNET=0 -DPMC_REMOTE_SWITCH=1 -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
   -I$HERE/include -I$PROJ/lvgl_940 -I$PROJ -I$PROJ/build-MM4/generated -I$HERE"
 
 if [ ! -f "$OUT/liblvgl.a" ]; then

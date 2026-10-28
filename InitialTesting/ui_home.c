@@ -463,7 +463,7 @@ static void mode_event(lv_event_t *e)
     if (m == VALVE_CALIBRATING)
         ui_msg("Homing: STOP to cancel");
     else if (m == VALVE_AUTO)
-        ui_manual_ask();
+        to_manual();   // no confirm (Ryan, 28 Oct); Go to in AUTO still asks
     else if (m == VALVE_MANUAL && valve_fault_count())
         ui_msg("Reset the fault first");
     else if (m == VALVE_MANUAL && !have)

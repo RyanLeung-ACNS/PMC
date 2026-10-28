@@ -757,7 +757,7 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9], *sup;   // v[5] unused since 0.12.9
+    lv_obj_t *v[9], *sup;   // v[5] the board temperature from 0.13.4; v[7] unused
 } dp;
 
 // Valve motor row: position and limit switch, at 50 Hz so the switch
@@ -774,14 +774,16 @@ static void diag_motor(lv_timer_t *t)
 
 static void diag_build(lv_obj_t *scr)
 {
-    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
+    // The board temperature in the bottom row from 0.13.4, as the strip
+    // shows the Home status line (Ryan, 28 Oct); Moved, steps went.
+    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Controller" };
     // The valve motor row: supply, steps, limit switch ("Past limit" went
     // in 0.12.9, Ryan 26 Oct).
     static const char *const caps[9] = { "Signal, mV", "Supply, V", "Before cal, mB",
                                          "Supply, V", "Steps", "Limit switch",
-                                         "Result", "Moved, steps", "Took, s" };
+                                         "Temperature, \xC2\xB0" "C", "Last move", "Move took, s" };
     lv_obj_t **const to[9] = { &dp.v[0], &dp.v[1], &dp.v[2], &dp.sup, &dp.v[3], &dp.v[4],
-                               &dp.v[6], &dp.v[7], &dp.v[8] };
+                               &dp.v[5], &dp.v[6], &dp.v[8] };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
         // 16 px as the Menu captions, centred on the row (Ryan, 22 Oct).
@@ -823,8 +825,6 @@ static void diag_refresh(void)
         default: break;
     }
     ui_set_text(dp.v[6], res);
-    lv_snprintf(buf, sizeof buf, "%ld", (long)(stepper3_position() - from));
-    ui_set_text(dp.v[7], any ? buf : "--");
     ui_set_text(dp.v[8], any ? ui_fmt1(buf, sizeof buf, ms) : "--");
     // Motor supply (supply.h): coloured only when abnormal.
     supply_state_t sup = supply_state();
@@ -835,12 +835,11 @@ static void diag_refresh(void)
     ui_set_text(dp.sup, buf);
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
-    // Raw readings only (0.13.2, Ryan 28 Oct): the board temperature here;
-    // the firmware, address and MAC are on Settings > Name and network, and
-    // Restart moved there too.
-    char t[16], info[48];
-    lv_snprintf(info, sizeof info, "Controller %s \xC2\xB0" "C", ui_fmt1(t, sizeof t, s->die_mc));
-    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, info);
+    // Raw readings only (0.13.2, Ryan 28 Oct); the firmware, address, MAC
+    // and Restart are on Settings > Name and network. The strip is Home's
+    // status line from 0.13.4 (Ryan, 28 Oct).
+    ui_set_text(dp.v[5], ui_fmt1(buf, sizeof buf, s->die_mc));
+    ui_status_line();
 }
 
 const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };

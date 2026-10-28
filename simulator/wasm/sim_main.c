@@ -410,3 +410,5 @@ EXPORT(sim_run) void sim_run(int ms)
 }
 
 EXPORT(sim_version) const char *sim_version(void) { return PMC_FW_VERSION; }
+// The Remote control switch, for tests (the screen's Settings > Name and network).
+EXPORT(sim_remote) void sim_remote(int on) { cfg_set_remote(on != 0); }

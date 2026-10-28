@@ -33,6 +33,7 @@ static const char *warn;
 static bool question, fault_f5, busy, limit_open;
 static int resets, stops;
 static char last_event[160];
+static bool remote = true;   // the Remote control switch (0.13.4)
 
 const clicks_state_t *clicks_state(void) { return &cs; }
 valve_mode_t valve_mode(void) { return mode; }
@@ -54,6 +55,7 @@ int32_t valve_target_pct_milli(void) { return goto_milli; }
 bool stepper3_busy(void) { return busy; }
 bool stepper3_limit_open(void) { return limit_open; }
 bool supply_off(void) { return false; }
+bool cfg_remote(void) { return remote; }
 bool sense_hot(int32_t *d) { *d = cs.die_mc; return cs.die_mc >= 55000; }
 uint32_t lv_tick_get(void) { return 123456789u; }   // 123456 s up
 int lv_snprintf(char *b, size_t n, const char *fmt, ...)
@@ -227,6 +229,13 @@ static void tests(void)
     REQ(0x05, 0, 3, 0xFF, 0); CHECK(warn == NULL);
     // Status coils are read only.
     REQ(0x05, 0, 16, 0xFF, 0); CHECK(is_ex(5, MODBUS_EX_ADDRESS));
+    // Remote control Off (0.13.4): writes refused, reads answer, the writes bit clear.
+    remote = false;
+    f32(6.0f, w + 6); req(sizeof w, w); CHECK(is_ex(0x10, MODBUS_EX_FUNCTION) && sp != 6000);
+    REQ(0x05, 0, 1, 0xFF, 0); CHECK(is_ex(5, MODBUS_EX_FUNCTION) && stops == 1);
+    REQ(0x03, 0, 3, 0, 1);    CHECK(rlen == 11 && ((r16(0) >> 8) & 1) == 0);
+    remote = true;
+    REQ(0x03, 0, 3, 0, 1);    CHECK(((r16(0) >> 8) & 1) == 1);
 #else
     CHECK(is_ex(0x10, MODBUS_EX_FUNCTION) && !sp_set);
     REQ(0x05, 0, 0, 0xFF, 0); CHECK(is_ex(5, MODBUS_EX_FUNCTION) && mode == VALVE_MANUAL);

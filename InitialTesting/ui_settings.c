@@ -737,7 +737,7 @@ const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
  * Name and network (Settings, 0.12.13): the cryostat name and the Ethernet
  * fallback address, the one used when no DHCP server answers (Ryan, 26 Oct).
  * ------------------------------------------------------------------------ */
-static struct { lv_obj_t *name, *net, *now, *mac, *fw; } nn;
+static struct { lv_obj_t *name, *net, *now, *mac, *fw, *remote; } nn;
 
 static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
 
@@ -766,6 +766,14 @@ static void restart_cb(lv_event_t *e)
     ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
 }
 
+// Remote control (0.13.4, Ryan 28 Oct, network plan A): one press turns it
+// On or Off, live at once, kept by Save settings like the name.
+static void remote_cb(lv_event_t *e)
+{
+    (void)e;
+    cfg_set_remote(!cfg_remote());
+}
+
 static void nn_build(lv_obj_t *scr)
 {
     nn.name = ui_btn(scr, 10, RY[0], 226, RH, UI_NAV, "Cryostat name", nn_go, (void *)&ui_scr_name);
@@ -773,8 +781,9 @@ static void nn_build(lv_obj_t *scr)
     nn.now = ui_info(scr, 10, RY[1], 226, RH, "Address in use");
     // The MAC, for a DHCP reservation (Ryan, 28 Oct).
     nn.mac = ui_info(scr, 244, RY[1], 226, RH, "MAC address");
-    nn.fw = ui_info(scr, 10, RY[2], 226, RH, "Firmware");
-    ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
+    nn.remote = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Remote control", remote_cb, NULL);
+    nn.fw = ui_info(scr, 244, RY[2], 109, RH, "Firmware");
+    ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
 }
 
 static void nn_refresh(void)
@@ -797,6 +806,7 @@ static void nn_refresh(void)
     ui_set_text(nn.mac, "None, USB build");
 #endif
     ui_set_text(nn.fw, PMC_FW_VERSION);
+    ui_btn_text(nn.remote, "Remote control", cfg_remote() ? "On: the network can set" : "Off: the network can only read");
     ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, cfg_net_restart_due()
                  ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
 }

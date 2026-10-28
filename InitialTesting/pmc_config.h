@@ -23,6 +23,15 @@
 // target, MANUAL/AUTO, valve %, STOP, the alarm reset and OK, the clock.
 #define PMC_LINK_WRITE    1
 
+// Remote control switch (0.13.4, Ryan 28 Oct, network plan A): set commands
+// on the text link need Settings > Name and network > Remote control On, as
+// do Modbus writes (PMC_MODBUS_WRITE). Off by default. PMC_LINK_WRITE and
+// PMC_MODBUS_WRITE 0 still mean never. 1 for the Ethernet build; the USB
+// link is local and not switched. The simulator builds with 1, as the board.
+#ifndef PMC_REMOTE_SWITCH
+#define PMC_REMOTE_SWITCH PMC_LINK_ETHERNET
+#endif
+
 // The text link takes the remote command set only (0.13.0, Ryan 27 Oct):
 // what an operator can use and judge away from the system (remote.h).
 // Homing, calibration, settings, tuning, saving and the motor are on the
@@ -34,7 +43,7 @@
 #endif
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.13.3"
+#define PMC_FW_VERSION    "0.13.4"
 
 // Valve limit switch: one NC dry contact to GND on S2 PWM, PD13.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).

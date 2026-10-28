@@ -1,16 +1,21 @@
 // The simulated board on a TCP port, in real time, for a driver to talk to:
-//   node simulator/tests/tcp-board.js [port] [speed]
+//   node simulator/tests/tcp-board.js [port] [speed] [--remote-off]
 // Port 8888 by default, as the board; speed runs the simulation faster than
 // the clock (2 = twice as fast). The valve is homed and set to 5 % before
-// the port opens. One client at a time; a new one replaces the old, as on
+// the port opens. Remote control is On, as after an operator turned it On
+// on the screen; --remote-off leaves it Off, as a new board (set commands
+// answer ERR 211). One client at a time; a new one replaces the old, as on
 // the board.
 const net = require('net');
 const { load } = require('./sim-node.js');
-const port = Number(process.argv[2] || 8888), speed = Number(process.argv[3] || 1);
+const argv = process.argv.slice(2).filter(a => a !== '--remote-off');
+const port = Number(argv[0] || 8888), speed = Number(argv[1] || 1);
+const remoteOff = process.argv.includes('--remote-off');
 
-const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
+const s = load(); s.boot(undefined, { remote: true }); s.set(5, 40000); s.run(2000);
 s.cmd('VALVE CAL', 120000);          // an engineering command: the simulator builds with them
 s.cmd('VALV SET 5', 30000);
+if (remoteOff) s.x.sim_remote(0);
 s.out = '';
 
 let client = null, rx = '';

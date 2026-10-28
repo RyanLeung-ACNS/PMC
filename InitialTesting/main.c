@@ -123,7 +123,7 @@ void application_init()
 
     // Druck calibration from the on-board serial flash (nominal if none stored).
     cal_init();
-    ui_splash_step(1, 4);
+    ui_splash_step(15, 100);
 
     // Click boards on the shield. Stepper coils off; the motor only moves
     // when the valve is moved (screen or link).
@@ -131,17 +131,22 @@ void application_init()
     limit_init();
     supply_init();   // motor 12 V on PA3
     valve_init();   // NOT HOMED: nothing moves until homed or moved on the screen
-    ui_splash_step(2, 4);
+    ui_splash_step(30, 100);
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
     // The valve position saved at the last standstill: offered on the
     // screen (Use saved / Calibrate), never used by itself.
     valvepos_init();
-    ui_splash_step(3, 4);
+    ui_splash_step(45, 100);
 
     // The frame and Home. The 0.6.0 motor screen is built the first time
     // Menu > Motor opens it, which keeps its LVGL heap free until then.
-    ui_splash_step(4, 4);
+    // The board is ready in about a second; the bar then fills over 1.6 s
+    // more so the screen can be read (Ryan, 28 Oct). No delay in the simulator.
+    for (int pct = 46; pct <= 100; pct++) {
+        Delay_ms(30);
+        ui_splash_step(pct, 100);
+    }
     ui_init();
 
     // Draw the screen once first, so a link start-up fault cannot leave it blank.

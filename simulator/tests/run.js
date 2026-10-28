@@ -195,5 +195,16 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('ALRM RESET clears it', t.cmd('ALRM RESET;ALRM?') === 'ALRM NONE\r\n', t.cmd('ALRM?'));
   check('nothing sent unasked over a run', (t.cmd('PRES SP 5;MODE AUTO', 60000), t.out === ''), t.out);
 }
+{ // Remote control switch (0.13.4): Off, the link takes queries only; On from the screen, it takes sets.
+  const s = load(); s.boot(undefined, { remote: false }); s.set(5, 40000); s.run(2000);
+  check('switch Off: PRES SP refused', s.cmd('PRES SP 5') === 'ERR 211 Read only over the network\r\n', s.cmd('PRES SP 5'));
+  check('switch Off: STOP refused', s.cmd('STOP') === 'ERR 211 Read only over the network\r\n');
+  check('switch Off: queries answer', s.cmd('MODE?;PRES SP?') === 'MODE NOT HOMED;PRES SP NONE\r\n', s.cmd('MODE?;PRES SP?'));
+  s.tap(415, 184); s.tap(379, 184); s.tap(120, 72); s.tap(120, 184);   // Menu, Settings, Name and network, Remote control
+  check('switch On from the screen: PRES SP taken', s.cmd('PRES SP 5;PRES SP?') === 'PRES SP 5.0 mbar\r\n', s.cmd('PRES SP?'));
+  check('switch On is a NET event', /NET,Remote control on \(screen\)/.test(events(s, 5)), events(s, 5));
+  s.tap(120, 184);
+  check('switch Off again: refused', s.cmd('PRES SP 6') === 'ERR 211 Read only over the network\r\n');
+}
 console.log(failed ? failed + ' failed' : 'all passed');
 process.exit(failed ? 1 : 0);

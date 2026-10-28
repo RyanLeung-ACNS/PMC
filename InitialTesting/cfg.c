@@ -18,6 +18,9 @@
  * the crc field. One per 4 KB sector, two sectors used in turn, the higher
  * rev is the newest. Below the old cal record at 0x7FF000.
  *
+ * Version 5 (0.13.4) adds the Remote control switch (0 Off, 1 On); older
+ * records load with it Off.
+ *
  * Version 4 (0.12.13) adds the Ethernet fallback address and mask (0 for
  * the build's PMC_FALLBACK_IP); version 3 records load with 0.
  *
@@ -33,7 +36,7 @@
 #define CFG_ADDR_A   0x7FD000UL
 #define CFG_ADDR_B   0x7FE000UL
 #define CFG_MAGIC    0x47464350UL   // "PCFG"
-#define CFG_VERSION  4
+#define CFG_VERSION  5
 
 enum { M_RATE, M_START, M_ACCEL, M_MODE, M_HOLD, M_DIR, M_ORDER, M_N };
 static const char *const mot_name[M_N] = { "RATE", "START", "ACCEL", "MODE", "HOLD", "DIR", "ORDER" };
@@ -87,8 +90,24 @@ typedef struct {
     char saved_at[20];           // "YYYY-MM-DD HH:MM:SS", "" if the clock was not set
     char name[CFG_NAME_LEN + 4]; // cryostat name, NUL-terminated (version 3)
     uint32_t net_ip, net_mask;   // fallback address, a.b.c.d as a << 24 | ...; 0 0 = build default (version 4)
+    uint32_t remote;             // Remote control: 0 Off, 1 On (version 5)
     uint32_t crc;
 } cfg_rec_t;
+
+// Version 4 (0.12.13 to 0.13.3), read only: version 5 without the switch.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[VALVE_N_SETTINGS];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t net_ip, net_mask;
+    uint32_t crc;
+} cfg_rec_v4_t;
+_Static_assert(offsetof(cfg_rec_v4_t, crc) == offsetof(cfg_rec_t, remote), "v4 is v5 up to the switch");
 
 // Version 3 (0.10.9 to 0.12.12), read only: version 4 without the address.
 typedef struct {
@@ -140,6 +159,8 @@ static char cname[CFG_NAME_LEN + 1] = FACTORY_NAME;
 // Live fallback address (unsaved until a save, like the name), and the one
 // loaded at start-up, which the Ethernet link uses until the next restart.
 static uint32_t net_ip, net_mask, net_boot_ip, net_boot_mask;
+// Live Remote control switch (0.13.4): Off until a save with it On is loaded.
+static bool remote_on;
 
 static const uint32_t slot_addr[2] = { CFG_ADDR_A, CFG_ADDR_B };
 static cfg_rec_t slot[2];        // as read from each sector (version 1 converted)
@@ -231,6 +252,7 @@ static void capture(cfg_rec_t *r)
     lv_strlcpy(r->name, cname, sizeof r->name);
     r->net_ip = net_ip;
     r->net_mask = net_mask;
+    r->remote = remote_on;
     cfg_sens_t *a = &r->sens[active_sens];
     a->has_cal = !cal_is_default();
     if (a->has_cal)
@@ -268,6 +290,8 @@ static const char *values_why(const cfg_rec_t *r)
         return "NAME";
     if (cfg_net_why(r->net_ip, r->net_mask))
         return "NET IP";
+    if (r->remote > 1)
+        return "REMOTE";
     for (uint32_t i = 0; i < r->nsens; i++) {
         const cfg_sens_t *q = &r->sens[i];
         if (q->psi10 < 10 || q->psi10 > 10000 || q->has_cal > 1 || (q->has_cal && !cal_record_ok(&q->cal)))
@@ -298,7 +322,7 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
 
-// A version 2 record as version 4: the default name and address.
+// A version 2 record as version 5: the default name and address, Remote control Off.
 static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
@@ -308,11 +332,20 @@ static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
 
-// A version 3 record as version 4: the build's fallback address.
+// A version 3 record as version 5: the build's fallback address, Remote control Off.
 static void from_v3(const cfg_rec_v3_t *v, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
     memcpy(r, v, offsetof(cfg_rec_v3_t, crc));
+    r->version = CFG_VERSION;
+    r->size = sizeof *r;
+}
+
+// A version 4 record as version 5: Remote control Off.
+static void from_v4(const cfg_rec_v4_t *v, cfg_rec_t *r)
+{
+    memset(r, 0, sizeof *r);
+    memcpy(r, v, offsetof(cfg_rec_v4_t, crc));
     r->version = CFG_VERSION;
     r->size = sizeof *r;
 }
@@ -324,6 +357,7 @@ static const char *read_slot(int i)
         cfg_rec_v1_t v1;
         cfg_rec_v2_t v2;
         cfg_rec_v3_t v3;
+        cfg_rec_v4_t v4;
     } old;
     cfg_rec_t *r = &slot[i];
     extflash_read(slot_addr[i], r, sizeof *r);
@@ -345,6 +379,11 @@ static const char *read_slot(int i)
         if (old.v3.crc != crc32(&old.v3, offsetof(cfg_rec_v3_t, crc)))
             return "CRC mismatch";
         from_v3(&old.v3, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 4 && r->size == sizeof old.v4) {
+        memcpy(&old.v4, r, sizeof old.v4);
+        if (old.v4.crc != crc32(&old.v4, offsetof(cfg_rec_v4_t, crc)))
+            return "CRC mismatch";
+        from_v4(&old.v4, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
         return "not a settings record of this version";
     } else if (r->crc != rec_crc(r)) {
@@ -449,6 +488,12 @@ static int diff(const cfg_rec_t *live, const cfg_rec_t *b, bool print, char *buf
             link_printf("CFG DIFF NET saved %s, now %s\r\n", x[1], x[0]);
         }
     }
+    if (live->remote != b->remote) {
+        count++;
+        LINE("Remote control: %s\n", live->remote ? "On" : "Off");
+        if (print)
+            link_printf("CFG DIFF REMOTE saved %s, now %s\r\n", b->remote ? "On" : "Off", live->remote ? "On" : "Off");
+    }
     if (live->sens[live->active].serial != b->sens[b->active].serial) {
         count++;
         if (print)
@@ -531,6 +576,10 @@ static bool apply(const cfg_rec_t *r, bool with_sensors)
     lv_strlcpy(cname, r->name, sizeof cname);
     net_ip = r->net_ip;
     net_mask = r->net_mask;
+    if ((r->remote != 0) != remote_on) {
+        remote_on = r->remote != 0;
+        valve_event("NET", remote_on ? "Remote control on (settings loaded)" : "Remote control off (settings loaded)");
+    }
     if (with_sensors) {
         nsens = r->nsens;
         active_sens = r->active;
@@ -574,6 +623,7 @@ void cfg_init(void)
     sens[0].serial = FACTORY_SERIAL;
     sens[0].psi10 = FACTORY_PSI10;
     net_ip = net_mask = 0;
+    remote_on = false;
     // The cal found by cal_init() (old record, or nominal) is the factory sensor's.
     tell_cal();
     capture(&factory);
@@ -1110,6 +1160,22 @@ void cfg_net_boot(char ip[16], char mask[16])
 }
 
 bool cfg_net_restart_due(void) { return net_ip != net_boot_ip || net_mask != net_boot_mask; }
+
+/* --------------------------------------------------------------------------
+ * Remote control (0.13.4, Ryan 28 Oct, network plan A): while Off, set
+ * commands over the network (port 8888, STOP included) and Modbus writes are
+ * refused; queries and reads are not. Live at once, kept by a save.
+ * ------------------------------------------------------------------------ */
+bool cfg_remote(void) { return remote_on; }
+
+void cfg_set_remote(bool on)
+{
+    if (on == remote_on)
+        return;
+    remote_on = on;
+    valve_event("NET", on ? "Remote control on (screen): the network can set" :
+                            "Remote control off (screen): the network can only read");
+}
 
 #if PMC_ENG_COMMANDS   // NET?, NET IP, PID?, PID, CFG (engineering)
 // NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
