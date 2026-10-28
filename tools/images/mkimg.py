@@ -1,7 +1,7 @@
 # Converts a PNG to an LVGL 9 RGB565 image in C, scaled to a height, near-white made white
 # so the picture has no visible edge on the white start-up screen (0.13.13).
 # Usage, from the repo root:
-#   python3 tools/images/mkimg.py tools/images/mercshore-ipc-logo.png 168 ui_img_logo InitialTesting/ui_img_logo.c
+#   python3 tools/images/mkimg.py tools/images/mercshore-ipc-logo.png 136 ui_img_logo InitialTesting/ui_img_logo.c
 import sys
 from PIL import Image
 src, h, name, out = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]

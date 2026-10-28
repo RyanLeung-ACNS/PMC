@@ -1469,9 +1469,10 @@ static void question_check(void)
  * From 0.13.13 Ryan's MercShore iPC logo on white (his picture, 28 Oct;
  * ui_img_logo.c from tools/images/) and a rounded bar that fills as main.c
  * starts each part; no text (0.13.14, Ryan: the check results under the
- * bar went). Deleted by ui_init. */
-#define SPL_BAR_X 100
-#define SPL_BAR_W 280
+ * bar went). Logo 270x136 with more white round it, bar 220 px wide
+ * (0.13.17, Ryan: the graphic was slightly too big). Deleted by ui_init. */
+#define SPL_BAR_X 130
+#define SPL_BAR_W 220
 
 static lv_obj_t *splash_scr, *splash_fill;
 static int splash_pct, splash_to, splash_hold;
@@ -1514,11 +1515,11 @@ void ui_splash(void)
     LV_IMAGE_DECLARE(ui_img_logo);
     lv_obj_t *img = lv_image_create(s);
     lv_image_set_src(img, &ui_img_logo);
-    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 24);
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 44);
     // The bar as in the picture: a pale track with a thin blue-grey edge and
     // a fill from light to deep blue.
     lv_obj_t *t = plain(s);
-    lv_obj_set_pos(t, SPL_BAR_X, 206);
+    lv_obj_set_pos(t, SPL_BAR_X, 200);
     lv_obj_set_size(t, SPL_BAR_W, 14);
     lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(t, lv_color_hex(0xE6E8EC), 0);
