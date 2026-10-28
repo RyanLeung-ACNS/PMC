@@ -128,11 +128,10 @@ void application_init()
     // Initialize board peripherals and LVGL drivers.
     board_init();
     // The start-up screen until Home is built (0.13.3): from 0.13.13 the
-    // logo, a bar and each check's result under it as it is made, paced so
-    // it can be read (Ryan, 28 Oct; the board is ready in about a second).
-    // No delay in the simulator.
+    // logo and a bar that fills as each part starts, paced so it can be
+    // seen (Ryan, 28 Oct; the board is ready in about a second). No delay
+    // in the simulator.
     ui_splash();
-    ui_splash_line(!sysinfo_reset_abnormal(), "Last reset", "%s", sysinfo_reset_reason());
 
     // Druck calibration from the on-board serial flash (nominal if none stored).
     cal_init();
@@ -143,54 +142,22 @@ void application_init()
     limit_init();
     supply_init();   // motor 12 V on PA3
     valve_init();   // NOT HOMED: nothing moves until homed or moved on the screen
-    splash_wait(200);
-    clicks_poll();   // the excitation once the Boost 10 has settled
-    const clicks_state_t *cs = clicks_state();
-    char v[24];
-    ui_splash_line(cs->pm_found, "Power monitor", cs->pm_found ? "INA228 found" : "INA228 not answering");
-    splash_wait(180);
-    ui_splash_line(!cs->boost_tripped && cs->bus_mv >= 9500 && cs->bus_mv <= 10500, "Druck excitation",
-                   cs->boost_tripped ? "tripped" : "%s V", ui_fmt2(v, sizeof v, cs->bus_mv));
-    splash_wait(180);
-    ui_splash_line(cs->reading_ok, "Pressure", cs->reading_ok ? "%s mbar" : cs->druck_absent ? "no Druck signal" : "no reading",
-                   ui_fmt1(v, sizeof v, cs->p_mmbar));
+    ui_splash_step(40);
+    splash_wait(500);
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
-    splash_wait(180);
-    {
-        uint32_t rev;
-        const char *at;
-        char d[24];
-        if (!cfg_flash_ok())
-            ui_splash_line(false, "Settings", "serial flash not found, defaults");
-        else if (cfg_rev(CFG_FROM_SAVED, &rev, &at))
-            ui_splash_line(true, "Settings", "rev %lu, saved %s", (unsigned long)rev, at && at[0] ? ui_date(d, sizeof d, at) : "");
-        else
-            ui_splash_line(true, "Settings", "factory defaults");
-    }
+    ui_splash_step(65);
+    splash_wait(400);
     // The valve position saved at the last standstill: offered on the
     // screen (Use saved / Calibrate), never used by itself.
     valvepos_init();
-    splash_wait(180);
-    {
-        int32_t q;
-        if (valvepos_offer(&q)) {
-            int32_t pm = valve_pos_max();
-            ui_fmt2(v, sizeof v, ((int64_t)q * 100000 + (q >= 0 ? pm / 2 : -pm / 2)) / pm);
-            ui_splash_line(true, "Valve position", "last saved %s %%, not homed", v);
-        } else {
-            ui_splash_line(true, "Valve position", "not homed");
-        }
-    }
-    splash_wait(180);
-#if PMC_LINK_ETHERNET
-    ui_splash_line(true, "Network", "Ethernet, remote control %s", cfg_remote() ? "On" : "Off");
-#else
-    ui_splash_line(true, "Network", "USB COM port");
-#endif
-    splash_wait(300);
-    ui_splash_done();
+    ui_splash_step(90);
     splash_wait(500);
+    ui_splash_done();
+    // Until the bar is full (it may lag behind after a pause), then a beat.
+    for (int n = 0; n < 100 && !ui_splash_tick(); n++)
+        Delay_ms(30);
+    splash_wait(300);
 
     // The frame and Home. The 0.6.0 motor screen is built the first time
     // Menu > Motor opens it, which keeps its LVGL heap free until then.

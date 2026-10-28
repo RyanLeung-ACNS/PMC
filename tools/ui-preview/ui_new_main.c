@@ -332,14 +332,11 @@ int main(int argc, char **argv)
     memset(flash, 0xFF, 8u << 20);
     if (strcmp(st, "nosave"))
         seed_flash();
-    if (!strcmp(st, "splash")) {   // the start-up screen (0.13.3; logo from 0.13.13), four checks made
+    if (!strcmp(st, "splash")) {   // the start-up screen (0.13.3; logo from 0.13.13), part way
         ui_splash();
-        ui_splash_line(true, "Last reset", "%s", "power-on");
-        ui_splash_line(true, "Power monitor", "INA228 found");
-        ui_splash_line(true, "Druck excitation", "%s V", "10.02");
-        ui_splash_line(true, "Pressure", "%s mbar", "1013.2");
-        for (int i = 0; i < 25; i++)
-            ui_splash_tick();   // the bar caught up with them
+        ui_splash_step(65);
+        for (int i = 0; i < 60; i++)
+            ui_splash_tick();   // the bar caught up
         FILE *f = fopen(argv[2], "wb");
         if (!f) { perror(argv[2]); return 1; }
         fwrite(fb, sizeof fb, 1, f);

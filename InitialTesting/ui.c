@@ -1,4 +1,3 @@
-#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1463,16 +1462,15 @@ static void question_check(void)
 /* Start-up screen (0.13.3, Ryan 28 Oct): from the first frame until
  * ui_init, so the panel never shows what its memory held at power-up.
  * From 0.13.13 Ryan's MercShore iPC logo on white (his picture, 28 Oct;
- * ui_img_logo.c from tools/images/), a rounded bar that fills as main.c
- * makes each start-up check, and that check's result under it in small
- * grey text, amber if it failed (0.13.10 had them as an old PC's self
- * test). Deleted by ui_init. */
+ * ui_img_logo.c from tools/images/) and a rounded bar that fills as main.c
+ * starts each part; no text (0.13.14, Ryan: the check results under the
+ * bar went). Deleted by ui_init. */
 #define SPL_BAR_X 100
 #define SPL_BAR_W 280
-#define SPL_CHECKS 7   // ui_splash_line calls in main.c
 
-static lv_obj_t *splash_scr, *splash_fill, *splash_msg;
-static int splash_n, splash_pct, splash_to;
+static lv_obj_t *splash_scr, *splash_fill;
+static int splash_pct, splash_to, splash_hold;
+static uint32_t splash_seed;
 
 const char *ui_fw_text(void)
 {
@@ -1498,7 +1496,13 @@ static void splash_bar(void)
 void ui_splash(void)
 {
     lv_obj_t *s = splash_scr = lv_screen_active();
-    splash_n = splash_pct = splash_to = 0;
+    splash_pct = splash_to = splash_hold = 0;
+    // Seed the stutter from the clock so each start looks different.
+    splash_seed = lv_tick_get() | 1;
+    for (const char *c = rtclock_iso(); *c; c++)
+        splash_seed = splash_seed * 31 + (uint8_t)*c;
+    if (!splash_seed)
+        splash_seed = 1;
     lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(s, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
@@ -1525,52 +1529,51 @@ void ui_splash(void)
     lv_obj_set_style_bg_grad_dir(splash_fill, LV_GRAD_DIR_HOR, 0);
     lv_obj_set_style_radius(splash_fill, LV_RADIUS_CIRCLE, 0);
     splash_bar();
-    splash_msg = ui_label(s, 0, 228, 480, &ui_font_12, lv_color_hex(0x6B7A8C), LV_TEXT_ALIGN_CENTER, "");
     lv_obj_t *v = ui_label(s, 0, 252, 470, &ui_font_12, lv_color_hex(0x9AA6B4), LV_TEXT_ALIGN_RIGHT, "");
     lv_label_set_text(v, ui_fw_text());
     lv_refr_now(NULL);
 }
 
-void ui_splash_line(bool ok, const char *what, const char *fmt, ...)
+void ui_splash_step(int pct)
 {
-    if (!splash_scr)
-        return;
-    char v[40], t[72];
-    va_list ap;
-    va_start(ap, fmt);
-    lv_vsnprintf(v, sizeof v, fmt, ap);
-    va_end(ap);
-    lv_snprintf(t, sizeof t, "%s: %s", what, v);
-    lv_label_set_text(splash_msg, t);
-    lv_obj_set_style_text_color(splash_msg, ok ? lv_color_hex(0x6B7A8C) : lv_color_hex(0xB86E00), 0);
-    if (splash_n < SPL_CHECKS)
-        splash_n++;
-    splash_to = 90 * splash_n / SPL_CHECKS;
-    lv_refr_now(NULL);
+    splash_to = pct;
 }
 
-void ui_splash_tick(void)
+// The bar stutters on purpose (0.13.14, Ryan: "random stuttering ...
+// artificial"): a tick either pauses 90 to 360 ms (1 in 10), jumps 8 to
+// 17 % (2 in 10) or creeps 2 to 6 %, never past main.c's goal. Start-up
+// is about 2 s, at most about 3.5 s.
+int ui_splash_tick(void)
 {
-    if (!splash_scr || splash_pct >= splash_to)
-        return;
-    splash_pct += 3;
+    if (!splash_scr)
+        return 1;
+    if (splash_pct >= splash_to)
+        return splash_pct >= 100;
+    if (splash_hold > 0) {
+        splash_hold--;
+        return 0;
+    }
+    uint32_t r = splash_seed;
+    r ^= r << 13;
+    r ^= r >> 17;
+    r ^= r << 5;
+    splash_seed = r;
+    switch (r % 10) {
+    case 0: splash_hold = 3 + (int)((r >> 8) % 10); return 0;
+    case 1:
+    case 2: splash_pct += 8 + (int)((r >> 8) % 10); break;
+    default: splash_pct += 2 + (int)((r >> 8) % 5); break;
+    }
     if (splash_pct > splash_to)
         splash_pct = splash_to;
     splash_bar();
     lv_refr_now(NULL);
+    return splash_pct >= 100;
 }
 
 void ui_splash_done(void)
 {
-    if (!splash_scr)
-        return;
-    char t[48];
-    lv_snprintf(t, sizeof t, "Starting %s", cfg_name()[0] ? cfg_name() : "the controller");
-    // A failed check stays on show; otherwise the last line gives way.
-    if (lv_color_eq(lv_obj_get_style_text_color(splash_msg, 0), lv_color_hex(0x6B7A8C)))
-        lv_label_set_text(splash_msg, t);
     splash_to = 100;
-    lv_refr_now(NULL);
 }
 
 void ui_init(void)
@@ -1586,7 +1589,7 @@ void ui_init(void)
     lv_screen_load(home_scr);
     if (splash_scr) {
         lv_obj_delete(splash_scr);
-        splash_scr = splash_fill = splash_msg = NULL;
+        splash_scr = splash_fill = NULL;
     }
     frame_refresh();
     lv_timer_create(refresh_timer, 500, NULL);

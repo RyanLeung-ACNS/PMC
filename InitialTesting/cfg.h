@@ -81,7 +81,6 @@ bool cfg_net_restart_due(void);   // the live address differs from the one in us
 // Off to 0.13.6). Set live, unsaved until a save, like the name; a change is
 // a NET event.
 bool cfg_remote(void);
-bool cfg_flash_ok(void);   // the serial flash answered at start-up
 void cfg_set_remote(bool on);
 
 // Settings with a field on the screens. CFG_KP to CFG_BAND stay in order.
