@@ -672,9 +672,6 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
         lv_obj_set_style_border_color(strip, bc, 0);
     }
     bool is_mode = icon == UI_ICON_MODE;
-    bool trend = icon == UI_ICON_TREND;   // text and sparkline, no icon
-    if (trend)
-        icon = NULL;
     // The status line's icon (Ryan, 22 Oct), grey as the text: the loop
     // while AUTO regulates, a target once Stable, an arrow while the valve
     // moves, the valve symbol when it is idle in MANUAL.
@@ -714,7 +711,7 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
 
     ui_set_color(strip_text, dim ? dis_tx : kind >= UI_STRIP_WARN ? lv_color_white()
                              : kind == UI_STRIP_PROMPT ? lv_color_black() : UI_TEXT);
-    bool spark = kind == UI_STRIP_INFO && (is_mode || trend) && !dim && !ok && !act && strip_w >= 300;
+    bool spark = kind == UI_STRIP_INFO && is_mode && !dim && !ok && !act && strip_w >= 300;
     int32_t x = icon ? 36 : 12;
     int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {

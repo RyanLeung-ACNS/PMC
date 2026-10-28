@@ -634,10 +634,11 @@ void ui_status_line(void)
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
-        // Idle, with the pressure sparkline (HMI review H3, 28 Oct). How
-        // the position was set (entered, last saved) is on Home valve; the
-        // strip said it to 0.13.7 and Ryan found it unclear (28 Oct).
-        ui_strip_set(UI_STRIP_INFO, UI_ICON_TREND, "Idle. Pressure, last 5 min");
+        // Idle: the valve icon, Valve idle and the pressure sparkline
+        // (0.13.16, Ryan 28 Oct; "Idle. Pressure, last 5 min" without the
+        // icon from 0.13.8). How the position was set (entered, last saved)
+        // is on Home valve.
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, "Valve idle");
     }
 }
 

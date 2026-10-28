@@ -104,10 +104,8 @@ typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } u
 // icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
 // NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
 // and fault lines take the triangle. UI_ICON_MODE: the status line's icon,
-// picked from the valve state. UI_ICON_TREND: no icon, with the pressure
-// sparkline.
+// picked from the valve state, with the pressure sparkline.
 #define UI_ICON_MODE   "\x01m"
-#define UI_ICON_TREND  "\x01p"
 #define UI_ICON_VALVE  "\x01v"
 #define UI_ICON_TARGET "\x01t"
 void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);
