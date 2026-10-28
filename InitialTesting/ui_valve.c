@@ -2,7 +2,6 @@
 
 #include "lvgl.h"
 #include "pmc_config.h"
-#include "ethlink.h"
 #include "clicks.h"
 #include "limit.h"
 #include "stepper3.h"
@@ -12,7 +11,6 @@
 #include "link.h"
 #include "ui.h"
 #include "fixed.h"
-#include "sysinfo.h"
 
 /* --------------------------------------------------------------------------
  * Operator screens for MANUAL (stage 5, simulator v63): Valve, Calibrate
@@ -774,30 +772,6 @@ static void diag_motor(lv_timer_t *t)
 }
 
 
-// Restart (0.12.19, Ryan 27 Oct): asks first, stops the valve (AUTO ends,
-// homing is cancelled), then waits 2.5 s so the valve position is saved
-// at standstill (valvepos.h, 2 s) and offered at start-up.
-static void restart_now(lv_timer_t *t)
-{
-    (void)t;
-    sysinfo_restart();
-}
-
-static void do_restart(void)
-{
-    valve_stop();
-    valve_event("SYS", "Restart from the screen");
-    ui_msg("Restarting.");
-    lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
-    lv_timer_set_repeat_count(t, 1);
-}
-
-static void restart_event(lv_event_t *e)
-{
-    (void)e;
-    ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
-}
-
 static void diag_build(lv_obj_t *scr)
 {
     static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
@@ -861,19 +835,11 @@ static void diag_refresh(void)
     ui_set_text(dp.sup, buf);
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
-    char t[16], info[96];
-#if PMC_LINK_ETHERNET
-    // The address, or why there is none (NO CABLE, DHCP..., NET NO CLK,
-    // NET NO PHY) (0.11.51), and the MAC for a DHCP reservation (0.12.1).
-    // Two short lines beside Restart (0.12.19): version and board
-    // temperature, then the address (or why none) and the MAC.
-    lv_snprintf(info, sizeof info, "Firmware %s, %s \xC2\xB0" "C\n%s, %s", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc), link_chip_text(), ethlink_mac()[0] ? ethlink_mac() : "no MAC");
-#else
-    lv_snprintf(info, sizeof info, "Firmware %s, %s \xC2\xB0" "C\nLink USB", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc));
-#endif
-    ui_strip_action("Restart", NULL, restart_event);
+    // Raw readings only (0.13.2, Ryan 28 Oct): the board temperature here;
+    // the firmware, address and MAC are on Settings > Name and network, and
+    // Restart moved there too.
+    char t[16], info[48];
+    lv_snprintf(info, sizeof info, "Controller %s \xC2\xB0" "C", ui_fmt1(t, sizeof t, s->die_mc));
     ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, info);
 }
 

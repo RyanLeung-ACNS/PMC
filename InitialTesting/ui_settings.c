@@ -8,6 +8,7 @@
 #include "pmc_config.h"
 #include "link.h"
 #include "ethlink.h"
+#include "sysinfo.h"
 #include "fixed.h"
 #include "stepper3.h"
 #include "valve.h"
@@ -736,15 +737,44 @@ const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
  * Name and network (Settings, 0.12.13): the cryostat name and the Ethernet
  * fallback address, the one used when no DHCP server answers (Ryan, 26 Oct).
  * ------------------------------------------------------------------------ */
-static struct { lv_obj_t *name, *net, *now; } nn;
+static struct { lv_obj_t *name, *net, *now, *mac, *fw; } nn;
 
 static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
+
+// Restart (on Diagnostics from 0.12.19, here from 0.13.2, Ryan 28 Oct): asks
+// first, stops the valve (AUTO ends, homing is cancelled), then waits 2.5 s
+// so the valve position is saved at standstill (valvepos.h, 2 s) and
+// offered at start-up.
+static void restart_now(lv_timer_t *t)
+{
+    (void)t;
+    sysinfo_restart();
+}
+
+static void do_restart(void)
+{
+    valve_stop();
+    valve_event("SYS", "Restart from the screen");
+    ui_msg("Restarting.");
+    lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
+    lv_timer_set_repeat_count(t, 1);
+}
+
+static void restart_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
+}
 
 static void nn_build(lv_obj_t *scr)
 {
     nn.name = ui_btn(scr, 10, RY[0], 226, RH, UI_NAV, "Cryostat name", nn_go, (void *)&ui_scr_name);
     nn.net = ui_btn(scr, 244, RY[0], 226, RH, UI_NAV, "Fallback address", nn_go, (void *)&ui_scr_netaddr);
-    nn.now = ui_info(scr, 10, RY[1], 460, RH, "Address in use");
+    nn.now = ui_info(scr, 10, RY[1], 226, RH, "Address in use");
+    // The MAC, for a DHCP reservation (Ryan, 28 Oct).
+    nn.mac = ui_info(scr, 244, RY[1], 226, RH, "MAC address");
+    nn.fw = ui_info(scr, 10, RY[2], 226, RH, "Firmware");
+    ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
 }
 
 static void nn_refresh(void)
@@ -761,9 +791,12 @@ static void nn_refresh(void)
     ui_btn_text(nn.net, "Fallback address", t);
 #if PMC_LINK_ETHERNET
     ui_set_text(nn.now, ethlink_ip()[0] ? ethlink_ip() : link_chip_text());
+    ui_set_text(nn.mac, ethlink_mac()[0] ? ethlink_mac() : "Not read");
 #else
-    ui_set_text(nn.now, "None, this build links over USB");
+    ui_set_text(nn.now, "None, USB build");
+    ui_set_text(nn.mac, "None, USB build");
 #endif
+    ui_set_text(nn.fw, PMC_FW_VERSION);
     ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, cfg_net_restart_due()
                  ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
 }

@@ -727,7 +727,6 @@ static void title_fit(lv_obj_t *l, const char *text, int32_t left, int32_t right
     lv_obj_set_width(l, w + 1);
 }
 
-static void override_cancel_event(lv_event_t *e);
 
 static void frame_refresh(void)
 {
@@ -848,9 +847,11 @@ static void frame_refresh(void)
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
         strip_draw(UI_STRIP_FAULT, NULL, buf, false, act_cb != NULL);
     } else if (stepper3_override()) {
-        // Cancel on every screen while it is armed (Ryan, 16 Oct).
-        ui_strip_action("Cancel", NULL, override_cancel_event);
-        strip_draw(UI_STRIP_WARN, NULL, "Limit override on", false, true);
+        // While the Limit override button is held (or MOT OVERRIDE armed it):
+        // no Cancel, releasing the button ends it (0.13.2, Ryan 28 Oct).
+        strip_draw(UI_STRIP_WARN, NULL, stepper3_busy() ? "Limit override: closing past the switch"
+                                                        : "Limit override armed: the next close ignores the switch",
+                   false, false);
     } else if (sup != SUPPLY_OK) {
         // On every screen while it lasts (supply.h); OFF blocks moves.
         char v[16];
@@ -868,14 +869,6 @@ static void frame_refresh(void)
     } else {
         strip_draw(line_kind, line_icon, line_text, false, act_cb != NULL);
     }
-}
-
-static void override_cancel_event(lv_event_t *e)
-{
-    (void)e;
-    bool stopped = stepper3_override_cancel();
-    valve_event("LIM", "Limit override off (screen)%s", stopped ? ", valve stopped" : "");
-    ui_msg(stopped ? "Limit override off, valve stopped." : "Limit override off.");
 }
 
 static void fast_timer(lv_timer_t *t)

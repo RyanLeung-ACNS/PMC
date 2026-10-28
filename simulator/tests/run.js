@@ -127,6 +127,18 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('settings kept over a power cycle', /KP 3/.test(pid) || /3\.0+ %\/mbar/.test(pid), pid);
   check('valve position offered after a power cycle', /10\.0|6604|6605/.test(vp), vp);
 }
+{ // Limit override is a deadman (0.13.2): held, it closes past a pressed switch; released, it stops at once.
+  const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
+  s.tap(415, 184); s.tap(379, 184); s.tap(357, 184); s.tap(318, 147);   // Menu > Settings > Motor override > Open
+  s.set(7, 1); s.run(500);                                              // switch stuck pressed
+  s.tap(186, 184, 1000);
+  const blocked = s.get(30) === 0;                                      // Close refused
+  s.x.sim_touch(64, 184, 1); s.run(3000); const held = s.get(30);
+  s.x.sim_touch(64, 184, 0); s.run(300); const rel = s.get(30); s.run(1000);
+  check('limit override closes while held', blocked && held < -500, 'count ' + held);
+  check('limit override stops on release', s.get(30) === rel && !/override/.test(s.cmd('MOT?')), s.get(30) + ' vs ' + rel);
+  shot(s, 'override');
+}
 { // The remote set (0.13.0): the reply rules of the handover page.
   const s = homed(load());
   const one = c => s.cmd(c, 1000);
