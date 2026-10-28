@@ -1532,14 +1532,14 @@ void ui_splash(void)
         }
     spl_text(420, 26, 0x000000, "He");
     spl_text(376, 62, 0x55FF55, "HELIUM STAR");
-    spl_text(8, 4, 0xFFFFFF, "MercShore Modular BIOS v" PMC_FW_VERSION);
+    spl_text(8, 4, 0xFFFFFF, "MercShore iPC BIOS v" PMC_FW_VERSION);   // *IDN? MercShore,iPC
     spl_text(8, 20, SPL_GREY, "(C) 2026 Needle Valve Megatrends");
     spl_text(8, 52, SPL_GREY, "STM32F407 CPU");
     spl_text(8, 68, SPL_GREY, "Memory : 128 KB SRAM, 64 KB CCM");
     splash_foot = spl_text(8, 236, SPL_GREY, "Press DEL to run SETUP (it will not help)");
     char id[40];
     const char *fw = ui_fw_text();   // "0.13.10, built 28/10/26"
-    lv_snprintf(id, sizeof id, "%s-STM32F4-PMC-%s", strstr(fw, "built ") + 6, PMC_FW_VERSION);
+    lv_snprintf(id, sizeof id, "%s-STM32F4-iPC-%s", strstr(fw, "built ") + 6, PMC_FW_VERSION);
     spl_text(8, 254, SPL_DIM, id);
     lv_refr_now(NULL);
 }
