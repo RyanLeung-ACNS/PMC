@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1460,43 +1461,114 @@ static void question_check(void)
  * Start-up
  * ------------------------------------------------------------------------ */
 /* Start-up screen (0.13.3, Ryan 28 Oct): from the first frame until
- * ui_init, so the panel never shows what its memory held at power-up. The
- * Home colours and header, the firmware version and a bar that main.c
- * steps as each part of the board starts. Deleted by ui_init. */
-static lv_obj_t *splash_scr, *splash_fill;
+ * ui_init, so the panel never shows what its memory held at power-up.
+ * From 0.13.10 (Ryan 28 Oct: "a black screen and an old style loading
+ * screen" with a parody logo) an old PC's power-on self test: white and
+ * grey 8x16 text on black, the Helium Star top right, and one line per
+ * start-up check as main.c makes it, a failed one in amber. Deleted by
+ * ui_init. */
+#define SPL_GREY  0xAAAAAA
+#define SPL_DIM   0x555555
+#define SPL_AMBER 0xFFAA00
+#define SPL_ROW0  100   // the first check line
+#define SPL_ROWS  8
+
+static lv_obj_t *splash_scr, *splash_foot;
+static int splash_row;
+
+const char *ui_fw_text(void)
+{
+    // "0.13.10, built 28/10/26" from the compiler's "Oct 28 2026" (DD/MM/YY).
+    static char t[32];
+    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    const char *d = __DATE__;
+    int mon = 0;
+    for (int i = 0; i < 12; i++)
+        if (strncmp(d, months + 3 * i, 3) == 0)
+            mon = i + 1;
+    lv_snprintf(t, sizeof t, "%s, built %02d/%02d/%.2s", PMC_FW_VERSION, atoi(d + 4), mon, d + 9);
+    return t;
+}
+
+static lv_obj_t *spl_text(int32_t x, int32_t y, uint32_t c, const char *t)
+{
+    lv_obj_t *l = lv_label_create(splash_scr);
+    lv_obj_set_pos(l, x, y);
+    lv_obj_set_style_text_font(l, &ui_font_dos16, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(c), 0);
+    lv_label_set_text(l, t);
+    return l;
+}
 
 void ui_splash(void)
 {
     lv_obj_t *s = splash_scr = lv_screen_active();
+    splash_row = 0;
     lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(s, UI_BG, 0);
+    lv_obj_set_style_bg_color(s, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
-    lv_obj_t *h = plain(s);
-    lv_obj_set_size(h, 480, 40);
-    lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(h, UI_TEXT, 0);
-    ui_label(h, 12, 11, 400, &ui_font_16, lv_color_white(), LV_TEXT_ALIGN_LEFT, "Pressure controller");
-    ui_label(s, 0, 104, 480, &ui_font_26, UI_TEXT, LV_TEXT_ALIGN_CENTER, "Starting");
-    lv_obj_t *t = plain(s);
-    lv_obj_set_pos(t, 120, 150);
-    lv_obj_set_size(t, 240, 8);
-    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(t, UI_CARD, 0);
-    lv_obj_set_style_radius(t, 4, 0);
-    splash_fill = plain(t);
-    lv_obj_set_size(splash_fill, 0, 8);
-    lv_obj_set_style_bg_opa(splash_fill, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(splash_fill, UI_BLUE, 0);
-    lv_obj_set_style_radius(splash_fill, 4, 0);
-    ui_label(s, 0, 176, 480, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_CENTER, "Firmware " PMC_FW_VERSION);
+    // The Helium Star (an Energy Star parody), 5 px pixels, runs of one row
+    // drawn as one rectangle.
+    static const char *const star[] = {
+        "......xxxx......", ".....xxxxxx.....", ".....xxxxxx.....", "xxxxxxxxxxxxxxxx",
+        ".xxxxxxxxxxxxxx.", "..xxxxxxxxxxxx..", "...xxxxxxxxxx...", "...xxxx..xxxx...",
+        "..xxx......xxx..", ".xx..........xx.",
+    };
+    for (int r = 0; r < 10; r++)
+        for (int c = 0; star[r][c];) {
+            int run = 0;
+            while (star[r][c + run] == 'x')
+                run++;
+            if (run) {
+                lv_obj_t *o = plain(s);
+                lv_obj_set_pos(o, 392 + c * 5, 8 + r * 5);
+                lv_obj_set_size(o, run * 5, 5);
+                lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+                lv_obj_set_style_bg_color(o, lv_color_hex(0x55FF55), 0);
+                c += run;
+            } else {
+                c++;
+            }
+        }
+    spl_text(420, 26, 0x000000, "He");
+    spl_text(376, 62, 0x55FF55, "HELIUM STAR");
+    spl_text(8, 4, 0xFFFFFF, "MercShore Modular BIOS v" PMC_FW_VERSION);
+    spl_text(8, 20, SPL_GREY, "(C) 2026 Needle Valve Megatrends");
+    spl_text(8, 52, SPL_GREY, "STM32F407 CPU");
+    spl_text(8, 68, SPL_GREY, "Memory : 128 KB SRAM, 64 KB CCM");
+    splash_foot = spl_text(8, 236, SPL_GREY, "Press DEL to run SETUP (it will not help)");
+    char id[40];
+    const char *fw = ui_fw_text();   // "0.13.10, built 28/10/26"
+    lv_snprintf(id, sizeof id, "%s-STM32F4-PMC-%s", strstr(fw, "built ") + 6, PMC_FW_VERSION);
+    spl_text(8, 254, SPL_DIM, id);
     lv_refr_now(NULL);
 }
 
-void ui_splash_step(int n, int of)
+void ui_splash_line(bool ok, const char *what, const char *fmt, ...)
 {
-    if (!splash_fill || of <= 0)
+    if (!splash_scr || splash_row >= SPL_ROWS)
         return;
-    lv_obj_set_width(splash_fill, 240 * n / of);
+    char v[40], t[64];
+    va_list ap;
+    va_start(ap, fmt);
+    lv_vsnprintf(v, sizeof v, fmt, ap);
+    va_end(ap);
+    // "Limit switch ...... released": the name, dots to column 20, the result.
+    int n = lv_snprintf(t, sizeof t, "%s ", what);
+    while (n < 20 && n < (int)sizeof t - 1)
+        t[n++] = '.';
+    lv_snprintf(t + n, sizeof t - (size_t)n, " %s", v);
+    spl_text(8, SPL_ROW0 + 16 * splash_row++, ok ? SPL_GREY : SPL_AMBER, t);
+    lv_refr_now(NULL);
+}
+
+void ui_splash_done(void)
+{
+    if (!splash_foot)
+        return;
+    char t[48];
+    lv_snprintf(t, sizeof t, "Starting %s ...", cfg_name()[0] ? cfg_name() : "the controller");
+    lv_label_set_text(splash_foot, t);
     lv_refr_now(NULL);
 }
 
@@ -1513,7 +1585,7 @@ void ui_init(void)
     lv_screen_load(home_scr);
     if (splash_scr) {
         lv_obj_delete(splash_scr);
-        splash_scr = splash_fill = NULL;
+        splash_scr = splash_foot = NULL;
     }
     frame_refresh();
     lv_timer_create(refresh_timer, 500, NULL);

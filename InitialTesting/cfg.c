@@ -1193,6 +1193,7 @@ bool cfg_net_restart_due(void) { return net_ip != net_boot_ip || net_mask != net
  * refused; queries and reads are not. Live at once, kept by a save.
  * ------------------------------------------------------------------------ */
 bool cfg_remote(void) { return remote_on; }
+bool cfg_flash_ok(void) { return flash_ok; }
 
 void cfg_set_remote(bool on)
 {

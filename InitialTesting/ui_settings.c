@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "lvgl.h"
@@ -788,20 +787,6 @@ static void remote_cb(lv_event_t *e)
     lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
 }
 
-// "0.13.7, built 28/10/26" from the compiler's "Oct 28 2026" (DD/MM/YY).
-static const char *fw_text(void)
-{
-    static char t[32];
-    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
-    const char *d = __DATE__;
-    int mon = 0;
-    for (int i = 0; i < 12; i++)
-        if (strncmp(d, months + 3 * i, 3) == 0)
-            mon = i + 1;
-    lv_snprintf(t, sizeof t, "%s, built %02d/%02d/%.2s", PMC_FW_VERSION, atoi(d + 4), mon, d + 9);
-    return t;
-}
-
 static void nn_build(lv_obj_t *scr)
 {
     nn.name = ui_btn(scr, 10, RY[0], 226, RH, UI_NAV, "Cryostat name", nn_go, (void *)&ui_scr_name);
@@ -844,7 +829,7 @@ static void nn_refresh(void)
     ui_set_text(nn.now, "None, USB build");
     ui_set_text(nn.mac, "None, USB build");
 #endif
-    ui_set_text(nn.fw, fw_text());
+    ui_set_text(nn.fw, ui_fw_text());
     if (lv_obj_has_state(nn.rsw, LV_STATE_CHECKED) != cfg_remote())
         lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
     ui_set_text(nn.rtext, cfg_remote() ? "On: network can set" : "Off: network read only");
