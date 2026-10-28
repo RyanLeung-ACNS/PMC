@@ -155,8 +155,8 @@ bool extflash_write(uint32_t a, const void *b, size_t n)
     for (size_t i = 0; i < n; i++) flash[a + i] &= p[i];
     return true;
 }
-static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
-static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET" };
+static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0, 400 };
+static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET", "RETURN" };
 const char *valve_setting_name(int i) { return v_name[i]; }
 void valve_settings(int32_t v[VALVE_N_SETTINGS]) { memcpy(v, v_set, sizeof v_set); }
 const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]) { (void)v; return NULL; }
@@ -188,7 +188,7 @@ static void seed_flash(void)
     struct {
         uint32_t magic, version, size, rev;
         int32_t mot[7];
-        int32_t valve[VALVE_N_SETTINGS];
+        int32_t valve[6];   // a version 1 record
         uint32_t has_cal;
         cal_rec_t cal;
         uint32_t crc;
@@ -197,7 +197,7 @@ static void seed_flash(void)
     r.magic = 0x47464350UL; r.version = 1; r.size = sizeof r; r.rev = 5;
     int32_t mot[7] = { 400, 200, 3200, 1, 0, 0, 213 };
     memcpy(r.mot, mot, sizeof mot);
-    memcpy(r.valve, v_set, sizeof v_set);
+    memcpy(r.valve, v_set, sizeof r.valve);
     r.has_cal = 1;
     cal_rec_t *c = &r.cal;
     c->magic = CAL_MAGIC; c->version = CAL_VERSION; c->npts = 2;

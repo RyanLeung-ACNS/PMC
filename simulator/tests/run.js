@@ -206,5 +206,12 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   s.tap(120, 184);
   check('switch Off again: refused', s.cmd('PRES SP 6') === 'ERR 211 Read only over the network\r\n');
 }
+{ // Homing return (0.13.6): its own setting, the step 4 move off the switch; 0 % is there.
+  const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
+  check('VALVE RETURN 150', /^OK VALVE RETURN 150 steps/.test(s.cmd('VALVE RETURN 150')), s.cmd('VALVE?'));
+  s.cmd('VALVE CAL', 120000);
+  const ev = events(s, 3);
+  check('homed with the switch 150 steps below 0 %', /Homed in \d+ s, switch at -150, 0 % at 0/.test(ev) && s.get(5) === 300, ev + ' needle ' + s.get(5));
+}
 console.log(failed ? failed + ' failed' : 'all passed');
 process.exit(failed ? 1 : 0);

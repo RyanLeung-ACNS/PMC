@@ -88,6 +88,7 @@ typedef enum {
     CFG_REVERSE,   // motor direction, 0 / 1 (a change clears the calibration)
     CFG_OFFSET,    // count at 0 %, the back-off above the switch, steps
     CFG_BACKOFF,   // steps
+    CFG_RETURN,    // steps off the switch after the slow close, homing step 4 (0.13.6)
     CFG_FHOME,     // reference speed, steps/s
     CFG_FCREEP,    // creep speed, steps/s
     CFG_RATE,      // run speed, steps/s

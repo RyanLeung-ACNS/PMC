@@ -296,7 +296,7 @@ static struct {
  * position. */
 static const char *const calib_help =
     "Home valve finds the limit switch: a fast close to the switch, a back-off, "
-    "a slow close onto it, then the back-off again. 0 % is that last point, just off the seat, "
+    "a slow close onto it, then the return off it (Settings > Valve setup > Homing). 0 % is that last point, just off the seat, "
     "so a seated valve reads about -0.6 %. "
     "Takes up to a few minutes. STOP cancels it.\n\n"
     "Set as 0 %, Set as other % and Use last saved record a position without moving the valve. "
@@ -388,7 +388,7 @@ static void calib_refresh(void)
     // strip's "Homing 2 of 4: backing off" in two parts (too long for 226).
     static const char *const doing[5] = { "Off the switch", "1 of 4: fast close",
                                           "2 of 4: backing off", "3 of 4: slow close",
-                                          "4 of 4: final back-off" };
+                                          "4 of 4: return" };
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     const char *iso = valve_last_cal_iso();

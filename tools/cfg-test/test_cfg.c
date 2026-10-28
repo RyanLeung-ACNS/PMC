@@ -103,9 +103,9 @@ static bool start_move(int32_t to)
 const char *stepper3_mode_name(stepper3_mode_t m) { return m == STEPPER3_WAVE ? "WAVE" : m == STEPPER3_FULL ? "FULL" : "HALF"; }
 
 /* Valve */
-static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
-static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET" };
-static const int32_t v_lo[VALVE_N_SETTINGS] = { 1000, 16, 16, 10, 10, 0 }, v_hi[VALVE_N_SETTINGS] = { 300000, 1000, 1000, 5000, 10000, 5000 };
+static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0, 400 };
+static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET", "RETURN" };
+static const int32_t v_lo[VALVE_N_SETTINGS] = { 1000, 16, 16, 10, 10, 0, 10 }, v_hi[VALVE_N_SETTINGS] = { 300000, 1000, 1000, 5000, 10000, 5000, 5000 };
 static valve_mode_t v_mode = VALVE_NOT_CAL;
 static bool v_cal;
 static int uncal_calls;
@@ -159,11 +159,23 @@ static uint32_t crc32(const void *data, size_t len)
     return ~c;
 }
 
+// A version 6 record (0.13.6) in buf made a version 5 one: valve[6], the
+// return, taken out (after the 16-byte header, mot[7] and valve[0..5]).
+// Returns the version 5 size; the CRC is left for the caller.
+static uint32_t as_v5(uint8_t *buf, uint32_t size6)
+{
+    const uint32_t at = 16 + 7 * 4 + 6 * 4, five = 5, size5 = size6 - 4;
+    memmove(buf + at, buf + at + 4, size6 - at - 4);
+    memcpy(buf + 4, &five, 4);
+    memcpy(buf + 8, &size5, 4);
+    return size5;
+}
+
 // The 0.6.0 to 0.8.x layout, as cfg.c reads it.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[7];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[6];
     uint32_t has_cal;
     cal_rec_t cal;
     uint32_t crc;
@@ -194,7 +206,7 @@ static void write_v1(uint32_t addr, uint32_t rev)
     r.rev = rev;
     int32_t mot[7] = { 350, 180, 3000, STEPPER3_FULL, 0, 0, 213 };
     memcpy(r.mot, mot, sizeof mot);
-    int32_t valve[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
+    int32_t valve[6] = { 99072, 400, 25, 400, 800, 0 };
     memcpy(r.valve, valve, sizeof valve);
     r.has_cal = 1;
     r.cal = bench_cal("5880156 bench", 48000, 9300000, 1013200);
@@ -207,7 +219,7 @@ static void reboot(void)
 {
     // What main.c does at start-up, with every live value back to factory.
     m_rate = 400; m_start = 200; m_accel = 3200; m_rev = false;
-    int32_t valve[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
+    int32_t valve[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0, 400 };
     memcpy(v_set, valve, sizeof valve);
     v_cal = false; v_mode = VALVE_NOT_CAL;
     cal_init();
@@ -249,7 +261,7 @@ static void test_cfg(void)
     CHECK(cfg_rev(CFG_FROM_PREVIOUS, &rev, &at) && rev == 5);
     uint32_t ver;
     memcpy(&ver, flash + 0x7FE004, 4);
-    CHECK(ver == 5);   // the save went to B, the v1 record in A is kept
+    CHECK(ver == 6);   // the save went to B, the v1 record in A is kept
     memcpy(&ver, flash + 0x7FD004, 4);
     CHECK(ver == 1);
     CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
@@ -395,13 +407,14 @@ static void test_name(void)
             memcpy(&r3, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             uint32_t v3;
             memcpy(&v3, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (v3 == 5 && r3 >= a3) { a3 = r3; sl = i; }
+            if (v3 == 6 && r3 >= a3) { a3 = r3; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000;
         memcpy(&size4, flash + base + 8, 4);
-        uint32_t size2 = size4 - 4 - 8 - (CFG_NAME_LEN + 4);   // size4: the version 5 size
         static uint8_t buf[4096];
         memcpy(buf, flash + base, size4);
+        size4 = as_v5(buf, size4);
+        uint32_t size2 = size4 - 4 - 8 - (CFG_NAME_LEN + 4);   // size4: the version 5 size
         uint32_t two = 2;
         memcpy(buf + 4, &two, 4);
         memcpy(buf + 8, &size2, 4);
@@ -455,13 +468,14 @@ static void test_net(void)
             uint32_t r, ver;
             memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (ver == 5 && r >= a4) { a4 = r; sl = i; }
+            if (ver == 6 && r >= a4) { a4 = r; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000, three = 3;
         memcpy(&size4, flash + base + 8, 4);
-        uint32_t size3 = size4 - 4 - 8;   // size4: the version 5 size
         static uint8_t buf[4096];
         memcpy(buf, flash + base, size4);
+        size4 = as_v5(buf, size4);
+        uint32_t size3 = size4 - 4 - 8;   // size4: the version 5 size
         memcpy(buf + 4, &three, 4);
         memcpy(buf + 8, &size3, 4);
         uint32_t c = crc32(buf, size3 - 4);
@@ -494,13 +508,14 @@ static void test_net(void)
             uint32_t r, ver;
             memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
             memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
-            if (ver == 5 && r >= a5) { a5 = r; sl = i; }
+            if (ver == 6 && r >= a5) { a5 = r; sl = i; }
         }
         uint32_t base = 0x7FD000 + sl * 0x1000, four = 4;
         memcpy(&size5, flash + base + 8, 4);
-        uint32_t size4 = size5 - 4;
         static uint8_t buf[4096];
         memcpy(buf, flash + base, size5);
+        size5 = as_v5(buf, size5);
+        uint32_t size4 = size5 - 4;
         memcpy(buf + 4, &four, 4);
         memcpy(buf + 8, &size4, 4);
         uint32_t c = crc32(buf, size4 - 4);
@@ -511,6 +526,41 @@ static void test_net(void)
         uint32_t rev;
         const char *at;
         CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a5 && !cfg_remote());
+    }
+
+    // Homing return (0.13.6): a version 5 record loads it as its back-off.
+    {
+        int32_t bo = 0, rt = 0;
+        CHECK(cfg_value(CFG_FROM_LIVE, CFG_BACKOFF, &bo) && cfg_value(CFG_FROM_LIVE, CFG_RETURN, &rt) && rt == 400);
+        int32_t v2[CFG_N] = { 0 };
+        bool set2[CFG_N] = { false };
+        v2[CFG_BACKOFF] = 300; set2[CFG_BACKOFF] = true;
+        v2[CFG_RETURN] = 250; set2[CFG_RETURN] = true;
+        CHECK(cfg_save_with(v2, set2, &why));
+        reboot();
+        CHECK(cfg_value(CFG_FROM_LIVE, CFG_BACKOFF, &bo) && bo == 300 && cfg_value(CFG_FROM_LIVE, CFG_RETURN, &rt) && rt == 250);
+        uint32_t size6, a6 = 0;
+        int sl = 0;
+        for (int i = 0; i < 2; i++) {
+            uint32_t r, ver;
+            memcpy(&r, flash + 0x7FD000 + i * 0x1000 + 12, 4);
+            memcpy(&ver, flash + 0x7FD000 + i * 0x1000 + 4, 4);
+            if (ver == 6 && r >= a6) { a6 = r; sl = i; }
+        }
+        uint32_t base = 0x7FD000 + sl * 0x1000;
+        memcpy(&size6, flash + base + 8, 4);
+        static uint8_t buf[4096];
+        memcpy(buf, flash + base, size6);
+        uint32_t size5 = as_v5(buf, size6);
+        uint32_t c = crc32(buf, size5 - 4);
+        memcpy(buf + size5 - 4, &c, 4);
+        extflash_erase_4k(base);
+        extflash_write(base, buf, size5);
+        reboot();
+        uint32_t rev;
+        const char *at;
+        CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == a6);
+        CHECK(cfg_value(CFG_FROM_LIVE, CFG_BACKOFF, &bo) && bo == 300 && cfg_value(CFG_FROM_LIVE, CFG_RETURN, &rt) && rt == 300);
     }
 }
 

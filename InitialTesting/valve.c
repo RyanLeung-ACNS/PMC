@@ -30,7 +30,8 @@ typedef struct {
 static int32_t pos_max  = 66048;   // steps, 0 % to 100 %
 static int32_t f_home   = 400;     // steps/s, clearance, fast close, back-off
 static int32_t f_creep  = 25;      // steps/s, slow final close
-static int32_t n_backoff = 400;    // steps off the switch before the creep, and after it
+static int32_t n_backoff = 400;    // steps off the switch after the fast close, before the creep
+static int32_t n_return = 400;     // steps off the switch after the creep: 0 % (0.13.6, Ryan 28 Oct)
 static int32_t n_clear  = 800;     // steps off the switch if pressed at the start
 static int32_t n_offset = 0;       // count given to 0 %, the back-off above the switch (0.12.12)
 static valve_ref_t ref_how;        // how the position was last set (valve_reference)
@@ -42,6 +43,7 @@ static const setting_t settings[] = {
     { "BACKOFF", &n_backoff, 10,   5000 },
     { "CLEAR",   &n_clear,   10,   10000 },
     { "OFFSET",  &n_offset,  0,    5000 },
+    { "RETURN",  &n_return,  10,   5000 },
 };
 #define N_SETTINGS (sizeof settings / sizeof settings[0])
 _Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
@@ -52,9 +54,10 @@ _Static_assert(N_SETTINGS == VALVE_N_SETTINGS, "valve.h VALVE_N_SETTINGS");
  * (Ryan, 23 Oct: "just recalculate"). */
 static int32_t sc(int32_t full) { return full * stepper3_scale(); }
 static int32_t pm(void) { return sc(pos_max); }
-// The count of the seat (the switch point): 0 % is the back-off above it
-// (Ryan, 26 Oct), so a seated valve reads about -0.6 % with the defaults.
-static int32_t seat_count(void) { return sc(n_offset - n_backoff); }
+// The count of the seat (the switch point): 0 % is the return above it
+// (Ryan, 26 Oct; the back-off until 0.13.6), so a seated valve reads about
+// -0.6 % with the defaults.
+static int32_t seat_count(void) { return sc(n_offset - n_return); }
 static int32_t f_rate(int32_t full)
 {
     int32_t r = sc(full);
@@ -330,11 +333,11 @@ static void cal_move_ended(stepper3_stop_t why)
                 cal_abort("count not set");
                 break;
             }
-            // Then off the switch by the back-off, so it is not left
+            // Then off the switch by the return, so it is not left
             // pressed against the seat; that point is 0 % (Ryan, 26 Oct).
             cal_stage = CAL_PARK;
             if (!cal_move(sc(n_offset), f_rate(f_home)))
-                raise(F03, true, "Homing: final back-off refused at count %ld", (long)stepper3_position());
+                raise(F03, true, "Homing: return refused at count %ld", (long)stepper3_position());
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
         } else {
@@ -362,10 +365,10 @@ static void cal_homed(void)
 static void cal_settled(void)
 {
     cal_settling = false;
-    int32_t moved = sc(cal_stage == CAL_CLEAR ? n_clear : n_backoff);
+    int32_t moved = sc(cal_stage == CAL_CLEAR ? n_clear : cal_stage == CAL_PARK ? n_return : n_backoff);
     if (limit_open_now()) {
         raise(F04, true, "Switch still active after %ld-step %s", (long)moved,
-              cal_stage == CAL_CLEAR ? "clearance move" : cal_stage == CAL_PARK ? "final back-off" : "back-off");
+              cal_stage == CAL_CLEAR ? "clearance move" : cal_stage == CAL_PARK ? "return" : "back-off");
     } else if (cal_stage == CAL_CLEAR) {
         cal_fast();
     } else if (cal_stage == CAL_BACK) {
@@ -490,7 +493,7 @@ static void auto_end(const char *strip)
 static bool switch_far(void)
 {
     return calibrated && mode != VALVE_CALIBRATING && limit_open_now() &&
-           stepper3_position() > sc(n_offset + n_clear + n_backoff);
+           stepper3_position() > sc(n_offset + n_clear + (n_backoff > n_return ? n_backoff : n_return));
 }
 
 // W-4 and W-5, once a second; two reads in a row, so one glitch does not
@@ -922,7 +925,7 @@ static const char *cal_stage_name(void)
 {
     static const char *const names[] = { "", "moving off the switch", "1 of 4 closing to the switch",
                                          "2 of 4 backing off", "3 of 4 slow close",
-                                         "4 of 4 final back-off" };
+                                         "4 of 4 return" };
     return names[cal_stage];
 }
 
@@ -1088,8 +1091,9 @@ static void show(void)
     link_printf("VALVE mode %s%s%s, position %s, count %ld (%s %%)%s\r\n",
                 valve_mode_name(), cal_stage ? ", " : "", cal_stage_name(), calibrated ? "set" : "not set",
                 (long)stepper3_position(), pct_text(p, sizeof p, stepper3_position()), to);
-    link_printf("VALVE POSMAX %ld, FHOME %ld, FCREEP %ld, BACKOFF %ld, CLEAR %ld, OFFSET %ld\r\n",
-                (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_clear, (long)n_offset);
+    link_printf("VALVE POSMAX %ld, FHOME %ld, FCREEP %ld, BACKOFF %ld, RETURN %ld, CLEAR %ld, OFFSET %ld\r\n",
+                (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_return, (long)n_clear,
+                (long)n_offset);
     link_printf("VALVE faults %s, switch %s\r\n", f[0] ? f : "none", limit_text());
     if (ctl.sp_set) {
         static const char *const reg[] = { "", ", regulating", ", in band", ", stable" };
@@ -1196,7 +1200,7 @@ uint32_t valve_cal_elapsed_s(void) { return mode == VALVE_CALIBRATING ? lv_tick_
 
 uint32_t valve_cal_budget_s(void)
 {
-    return (uint32_t)(((int64_t)pm() * 11 / 10 + sc(n_clear + 3 * n_backoff)) / f_rate(f_home)
+    return (uint32_t)(((int64_t)pm() * 11 / 10 + sc(n_clear + 2 * n_backoff + n_return)) / f_rate(f_home)
                       + sc(n_backoff + CREEP_EXTRA) / f_rate(f_creep) + 1);
 }
 
@@ -1265,7 +1269,7 @@ bool valve_answer(bool set_zero, const char **why)
     if (set_zero) {
         int32_t d = stepper3_position() - question_at;
         stepper3_set_position(seat_count() + d);
-        ev("W-1", "Point set as the seat, count %ld (0 %% is the back-off above it)", (long)seat_count());
+        ev("W-1", "Point set as the seat, count %ld (0 %% is the return above it)", (long)seat_count());
         if (!strncmp(warn, "W-4", 3))
             warn[0] = 0;   // the switch was right, the count was not
     } else {

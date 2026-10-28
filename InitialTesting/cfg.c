@@ -18,6 +18,10 @@
  * the crc field. One per 4 KB sector, two sectors used in turn, the higher
  * rev is the newest. Below the old cal record at 0x7FF000.
  *
+ * Version 6 (0.13.6) adds the homing return (valve[6], RETURN: steps off
+ * the switch after the slow close); older records load it as their
+ * back-off, which homing used for that step until then.
+ *
  * Version 5 (0.13.4) adds the Remote control switch (0 Off, 1 On); older
  * records load with it Off.
  *
@@ -36,7 +40,8 @@
 #define CFG_ADDR_A   0x7FD000UL
 #define CFG_ADDR_B   0x7FE000UL
 #define CFG_MAGIC    0x47464350UL   // "PCFG"
-#define CFG_VERSION  5
+#define CFG_VERSION  6
+#define OLD_VALVE_N  6       // valve[] in records before version 6
 
 enum { M_RATE, M_START, M_ACCEL, M_MODE, M_HOLD, M_DIR, M_ORDER, M_N };
 static const char *const mot_name[M_N] = { "RATE", "START", "ACCEL", "MODE", "HOLD", "DIR", "ORDER" };
@@ -94,11 +99,27 @@ typedef struct {
     uint32_t crc;
 } cfg_rec_t;
 
+// Version 5 (0.13.4 and 0.13.5), read only: version 6 with one valve
+// setting fewer.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[OLD_VALVE_N];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t net_ip, net_mask;
+    uint32_t remote;
+    uint32_t crc;
+} cfg_rec_v5_t;
+
 // Version 4 (0.12.13 to 0.13.3), read only: version 5 without the switch.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     int32_t tune[T_N];
     uint32_t nsens, active;
     cfg_sens_t sens[CFG_SENS_MAX];
@@ -107,13 +128,13 @@ typedef struct {
     uint32_t net_ip, net_mask;
     uint32_t crc;
 } cfg_rec_v4_t;
-_Static_assert(offsetof(cfg_rec_v4_t, crc) == offsetof(cfg_rec_t, remote), "v4 is v5 up to the switch");
+_Static_assert(offsetof(cfg_rec_v4_t, crc) == offsetof(cfg_rec_v5_t, remote), "v4 is v5 up to the switch");
 
 // Version 3 (0.10.9 to 0.12.12), read only: version 4 without the address.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     int32_t tune[T_N];
     uint32_t nsens, active;
     cfg_sens_t sens[CFG_SENS_MAX];
@@ -121,26 +142,26 @@ typedef struct {
     char name[CFG_NAME_LEN + 4];
     uint32_t crc;
 } cfg_rec_v3_t;
-_Static_assert(offsetof(cfg_rec_v3_t, crc) == offsetof(cfg_rec_t, net_ip), "v3 is v4 up to the address");
+_Static_assert(offsetof(cfg_rec_v3_t, crc) == offsetof(cfg_rec_v5_t, net_ip), "v3 is v4 up to the address");
 
 // Version 2 (0.9.0 to 0.10.8), read only: version 3 without the name.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     int32_t tune[T_N];
     uint32_t nsens, active;
     cfg_sens_t sens[CFG_SENS_MAX];
     char saved_at[20];
     uint32_t crc;
 } cfg_rec_v2_t;
-_Static_assert(offsetof(cfg_rec_v2_t, crc) == offsetof(cfg_rec_t, name), "v2 is v3 up to the name");
+_Static_assert(offsetof(cfg_rec_v2_t, crc) == offsetof(cfg_rec_v5_t, name), "v2 is v3 up to the name");
 
 // Version 1 (0.6.0 to 0.8.x), read only.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     uint32_t has_cal;
     cal_rec_t cal;
     uint32_t crc;
@@ -303,7 +324,8 @@ static const char *values_why(const cfg_rec_t *r)
     return NULL;
 }
 
-// A version 1 record as version 2: one sensor, default tuning.
+// A version 1 record as version 6: one sensor, default tuning, the return
+// as the back-off.
 static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
@@ -312,7 +334,8 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     r->size = sizeof *r;
     r->rev = v->rev;
     memcpy(r->mot, v->mot, sizeof r->mot);
-    memcpy(r->valve, v->valve, sizeof r->valve);
+    memcpy(r->valve, v->valve, sizeof v->valve);
+    r->valve[6] = v->valve[3];
     memcpy(r->tune, tune_def, sizeof r->tune);
     r->nsens = 1;
     r->sens[0].serial = FACTORY_SERIAL;
@@ -322,33 +345,23 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
 
-// A version 2 record as version 5: the default name and address, Remote control Off.
-static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
+// A version 2 to 5 record as version 6. They are version 6 without the
+// return (valve[6]) and without the fields after crc_at; the return is
+// their back-off, so homing ends where it did. Fields they lack are 0: the
+// build's fallback address, Remote control Off.
+static void from_old(const void *v, size_t tune_at, size_t crc_at, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
-    memcpy(r, v, offsetof(cfg_rec_v2_t, crc));
-    r->version = CFG_VERSION;
-    r->size = sizeof *r;
-    lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
-}
-
-// A version 3 record as version 5: the build's fallback address, Remote control Off.
-static void from_v3(const cfg_rec_v3_t *v, cfg_rec_t *r)
-{
-    memset(r, 0, sizeof *r);
-    memcpy(r, v, offsetof(cfg_rec_v3_t, crc));
+    memcpy(r, v, tune_at);                                         // header, mot, valve[0..5]
+    memcpy(r->tune, (const uint8_t *)v + tune_at, crc_at - tune_at);   // tune on
+    r->valve[6] = r->valve[3];
     r->version = CFG_VERSION;
     r->size = sizeof *r;
 }
-
-// A version 4 record as version 5: Remote control Off.
-static void from_v4(const cfg_rec_v4_t *v, cfg_rec_t *r)
-{
-    memset(r, 0, sizeof *r);
-    memcpy(r, v, offsetof(cfg_rec_v4_t, crc));
-    r->version = CFG_VERSION;
-    r->size = sizeof *r;
-}
+_Static_assert(offsetof(cfg_rec_v5_t, tune) == offsetof(cfg_rec_t, valve) + OLD_VALVE_N * 4, "old valve[] then tune");
+_Static_assert(offsetof(cfg_rec_v5_t, crc) - offsetof(cfg_rec_v5_t, tune) ==
+               offsetof(cfg_rec_t, crc) - offsetof(cfg_rec_t, tune), "v5 is v6 from tune on");
+#define FROM_OLD(T, v, r) from_old((v), offsetof(T, tune), offsetof(T, crc), (r))
 
 // Reads one sector into slot[i]; NULL if usable, else why not.
 static const char *read_slot(int i)
@@ -358,6 +371,7 @@ static const char *read_slot(int i)
         cfg_rec_v2_t v2;
         cfg_rec_v3_t v3;
         cfg_rec_v4_t v4;
+        cfg_rec_v5_t v5;
     } old;
     cfg_rec_t *r = &slot[i];
     extflash_read(slot_addr[i], r, sizeof *r);
@@ -373,17 +387,23 @@ static const char *read_slot(int i)
         memcpy(&old.v2, r, sizeof old.v2);
         if (old.v2.crc != crc32(&old.v2, offsetof(cfg_rec_v2_t, crc)))
             return "CRC mismatch";
-        from_v2(&old.v2, r);
+        FROM_OLD(cfg_rec_v2_t, &old.v2, r);
+        lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);   // no name before version 3
     } else if (r->magic == CFG_MAGIC && r->version == 3 && r->size == sizeof old.v3) {
         memcpy(&old.v3, r, sizeof old.v3);
         if (old.v3.crc != crc32(&old.v3, offsetof(cfg_rec_v3_t, crc)))
             return "CRC mismatch";
-        from_v3(&old.v3, r);
+        FROM_OLD(cfg_rec_v3_t, &old.v3, r);
     } else if (r->magic == CFG_MAGIC && r->version == 4 && r->size == sizeof old.v4) {
         memcpy(&old.v4, r, sizeof old.v4);
         if (old.v4.crc != crc32(&old.v4, offsetof(cfg_rec_v4_t, crc)))
             return "CRC mismatch";
-        from_v4(&old.v4, r);
+        FROM_OLD(cfg_rec_v4_t, &old.v4, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 5 && r->size == sizeof old.v5) {
+        memcpy(&old.v5, r, sizeof old.v5);
+        if (old.v5.crc != crc32(&old.v5, offsetof(cfg_rec_v5_t, crc)))
+            return "CRC mismatch";
+        FROM_OLD(cfg_rec_v5_t, &old.v5, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
         return "not a settings record of this version";
     } else if (r->crc != rec_crc(r)) {
@@ -721,6 +741,7 @@ static int32_t *key_ref(cfg_rec_t *r, cfg_key_t k)
     case CFG_FCREEP:  return &r->valve[2];
     case CFG_BACKOFF: return &r->valve[3];
     case CFG_OFFSET:  return &r->valve[5];
+    case CFG_RETURN:  return &r->valve[6];
     case CFG_REVERSE: return &r->mot[M_DIR];
     case CFG_RATE:    return &r->mot[M_RATE];
     case CFG_START:   return &r->mot[M_START];
@@ -734,7 +755,7 @@ static int32_t *key_ref(cfg_rec_t *r, cfg_key_t k)
     default:          return NULL;
     }
 }
-_Static_assert(VALVE_N_SETTINGS == 6, "key_ref() valve indices");
+_Static_assert(VALVE_N_SETTINGS == 7, "key_ref() valve indices");
 
 static const cfg_rec_t *source(cfg_from_t from)
 {
@@ -774,7 +795,7 @@ bool cfg_rev(cfg_from_t from, uint32_t *rev, const char **saved_at)
 
 void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
 {
-    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 5000 };
+    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0, 10 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 5000, 5000 };
     _Static_assert(sizeof vlo / sizeof vlo[0] == VALVE_N_SETTINGS, "valve ranges");
     *lo = 0; *hi = 0;
     if (k >= CFG_KP && k <= CFG_BAND) {
@@ -786,7 +807,8 @@ void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
     } else if (k == CFG_REVERSE) {
         *hi = 1;
     } else if (k != CFG_SENSOR) {
-        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 : 5;
+        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 :
+                k == CFG_RETURN ? 6 : 5;
         *lo = vlo[i]; *hi = vhi[i];   // the indices key_ref() uses
     }
 }

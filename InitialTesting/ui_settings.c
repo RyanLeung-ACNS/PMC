@@ -124,8 +124,9 @@ typedef struct {
 static const field_t F[CFG_N] = {
     [CFG_POSMAX]  = { "100 % travel", "turns", 2, K_TURNS, "Output turns from closed to fully open" },
     [CFG_REVERSE] = { "Motor direction", NULL, 0, K_TOGGLE, "Reversed if Open drives the valve closed; saving it clears the zero" },
-    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count at 0 %, the back-off above the switch" },
-    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing steps 2 and 4: off the switch" },
+    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count at 0 %, the return above the switch" },
+    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing step 2: off the switch after the fast close" },
+    [CFG_RETURN]  = { "Return", "steps", 0, K_NUM, "Homing step 4: off the switch after the slow close; that point is 0 %" },
     [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Homing step 1: closing fast to the switch" },
     [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Homing step 3: closing slowly onto the switch" },
     [CFG_RATE]    = { "Run speed", "steps/s", 0, K_NUM, "Normal move speed" },
@@ -1145,7 +1146,7 @@ typedef struct {
 
 static const tab_t valve_tabs[3] = {
     { "Valve", { CFG_POSMAX, CFG_REVERSE }, 2, NULL },
-    { "Homing", { CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 3, NULL },
+    { "Homing", { CFG_BACKOFF, CFG_RETURN, CFG_FHOME, CFG_FCREEP }, 4, NULL },
     { "Drive", { CFG_RATE, CFG_START, CFG_ACCEL }, 3, "Used by manual and AUTO moves. Saved when the valve is stopped." },
 };
 static const tab_t tune_tab[1] = {
@@ -1187,6 +1188,8 @@ static void seg_draw(void)
     }
 }
 
+static void pg_refresh(void);
+
 static void seg_cb(lv_event_t *e)
 {
     int i = (int)(intptr_t)lv_event_get_user_data(e);
@@ -1195,6 +1198,7 @@ static void seg_cb(lv_event_t *e)
     pg.tab = i;
     seg_draw();
     pg_fields();
+    pg_refresh();   // the values now, not at the next 0.5 s refresh (Ryan, 28 Oct)
 }
 
 static const char *pg_help(void)

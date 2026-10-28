@@ -50,7 +50,7 @@
  * The remote commands are in remote.c (PRES SP, MODE, VALV SET, STOP, ALRM,
  * EVNT?); they call the functions below. Engineering commands
  * (PMC_ENG_COMMANDS): VALVE?, CTRL?, VALVE CAL, VALVE CLOSED, VALVE SETZERO |
- * SKIP, VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>, TUNE.
+ * SKIP, VALVE POSMAX|FHOME|FCREEP|BACKOFF|RETURN|CLEAR|OFFSET <n>, TUNE.
  * Events go to the log only; nothing is sent unasked.
  */
 
@@ -90,8 +90,9 @@ int32_t valve_range_mmbar(void);                 // sensor in use, full scale
 int32_t valve_band_mmbar(void);                  // target band (BAND)
 ctrl_reg_t valve_regulation(void);               // status words, in AUTO
 
-// Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET (cfg.c).
-#define VALVE_N_SETTINGS 6
+// Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET RETURN
+// (cfg.c; RETURN from 0.13.6).
+#define VALVE_N_SETTINGS 7
 const char *valve_setting_name(int i);
 void valve_settings(int32_t v[VALVE_N_SETTINGS]);
 // NULL if every value is in range, else the name of the first that is not.
