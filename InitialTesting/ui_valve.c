@@ -73,7 +73,7 @@ static const char *const valve_help =
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
     "Moves only with no fault, and only once the valve is homed or its position is set. "
-    "Before that the screen is greyed: home the valve or set its position from Home or Valve homing.\n"
+    "Before that the screen is greyed: home the valve or set its position from Home or Valve position.\n"
     "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
@@ -325,7 +325,7 @@ static void start_cb(lv_event_t *e)
 static void calib_help_cb(lv_event_t *e)
 {
     (void)e;
-    ui_text_view("Valve homing", calib_help);
+    ui_text_view("Valve position", calib_help);
 }
 
 // Set position: the same guards as Home valve, then the list's actions.
@@ -426,7 +426,7 @@ static void calib_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, calib_fast };
+const ui_screen_t ui_scr_calib = { "Valve position", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log
@@ -836,7 +836,7 @@ static void diag_refresh(void)
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
     // Raw readings only (0.13.2, Ryan 28 Oct); the firmware, address, MAC
-    // and Restart are on Settings > System. The strip is Home's
+    // and Restart are on Settings > System setup. The strip is Home's
     // status line from 0.13.4 (Ryan, 28 Oct).
     ui_set_text(dp.v[5], ui_fmt1(buf, sizeof buf, s->die_mc));
     ui_status_line();

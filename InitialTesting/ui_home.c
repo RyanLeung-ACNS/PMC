@@ -436,7 +436,7 @@ static const char *home_minutes(void)
     return t;
 }
 
-// Home only (Valve homing's Home tab, the start-up question).
+// Home only (Valve position's Home tab, the start-up question).
 void ui_home_ask(void)
 {
     lv_snprintf(home_q, sizeof home_q, "Home the valve? It closes onto the limit switch to find 0 %%, %s.",
@@ -493,7 +493,7 @@ static void menu_event(lv_event_t *e)
     ui_open(&ui_scr_menu);
 }
 
-static void reset_event(lv_event_t *e)
+void ui_reset_fault_event(lv_event_t *e)
 {
     (void)e;
     char left[40], t[64];
@@ -592,18 +592,14 @@ static void home_refresh(void)
     ui_status_line();
 }
 
-// Status line and Reset fault, for Home and the operator screens; the
-// frame puts faults and messages over it.
+// Status line for Home and the operator screens; the frame puts faults
+// (with Reset fault, on every screen from 0.13.19) and messages over it.
 void ui_status_line(void)
 {
     char buf[32];
     valve_mode_t m = valve_mode();
     int step = valve_cal_step();
     int nf = valve_fault_count();
-    if (nf) {
-        lv_snprintf(buf, sizeof buf, "%d faults", nf);
-        ui_strip_action("Reset fault", nf > 1 ? buf : NULL, reset_event);
-    }
     int32_t q;
     if (valve_question(&q)) {
         char t[64], v[16];
@@ -660,8 +656,8 @@ static void menu_build(lv_obj_t *scr)
 {
     // Grouped in rows with a caption on the left, as on Diagnostics.
     static const char *const rows[3] = { "Records", "Calibrate", "System" };
-    static const char *const names[6] = { "Trend", "Faults and log", "Valve homing",
-                                          "Sensor", "Diagnostics", "Settings" };
+    static const char *const names[6] = { "Trend", "Faults and log", "Valve position",
+                                          "Transducer", "Diagnostics", "Settings" };
     // Caption and two tiles in 1 : 1.5 : 1.5, the caption centred on its row.
     for (int r = 0; r < 3; r++) {
         lv_obj_t *l = ui_label(scr, 10, 0, 111, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);

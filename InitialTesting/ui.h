@@ -37,6 +37,7 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_FAULT   lv_color_hex(0xD63031)
 #define UI_BLUE    lv_color_hex(0x2D5877)
 #define UI_WARN    lv_color_hex(0x3F3F3F)
+#define UI_YELLOW  lv_color_hex(0xF2C230)   // warning yellow: the header's unsaved icon
 #define UI_TRACK   lv_color_hex(0xE8EEF4)
 #define UI_FILL    lv_color_hex(0x7B8794)
 #define UI_TICK    lv_color_hex(0xA3AFBB)
@@ -164,7 +165,8 @@ void ui_overlay_close(void);
 
 // Home and Menu (ui_home.c).
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
-void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
+void ui_status_line(void);     // mode/move line, in a screen's refresh()
+void ui_reset_fault_event(lv_event_t *e);   // the strip's Reset fault (ui_home.c)
 // Home and Set position (ui_home.c): ui_home_ask the Home confirm,
 // ui_set_position_ask the Set position list, ui_position_ask both (Home's
 // mode button while not homed).

@@ -17,7 +17,7 @@
 /* --------------------------------------------------------------------------
  * Settings (stage 6, simulator v63): Settings, Choose sensor, Valve
  * setup, Control tuning, Review and save, and Calibrate sensor (Menu >
- * Calibrate > Sensor).
+ * Calibrate > Transducer).
  *
  * An edit is a draft (dark edge) until Save settings, which
  * checks the drafts and the settings in use together, puts them in use all
@@ -583,8 +583,9 @@ static void restart_cb(lv_event_t *e)
 
 static void settings_build(lv_obj_t *scr)
 {
-    static const char *const names[5] = { "System", "Choose sensor", "Valve setup", "Control tuning",
-                                          "Review and save" };
+    // Review and save with the save icon in front (0.13.19, Ryan 28 Oct).
+    static const char *const names[5] = { "System setup", "Choose sensor", "Valve setup", "Control tuning",
+                                          LV_SYMBOL_SAVE "  Review and save" };
     const ui_screen_t *const to[5] = { &ui_scr_namenet, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
                                        &ui_scr_review };
     for (int i = 0; i < 5; i++)
@@ -609,12 +610,12 @@ static void settings_refresh(void)
 {
     char t[48], p[32], d[24];
     cfg_sensor_t s;
-    // Which sensor is read; calibrating it is Menu > Calibrate > Sensor.
+    // Which sensor is read; calibrating it is Menu > Calibrate > Transducer.
     if (cfg_sensor(cfg_sensor_active(), &s)) {
         lv_snprintf(t, sizeof t, "In use: %s", sensor_name(p, sizeof p, s.serial));
         ui_btn_text(st.tile[1], "Choose sensor", t);
     }
-    ui_btn_text(st.tile[0], "System", cfg_name()[0] ? cfg_name() : "None");
+    ui_btn_text(st.tile[0], "System setup", cfg_name()[0] ? cfg_name() : "None");
     lv_snprintf(t, sizeof t, "%s turns", value_text(d, sizeof d, CFG_POSMAX, live(CFG_POSMAX)));
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
@@ -768,7 +769,7 @@ static void nm_refresh(void)
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
 
 /* --------------------------------------------------------------------------
- * System (Settings; Name and network 0.12.13 to 0.13.6, renamed 0.13.7,
+ * System setup (Settings; Name and network 0.12.13 to 0.13.6, System 0.13.7 to 0.13.18,
  * Ryan 28 Oct): the cryostat name, the Ethernet fallback address (used when
  * no DHCP server answers, Ryan 26 Oct), the address in use, the MAC, the
  * firmware and its build date, and the Remote control switch.
@@ -837,7 +838,7 @@ static void nn_refresh(void)
                  ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
 }
 
-const ui_screen_t ui_scr_namenet = { "System", nn_build, nn_refresh, NULL };
+const ui_screen_t ui_scr_namenet = { "System setup", nn_build, nn_refresh, NULL };
 
 /* Fallback address: digits and dots for the address and the mask; Use puts
  * them in use for the next restart, unsaved until Save settings. */
@@ -1471,7 +1472,7 @@ static void rv_refresh(void)
 const ui_screen_t ui_scr_review = { "Review and save", rv_build, rv_refresh, NULL };
 
 /* --------------------------------------------------------------------------
- * Calibrate sensor (Menu > Calibrate > Sensor): CAL VAC / CAL AIR on the
+ * Calibrate sensor (Menu > Calibrate > Transducer): CAL VAC / CAL AIR on the
  * screen. The new cal is in use once both points are held, unsaved until
  * Save settings (as on COM3).
  * ------------------------------------------------------------------------ */

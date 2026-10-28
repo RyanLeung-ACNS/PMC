@@ -558,7 +558,7 @@ static void build_frame(void)
     lv_obj_set_style_border_color(mode_lbl, lv_color_white(), 0);
     // Unsaved settings (0.12.19, Ryan 27 Oct): on every screen while a
     // setting in use differs from the newest save (cfg_unsaved), left of
-    // the mode badge; grey outline, no colour (not an alarm). Opens Review
+    // the mode badge; grey outline to 0.13.18, warning yellow from 0.13.19. Opens Review
     // and save. The save icon, not the word, from 0.13.8 (Ryan 28 Oct).
     unsaved_btn = ui_btn(hdr, 0, 6, 40, 28, UI_DARK, LV_SYMBOL_SAVE, unsaved_event, NULL);
     lv_obj_t *ul = lv_obj_get_child(unsaved_btn, 0);
@@ -566,8 +566,9 @@ static void build_frame(void)
     lv_obj_center(ul);
     lv_obj_set_style_radius(unsaved_btn, 4, 0);
     lv_obj_set_style_border_side(unsaved_btn, LV_BORDER_SIDE_FULL, 0);
-    lv_obj_set_style_border_width(unsaved_btn, 1, 0);
-    lv_obj_set_style_border_color(unsaved_btn, UI_IDLE, 0);
+    // As thick as the mode badge's edge, in warning yellow (0.13.19, Ryan 28 Oct).
+    lv_obj_set_style_border_width(unsaved_btn, 2, 0);
+    lv_obj_set_style_border_color(unsaved_btn, UI_YELLOW, 0);
     lv_obj_set_ext_click_area(unsaved_btn, 6);
     lv_obj_add_flag(unsaved_btn, LV_OBJ_FLAG_HIDDEN);
 
@@ -801,7 +802,8 @@ static void frame_refresh(void)
         static int uns_dim = -1;
         if (uns_dim != (overlay != NULL)) {
             uns_dim = overlay != NULL;
-            ui_set_color(lv_obj_get_child(unsaved_btn, 0), uns_dim ? UI_IDLE : lv_color_white());
+            ui_set_color(lv_obj_get_child(unsaved_btn, 0), uns_dim ? UI_IDLE : UI_YELLOW);
+            lv_obj_set_style_border_color(unsaved_btn, uns_dim ? UI_IDLE : UI_YELLOW, 0);
         }
     }
     int32_t right = uns ? ux - 8 : 353;   // the mode badge starts at 361
@@ -890,7 +892,12 @@ static void frame_refresh(void)
             lv_snprintf(buf, sizeof buf, "%s %s (+%d)", tag, text, nf - 1);
         else
             lv_snprintf(buf, sizeof buf, "%s %s", tag, text);
-        strip_draw(UI_STRIP_FAULT, NULL, buf, false, act_cb != NULL);
+        // Reset fault on every screen, not only where the status line is
+        // (0.13.19, Ryan 28 Oct: Settings had the fault but no button).
+        char n[16];
+        lv_snprintf(n, sizeof n, "%d faults", nf);
+        ui_strip_action("Reset fault", nf > 1 ? n : NULL, ui_reset_fault_event);
+        strip_draw(UI_STRIP_FAULT, NULL, buf, false, true);
     } else if (stepper3_override()) {
         // While the Limit override button is held (or MOT OVERRIDE armed it):
         // no Cancel, releasing the button ends it (0.13.2, Ryan 28 Oct).

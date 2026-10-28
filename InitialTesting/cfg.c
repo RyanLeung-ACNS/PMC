@@ -1206,7 +1206,7 @@ void cfg_set_remote(bool on)
 #if PMC_ENG_COMMANDS   // NET?, NET IP, PID?, PID, CFG (engineering)
 // NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
 // refused, so nobody sets an address that cuts off their own link; the
-// screen (Settings > System) or the USB build sets it.
+// screen (Settings > System setup) or the USB build sets it.
 static void net_command(const char *a)
 {
     char t[2][48];
@@ -1225,7 +1225,7 @@ static void net_command(const char *a)
         return;
     }
 #if PMC_LINK_ETHERNET
-    link_printf("ERR NET IP is set on the screen (Settings > System), not over the network\r\n");
+    link_printf("ERR NET IP is set on the screen (Settings > System setup), not over the network\r\n");
 #else
     uint32_t ip = 0, mask = 0;
     const char *why;

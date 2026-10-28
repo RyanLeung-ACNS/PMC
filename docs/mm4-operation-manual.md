@@ -111,11 +111,11 @@ Every screen has the same frame: a header with Back and Home buttons, the title,
 | --- | --- | --- |
 | Home | Home button | Pressure tile (reading in mbar, log bar 0.1 to 1000 mbar, Target box) and Valve tile (reading in %, bar, Go to box). The mode button reads Home valve, Start AUTO or Switch to MANUAL as the mode allows. Valve and Menu buttons. A tap on the sparkline opens Trend |
 | Valve | Home > Valve | MANUAL moves: hold Close or Open, -1 %, +1 %, -5 %, +5 %, Fully close, Fully open, and the Go to box for a typed % (white with a blue underline when it takes a tap). In AUTO the buttons are grey and Go to shows where AUTO is sending the valve; a tap asks to switch to MANUAL |
-| Menu | Home > Menu | Records: Trend, Faults and log. Calibrate: Valve homing, Sensor. System: Diagnostics, Settings |
+| Menu | Home > Menu | Records: Trend, Faults and log. Calibrate: Valve position, Transducer. System: Diagnostics, Settings |
 | Trend | Menu > Records > Trend | Pressure (left axis), the target while in AUTO (dashed) and valve % (right axis) over 1, 2, 5, 10, 30 min or 1 hour |
 | Faults and log | Menu > Records > Faults and log | Latched faults, with Reset fault. Tap a fault for its detail and help. The event log (last 100 events) |
-| Valve homing | Menu > Calibrate > Valve homing | Home valve, and the three ways to set the position without homing: Set as 0 %, Set as other %, Use last saved. Help |
-| Calibrate sensor | Menu > Calibrate > Sensor | The two-point calibration: Capture vacuum, Capture air, and the saved and captured readings side by side |
+| Valve position | Menu > Calibrate > Valve position | Home valve, and the three ways to set the position without homing: Set as 0 %, Set as other %, Use last saved. Help |
+| Calibrate sensor | Menu > Calibrate > Transducer | The two-point calibration: Capture vacuum, Capture air, and the saved and captured readings side by side |
 | Diagnostics | Menu > System > Diagnostics | Live readings and hardware state: firmware version, Druck signal and excitation, board temperature, motor and limit switch, link and IP address |
 | Settings | Menu > System > Settings | System, Choose sensor, Valve setup, Control tuning, Review and save (with Load settings), Motor override (section 10) |
 
@@ -168,7 +168,7 @@ When AUTO ends for any reason the valve stays where it was. It does not close. I
 
 Homing finds the closed limit switch and sets 0 % from it. It is the only way the controller checks the valve position. Home after every power-up, after a motor direction or coil order change, and whenever the position is in doubt.
 
-Start it from Home valve on the Home screen (while NOT HOMED) or from Menu > Calibrate > Valve homing. The question "Home the valve? It closes onto the limit switch to find 0 %, up to N min" confirms it. The Valve homing page shows the step running, the motor step count and the time taken.
+Start it from Home valve on the Home screen (while NOT HOMED) or from Menu > Calibrate > Valve position. The question "Home the valve? It closes onto the limit switch to find 0 %, up to N min" confirms it. The Valve position page shows the step running, the motor step count and the time taken.
 
 1. If the switch is already pressed, the valve moves off it first. If the switch stays pressed, fault F-4.
 2. Fast close to the switch. If the switch is not found within 1.1 times the full travel, fault F-3.
@@ -180,7 +180,7 @@ The strip reads "Homing 1 of 3: fast close to the switch", "Homing 2 of 3: backi
 
 ### Setting the position without homing
 
-The Valve homing page also offers three ways to set the position without moving the valve. None of them is checked against the limit switch, and the strip shows "X %, set by hand" or "X %, from saved" afterwards.
+The Valve position page also offers three ways to set the position without moving the valve. None of them is checked against the limit switch, and the strip shows "X %, set by hand" or "X %, from saved" afterwards.
 
 | Option | When to use it |
 | --- | --- |
@@ -205,7 +205,7 @@ The Druck output is ratiometric, so the controller reads the ratio of signal to 
 
 Calibrate when a sensor is first fitted to a board, when the sensor or the Click boards are changed, and when a check against the reference gauge shows drift. Calibration is refused in AUTO.
 
-From the screen (Menu > Calibrate > Sensor):
+From the screen (Menu > Calibrate > Transducer):
 
 1. Pump the sensor down. Press Capture vacuum. The question "Sensor at vacuum? Capture sets 0 mB" has Capture, which takes the point as 0 mbar, and Not 0 mB, which opens a keypad for the reference gauge reading (0 to 50 mbar). Type what the Pfeiffer gauge shows. The capture averages 5 readings and takes about 5 s.
 2. Vent the sensor to the room. Press Capture air and type the laboratory barometer reading in mbar, for example 1013.2 (500 to 1100 mbar). The capture averages 5 readings.
@@ -277,7 +277,7 @@ The Ethernet build (the one for the cryostat) runs two servers on one cable and 
 
 ### Network and IP address
 
-The controller asks for an address by DHCP. If no DHCP server answers within 10 s it uses the fallback address: the one saved under Settings > System, or the build's default 169.254.10.50/16. The header shows the address in use, or NO CABLE, DHCP..., NET NO CLK or NET NO PHY while it has none. Diagnostics shows the link and the address. The hostname is pmc.
+The controller asks for an address by DHCP. If no DHCP server answers within 10 s it uses the fallback address: the one saved under Settings > System setup, or the build's default 169.254.10.50/16. The header shows the address in use, or NO CABLE, DHCP..., NET NO CLK or NET NO PHY while it has none. Diagnostics shows the link and the address. The hostname is pmc.
 
 To set the fallback address, type it and the mask on the System page (or NET IP over USB), then Save settings and restart. NET IP is refused over port 5000 so a remote user cannot cut off their own link. On a laptop with a fixed address, put the laptop and the fallback address on the same subnet.
 
@@ -334,7 +334,7 @@ The Modbus read test passed on the bench on 26 October 2026. The write test has 
 | --- | --- | --- |
 | Check the pressure reading against the reference gauge | At each cool-down, and whenever the reading looks wrong | Compare the controller's reading with the Pfeiffer gauge at vacuum and at air. Recalibrate (section 8) if either point is off by more than the sensor's accuracy |
 | Home the valve | After every power-up, after a direction or coil order change, and when the position is in doubt | Section 7 |
-| Check the limit switch | When F-3, F-4 or W-4 appears, and at each warm-up | LIM? over the link or the Valve homing page shows pressed or free. Press the switch by hand and watch it change. Look for ice on the switch and the valve drive |
+| Check the limit switch | When F-3, F-4 or W-4 appears, and at each warm-up | LIM? over the link or the Valve position page shows pressed or free. Press the switch by hand and watch it change. Look for ice on the switch and the valve drive |
 | Check the Druck excitation | When F-2 appears | Diagnostics or SENSE? shows the excitation. It should be 9.5 to 10.5 V. A Boost 10 trip needs a power cycle |
 | Check the motor supply | When moves are slow, F-5 appears or the motor is noisy | Measure the 12 V at the Stepper 3 Click. With the sense wired, SUP? reads it |
 | Review the event log | After a fault, and before clearing it | Menu > Records > Faults and log, or EVT? over the link. The log empties at a restart, so read it first |
