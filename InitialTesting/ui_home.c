@@ -617,7 +617,7 @@ void ui_status_line(void)
         static const char *const what[5] = { "Homing: moving off the switch", "Homing 1 of 4: fast close",
                                              "Homing 2 of 4: backing off",
                                              "Homing 3 of 4: slow close",
-                                             "Homing 4 of 4: final back-off" };
+                                             "Homing 4 of 4: return" };
         ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
     } else if (m == VALVE_MANUAL && valve_warning()) {
         // No PAUSED state (Ryan, 22 Oct): W-2, W-4, W-5 and W-6 drop to
@@ -634,17 +634,10 @@ void ui_status_line(void)
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
-        // Idle: a position set rather than homed says so (Ryan, 23 Oct);
-        // homed, the pressure sparkline named, not the valve reading the
-        // tiles already show (HMI review H3, 28 Oct).
-        char t[48], v[16];
-        valve_ref_t how = valve_reference();
-        ui_fmt2(v, sizeof v, valve_pct_milli());
-        if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED) {
-            lv_snprintf(t, sizeof t, "%s %%, %s", v, how == VALVE_REF_HAND ? "entered" : "last saved");
-            ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
-        } else
-            ui_strip_set(UI_STRIP_INFO, UI_ICON_TREND, "Pressure, last 5 min");
+        // Idle, with the pressure sparkline (HMI review H3, 28 Oct). How
+        // the position was set (entered, last saved) is on Home valve; the
+        // strip said it to 0.13.7 and Ryan found it unclear (28 Oct).
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_TREND, "Idle. Pressure, last 5 min");
     }
 }
 

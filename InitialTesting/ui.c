@@ -557,10 +557,9 @@ static void build_frame(void)
     // Unsaved settings (0.12.19, Ryan 27 Oct): on every screen while a
     // setting in use differs from the newest save (cfg_unsaved), left of
     // the mode badge; grey outline, no colour (not an alarm). Opens Review
-    // and save.
-    unsaved_btn = ui_btn(hdr, 0, 6, 72, 28, UI_DARK, "Unsaved", unsaved_event, NULL);
+    // and save. The save icon, not the word, from 0.13.8 (Ryan 28 Oct).
+    unsaved_btn = ui_btn(hdr, 0, 6, 40, 28, UI_DARK, LV_SYMBOL_SAVE, unsaved_event, NULL);
     lv_obj_t *ul = lv_obj_get_child(unsaved_btn, 0);
-    lv_obj_set_style_text_font(ul, &ui_font_12, 0);
     lv_obj_set_style_text_align(ul, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(ul);
     lv_obj_set_style_radius(unsaved_btn, 4, 0);
@@ -780,7 +779,7 @@ static void frame_refresh(void)
     // NOT HOMED is wider than the button column: the badge grows left.
     bool wide = m == VALVE_NOT_CAL && !nf;
     bool uns = cfg_unsaved() > 0 && cur != &ui_scr_review;
-    int32_t ux = (wide ? 341 : 361) - 80;
+    int32_t ux = (wide ? 341 : 361) - 48;
     show(unsaved_btn, uns);
     if (uns) {
         if (lv_obj_get_x(unsaved_btn) != ux)
