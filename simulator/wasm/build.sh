@@ -46,7 +46,7 @@ fi
 
 FW="limit.c rtclock.c sysinfo.c link.c remote.c cal.c cfg.c valve.c ctrl.c valvepos.c trend.c sense.c fixed.c \
     ui.c ui_home.c ui_valve.c ui_settings.c ui_trend.c motor_screen.c \
-    ui_font_12.c ui_font_16.c ui_font_26.c ui_font_40.c ui_font_dos16.c"
+    ui_font_12.c ui_font_16.c ui_font_26.c ui_font_40.c ui_img_logo.c"
 SRC=""
 # tune.c (TUNE STEP) from 0.12.7; taken when it is there.
 [ -f "$PROJ/tune.c" ] && FW="$FW tune.c"

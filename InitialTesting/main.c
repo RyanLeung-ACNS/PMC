@@ -107,6 +107,15 @@ void board_init()
     timerInit();
 }
 
+// Waits ms on the start-up screen, its bar moving on every 30 ms.
+static void splash_wait(int ms)
+{
+    for (int t = 0; t < ms; t += 30) {
+        Delay_ms(30);
+        ui_splash_tick();
+    }
+}
+
 /**
  * @brief Initializes the LVGL application and loads the main screen.
  */
@@ -118,10 +127,10 @@ void application_init()
 
     // Initialize board peripherals and LVGL drivers.
     board_init();
-    // The start-up screen until Home is built (0.13.3): from 0.13.10 an old
-    // PC's self test, one line per check below as it is made, paced so it
-    // can be read (Ryan, 28 Oct; the board is ready in about a second). No
-    // delay in the simulator.
+    // The start-up screen until Home is built (0.13.3): from 0.13.13 the
+    // logo, a bar and each check's result under it as it is made, paced so
+    // it can be read (Ryan, 28 Oct; the board is ready in about a second).
+    // No delay in the simulator.
     ui_splash();
     ui_splash_line(!sysinfo_reset_abnormal(), "Last reset", "%s", sysinfo_reset_reason());
 
@@ -134,20 +143,20 @@ void application_init()
     limit_init();
     supply_init();   // motor 12 V on PA3
     valve_init();   // NOT HOMED: nothing moves until homed or moved on the screen
-    Delay_ms(200);
+    splash_wait(200);
     clicks_poll();   // the excitation once the Boost 10 has settled
     const clicks_state_t *cs = clicks_state();
     char v[24];
     ui_splash_line(cs->pm_found, "Power monitor", cs->pm_found ? "INA228 found" : "INA228 not answering");
-    Delay_ms(180);
+    splash_wait(180);
     ui_splash_line(!cs->boost_tripped && cs->bus_mv >= 9500 && cs->bus_mv <= 10500, "Druck excitation",
                    cs->boost_tripped ? "tripped" : "%s V", ui_fmt2(v, sizeof v, cs->bus_mv));
-    Delay_ms(180);
+    splash_wait(180);
     ui_splash_line(cs->reading_ok, "Pressure", cs->reading_ok ? "%s mbar" : cs->druck_absent ? "no Druck signal" : "no reading",
                    ui_fmt1(v, sizeof v, cs->p_mmbar));
     // Saved motor, valve and cal settings (factory defaults if none). Nothing moves.
     cfg_init();
-    Delay_ms(180);
+    splash_wait(180);
     {
         uint32_t rev;
         const char *at;
@@ -162,7 +171,7 @@ void application_init()
     // The valve position saved at the last standstill: offered on the
     // screen (Use saved / Calibrate), never used by itself.
     valvepos_init();
-    Delay_ms(180);
+    splash_wait(180);
     {
         int32_t q;
         if (valvepos_offer(&q)) {
@@ -173,15 +182,15 @@ void application_init()
             ui_splash_line(true, "Valve position", "not homed");
         }
     }
-    Delay_ms(180);
+    splash_wait(180);
 #if PMC_LINK_ETHERNET
     ui_splash_line(true, "Network", "Ethernet, remote control %s", cfg_remote() ? "On" : "Off");
 #else
     ui_splash_line(true, "Network", "USB COM port");
 #endif
-    Delay_ms(300);
+    splash_wait(300);
     ui_splash_done();
-    Delay_ms(500);
+    splash_wait(500);
 
     // The frame and Home. The 0.6.0 motor screen is built the first time
     // Menu > Motor opens it, which keeps its LVGL heap free until then.

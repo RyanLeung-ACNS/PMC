@@ -332,16 +332,14 @@ int main(int argc, char **argv)
     memset(flash, 0xFF, 8u << 20);
     if (strcmp(st, "nosave"))
         seed_flash();
-    if (!strcmp(st, "splash")) {   // the start-up screen (0.13.3; self test from 0.13.10), all checks made
+    if (!strcmp(st, "splash")) {   // the start-up screen (0.13.3; logo from 0.13.13), four checks made
         ui_splash();
         ui_splash_line(true, "Last reset", "%s", "power-on");
         ui_splash_line(true, "Power monitor", "INA228 found");
         ui_splash_line(true, "Druck excitation", "%s V", "10.02");
-        ui_splash_line(false, "Pressure", "no reading");   // a failed check, in amber
-        ui_splash_line(true, "Settings", "rev %d, saved %s", 42, "28/10/26 14:05");
-        ui_splash_line(true, "Valve position", "last saved %s %%, not homed", "34.24");
-        ui_splash_line(true, "Network", "Ethernet, remote control %s", "On");
-        ui_splash_done();
+        ui_splash_line(true, "Pressure", "%s mbar", "1013.2");
+        for (int i = 0; i < 25; i++)
+            ui_splash_tick();   // the bar caught up with them
         FILE *f = fopen(argv[2], "wb");
         if (!f) { perror(argv[2]); return 1; }
         fwrite(fb, sizeof fb, 1, f);

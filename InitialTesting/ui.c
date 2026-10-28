@@ -1462,23 +1462,21 @@ static void question_check(void)
  * ------------------------------------------------------------------------ */
 /* Start-up screen (0.13.3, Ryan 28 Oct): from the first frame until
  * ui_init, so the panel never shows what its memory held at power-up.
- * From 0.13.10 (Ryan 28 Oct: "a black screen and an old style loading
- * screen" with a parody logo) an old PC's power-on self test: white and
- * grey 8x16 text on black, the MercShore iPC logo top right (0.13.12), and one line per
- * start-up check as main.c makes it, a failed one in amber. Deleted by
- * ui_init. */
-#define SPL_GREY  0xAAAAAA
-#define SPL_DIM   0x555555
-#define SPL_AMBER 0xFFAA00
-#define SPL_ROW0  100   // the first check line
-#define SPL_ROWS  8
+ * From 0.13.13 Ryan's MercShore iPC logo on white (his picture, 28 Oct;
+ * ui_img_logo.c from tools/images/), a rounded bar that fills as main.c
+ * makes each start-up check, and that check's result under it in small
+ * grey text, amber if it failed (0.13.10 had them as an old PC's self
+ * test). Deleted by ui_init. */
+#define SPL_BAR_X 100
+#define SPL_BAR_W 280
+#define SPL_CHECKS 7   // ui_splash_line calls in main.c
 
-static lv_obj_t *splash_scr, *splash_foot;
-static int splash_row;
+static lv_obj_t *splash_scr, *splash_fill, *splash_msg;
+static int splash_n, splash_pct, splash_to;
 
 const char *ui_fw_text(void)
 {
-    // "0.13.10, built 28/10/26" from the compiler's "Oct 28 2026" (DD/MM/YY).
+    // "0.13.13, built 28/10/26" from the compiler's "Oct 28 2026" (DD/MM/YY).
     static char t[32];
     static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
     const char *d = __DATE__;
@@ -1490,86 +1488,88 @@ const char *ui_fw_text(void)
     return t;
 }
 
-static lv_obj_t *spl_text(int32_t x, int32_t y, uint32_t c, const char *t)
+static void splash_bar(void)
 {
-    lv_obj_t *l = lv_label_create(splash_scr);
-    lv_obj_set_pos(l, x, y);
-    lv_obj_set_style_text_font(l, &ui_font_dos16, 0);
-    lv_obj_set_style_text_color(l, lv_color_hex(c), 0);
-    lv_label_set_text(l, t);
-    return l;
+    int32_t w = (SPL_BAR_W - 2) * splash_pct / 100;   // inside the 1 px edge
+    lv_obj_set_width(splash_fill, w < 12 ? 12 : w);
+    lv_obj_set_style_opa(splash_fill, splash_pct ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
 }
 
 void ui_splash(void)
 {
     lv_obj_t *s = splash_scr = lv_screen_active();
-    splash_row = 0;
+    splash_n = splash_pct = splash_to = 0;
     lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(s, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(s, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
-    // The MercShore iPC logo (0.13.12, Ryan 28 Oct): a mercury drop over the
-    // shore's waves, 4 px pixels, each run in a row drawn as one rectangle;
-    // a silver, b white highlight, c ice blue.
-    static const char *const logo[] = {
-        ".......aa.......", "......aaaa......", ".....aaaaaa.....", "....aaaaaaaa....",
-        "...aaaaaaaaaa...", "..aaaaaaaabaaa..", "..aaaaaaaabbaa..", "..aaaaaaaaabaa..",
-        "..aaaaaaaaaaaa..", "...aaaaaaaaaa...", "....aaaaaaaa....", "................",
-        "cc...cc...cc...c", ".cc.cc.cc.cc.cc.", "..ccc...ccc...cc",
-    };
-    static const uint32_t pal[3] = { 0xC8D0D8, 0xFFFFFF, 0x7FD4FF };
-    for (int r = 0; r < 15; r++)
-        for (int c = 0; logo[r][c];) {
-            char ch = logo[r][c];
-            int run = 1;
-            while (logo[r][c + run] == ch)
-                run++;
-            if (ch != '.') {
-                lv_obj_t *o = plain(s);
-                lv_obj_set_pos(o, 380 + c * 4, 6 + r * 4);
-                lv_obj_set_size(o, run * 4, 4);
-                lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-                lv_obj_set_style_bg_color(o, lv_color_hex(pal[ch - 'a']), 0);
-            }
-            c += run;
-        }
-    spl_text(400, 68, 0xFFFFFF, "iPC");
-    spl_text(8, 4, 0xFFFFFF, "MercShore iPC BIOS v" PMC_FW_VERSION);   // *IDN? MercShore,iPC
-    spl_text(8, 20, SPL_GREY, "(C) 2026 MercShore");
-    spl_text(8, 52, SPL_GREY, "STM32F407 CPU");
-    spl_text(8, 68, SPL_GREY, "Memory : 128 KB SRAM, 64 KB CCM");
-    splash_foot = spl_text(8, 236, SPL_GREY, "Press DEL to run SETUP (it will not help)");
-    char id[40];
-    const char *fw = ui_fw_text();   // "0.13.10, built 28/10/26"
-    lv_snprintf(id, sizeof id, "%s-STM32F4-iPC-%s", strstr(fw, "built ") + 6, PMC_FW_VERSION);
-    spl_text(8, 254, SPL_DIM, id);
+    LV_IMAGE_DECLARE(ui_img_logo);
+    lv_obj_t *img = lv_image_create(s);
+    lv_image_set_src(img, &ui_img_logo);
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 24);
+    // The bar as in the picture: a pale track with a thin blue-grey edge and
+    // a fill from light to deep blue.
+    lv_obj_t *t = plain(s);
+    lv_obj_set_pos(t, SPL_BAR_X, 206);
+    lv_obj_set_size(t, SPL_BAR_W, 14);
+    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(t, lv_color_hex(0xE6E8EC), 0);
+    lv_obj_set_style_border_width(t, 1, 0);
+    lv_obj_set_style_border_color(t, lv_color_hex(0x8C9CB8), 0);
+    lv_obj_set_style_radius(t, LV_RADIUS_CIRCLE, 0);
+    splash_fill = plain(t);
+    lv_obj_set_pos(splash_fill, 0, 0);   // children start inside the edge
+    lv_obj_set_height(splash_fill, 12);
+    lv_obj_set_style_bg_opa(splash_fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(splash_fill, lv_color_hex(0x8FD8FF), 0);
+    lv_obj_set_style_bg_grad_color(splash_fill, lv_color_hex(0x0B5BC4), 0);
+    lv_obj_set_style_bg_grad_dir(splash_fill, LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_radius(splash_fill, LV_RADIUS_CIRCLE, 0);
+    splash_bar();
+    splash_msg = ui_label(s, 0, 228, 480, &ui_font_12, lv_color_hex(0x6B7A8C), LV_TEXT_ALIGN_CENTER, "");
+    lv_obj_t *v = ui_label(s, 0, 252, 470, &ui_font_12, lv_color_hex(0x9AA6B4), LV_TEXT_ALIGN_RIGHT, "");
+    lv_label_set_text(v, ui_fw_text());
     lv_refr_now(NULL);
 }
 
 void ui_splash_line(bool ok, const char *what, const char *fmt, ...)
 {
-    if (!splash_scr || splash_row >= SPL_ROWS)
+    if (!splash_scr)
         return;
-    char v[40], t[64];
+    char v[40], t[72];
     va_list ap;
     va_start(ap, fmt);
     lv_vsnprintf(v, sizeof v, fmt, ap);
     va_end(ap);
-    // "Limit switch ...... released": the name, dots to column 20, the result.
-    int n = lv_snprintf(t, sizeof t, "%s ", what);
-    while (n < 20 && n < (int)sizeof t - 1)
-        t[n++] = '.';
-    lv_snprintf(t + n, sizeof t - (size_t)n, " %s", v);
-    spl_text(8, SPL_ROW0 + 16 * splash_row++, ok ? SPL_GREY : SPL_AMBER, t);
+    lv_snprintf(t, sizeof t, "%s: %s", what, v);
+    lv_label_set_text(splash_msg, t);
+    lv_obj_set_style_text_color(splash_msg, ok ? lv_color_hex(0x6B7A8C) : lv_color_hex(0xB86E00), 0);
+    if (splash_n < SPL_CHECKS)
+        splash_n++;
+    splash_to = 90 * splash_n / SPL_CHECKS;
+    lv_refr_now(NULL);
+}
+
+void ui_splash_tick(void)
+{
+    if (!splash_scr || splash_pct >= splash_to)
+        return;
+    splash_pct += 3;
+    if (splash_pct > splash_to)
+        splash_pct = splash_to;
+    splash_bar();
     lv_refr_now(NULL);
 }
 
 void ui_splash_done(void)
 {
-    if (!splash_foot)
+    if (!splash_scr)
         return;
     char t[48];
-    lv_snprintf(t, sizeof t, "Starting %s ...", cfg_name()[0] ? cfg_name() : "the controller");
-    lv_label_set_text(splash_foot, t);
+    lv_snprintf(t, sizeof t, "Starting %s", cfg_name()[0] ? cfg_name() : "the controller");
+    // A failed check stays on show; otherwise the last line gives way.
+    if (lv_color_eq(lv_obj_get_style_text_color(splash_msg, 0), lv_color_hex(0x6B7A8C)))
+        lv_label_set_text(splash_msg, t);
+    splash_to = 100;
     lv_refr_now(NULL);
 }
 
@@ -1586,7 +1586,7 @@ void ui_init(void)
     lv_screen_load(home_scr);
     if (splash_scr) {
         lv_obj_delete(splash_scr);
-        splash_scr = splash_foot = NULL;
+        splash_scr = splash_fill = splash_msg = NULL;
     }
     frame_refresh();
     lv_timer_create(refresh_timer, 500, NULL);

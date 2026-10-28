@@ -24,7 +24,6 @@ LV_FONT_DECLARE(ui_font_12)
 LV_FONT_DECLARE(ui_font_16)
 LV_FONT_DECLARE(ui_font_26)
 LV_FONT_DECLARE(ui_font_40)
-LV_FONT_DECLARE(ui_font_dos16)   // 8x16 text mode, the start-up screen
 
 // Fonts with every digit as wide as the widest, for right-aligned numbers.
 extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
@@ -85,11 +84,12 @@ typedef struct {
 } ui_screen_t;
 
 void ui_splash(void);          // start-up screen, right after the display driver
-// The next start-up check line, "what ...... result" (printf-style); a
-// failed one (!ok) in amber. Up to eight.
+// A start-up check's result under the bar, "what: result" (printf-style);
+// a failed one (!ok) in amber. Each moves the bar's goal on.
 void ui_splash_line(bool ok, const char *what, const char *fmt, ...);
-void ui_splash_done(void);     // "Starting <name> ..." at the foot
-// "0.13.10, built 28/10/26": the version and the build date (DD/MM/YY).
+void ui_splash_tick(void);     // the bar a step towards its goal; call every 30 ms
+void ui_splash_done(void);     // "Starting <name>", the bar's goal full
+// "0.13.13, built 28/10/26": the version and the build date (DD/MM/YY).
 const char *ui_fw_text(void);
 void ui_init(void);            // after the drivers and valve/cfg init
 void ui_open(const ui_screen_t *s);
