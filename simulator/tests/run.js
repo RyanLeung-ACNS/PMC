@@ -129,7 +129,7 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
 }
 { // Limit override is a deadman (0.13.2): held, it closes past a pressed switch; released, it stops at once.
   const s = load(); s.boot(); s.set(5, 40000); s.run(2000);
-  s.tap(415, 184); s.tap(379, 184); s.tap(357, 184); s.tap(318, 147);   // Menu > Settings > Motor override > Open
+  s.tap(415, 184); s.tap(379, 184); s.tap(298, 184); s.tap(318, 147);   // Menu > Settings > Motor override > Open
   s.set(7, 1); s.run(500);                                              // switch stuck pressed
   s.tap(186, 184, 1000);
   const blocked = s.get(30) === 0;                                      // Close refused

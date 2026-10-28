@@ -423,9 +423,10 @@ static void back_event(lv_event_t *e)
 
 void ui_back(void)
 {
-    if (overlay)
+    if (overlay) {
         ui_overlay_close();
-    else if (back_n)
+        frame_refresh();   // the strip and header ungreyed now
+    } else if (back_n)
         open_screen(back_stack[--back_n]);
     else if (cur != &ui_scr_home)
         ui_home();
@@ -901,9 +902,18 @@ static void frame_refresh(void)
     }
 }
 
+// Set when a popup closes: the fast timer redraws the frame within 0.1 s,
+// so the strip and header lose their grey at once, not at the next 0.5 s
+// refresh (0.13.5, Ryan 28 Oct: Back from a pick list left the strip grey).
+static bool frame_due;
+
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
+    if (frame_due && !overlay) {
+        frame_due = false;
+        frame_refresh();
+    }
     if (cur->fast)
         cur->fast();
     if (kp_open)
@@ -989,6 +999,7 @@ void ui_overlay_close(void)
     if (overlay) {
         lv_obj_delete(overlay);
         overlay = NULL;
+        frame_due = true;
     }
     overlay_q = 0;
     overlay_tv = false;

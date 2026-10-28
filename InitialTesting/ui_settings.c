@@ -554,6 +554,32 @@ static void motor_cb(lv_event_t *e)
     ui_confirm("Open Motor override? Drives the motor by steps.", "Open", motor_go);
 }
 
+// Restart (on Diagnostics from 0.12.19, Name and network from 0.13.2,
+// next to Motor override on Settings from 0.13.5, Ryan 28 Oct): asks
+// first, stops the valve (AUTO ends, homing is cancelled), then waits 2.5 s
+// so the valve position is saved at standstill (valvepos.h, 2 s) and
+// offered at start-up.
+static void restart_now(lv_timer_t *t)
+{
+    (void)t;
+    sysinfo_restart();
+}
+
+static void do_restart(void)
+{
+    valve_stop();
+    valve_event("SYS", "Restart from the screen");
+    ui_msg("Restarting.");
+    lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
+    lv_timer_set_repeat_count(t, 1);
+}
+
+static void restart_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
+}
+
 static void settings_build(lv_obj_t *scr)
 {
     static const char *const names[5] = { "Name and network", "Choose sensor", "Valve setup", "Control tuning",
@@ -564,10 +590,17 @@ static void settings_build(lv_obj_t *scr)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
     // Motor override looks apart from the pages: a dark outline. Limit
     // override is on it since 0.11.33 (Ryan, 23 Oct).
-    lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
+    lv_obj_t *m = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Motor\noverride", motor_cb, NULL);
     lv_obj_set_style_border_side(m, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(m, 2, 0);
     lv_obj_set_style_border_color(m, UI_WARN, 0);
+    // Restart beside it, filled dark so it does not read as a page (0.13.5,
+    // Ryan 28 Oct: its own colour, not on Name and network).
+    lv_obj_t *r = ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
+    lv_obj_set_style_bg_color(r, UI_TEXT, 0);
+    lv_obj_set_style_text_color(r, lv_color_white(), 0);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_bg_color(r, lv_color_hex(0x3C4856), LV_STATE_PRESSED);
     side.save = side.discard = NULL;
 }
 
@@ -741,31 +774,6 @@ static struct { lv_obj_t *name, *net, *now, *mac, *fw, *remote; } nn;
 
 static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
 
-// Restart (on Diagnostics from 0.12.19, here from 0.13.2, Ryan 28 Oct): asks
-// first, stops the valve (AUTO ends, homing is cancelled), then waits 2.5 s
-// so the valve position is saved at standstill (valvepos.h, 2 s) and
-// offered at start-up.
-static void restart_now(lv_timer_t *t)
-{
-    (void)t;
-    sysinfo_restart();
-}
-
-static void do_restart(void)
-{
-    valve_stop();
-    valve_event("SYS", "Restart from the screen");
-    ui_msg("Restarting.");
-    lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
-    lv_timer_set_repeat_count(t, 1);
-}
-
-static void restart_cb(lv_event_t *e)
-{
-    (void)e;
-    ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
-}
-
 // Remote control (0.13.4, Ryan 28 Oct, network plan A): one press turns it
 // On or Off, live at once, kept by Save settings like the name.
 static void remote_cb(lv_event_t *e)
@@ -782,8 +790,7 @@ static void nn_build(lv_obj_t *scr)
     // The MAC, for a DHCP reservation (Ryan, 28 Oct).
     nn.mac = ui_info(scr, 244, RY[1], 226, RH, "MAC address");
     nn.remote = ui_btn(scr, 10, RY[2], 226, RH, UI_SECONDARY, "Remote control", remote_cb, NULL);
-    nn.fw = ui_info(scr, 244, RY[2], 109, RH, "Firmware");
-    ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
+    nn.fw = ui_info(scr, 244, RY[2], 226, RH, "Firmware");
 }
 
 static void nn_refresh(void)
