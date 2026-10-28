@@ -718,10 +718,39 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
     int32_t w = (spark ? strip_w - 155 : act ? strip_w - 104 : ok ? strip_w - 64 : strip_w - 4) - x - 4;
     if (lv_obj_get_width(strip) != strip_w) {
         lv_obj_set_width(strip, strip_w);
-        lv_obj_set_x(strip_ok, strip_w - 64);
-        lv_obj_set_x(strip_act, strip_w - 104);
         lv_obj_set_x(strip_spark, strip_w - 151);
     }
+    // OK and the action keep 4 px from the edge inside a border (0.13.19,
+    // Ryan 28 Oct: the fault's red border left them 1 px).
+    static int32_t geo_w = -1, geo_b = -1;
+    if (geo_w != strip_w || geo_b != bw) {
+        geo_w = strip_w;
+        geo_b = bw;
+        lv_obj_set_pos(strip_ok, strip_w - 64, 4 + bw);
+        lv_obj_set_size(strip_ok, 60 - bw, 40 - 2 * bw);
+        lv_obj_set_pos(strip_act, strip_w - 104, 4 + bw);
+        lv_obj_set_size(strip_act, 100 - bw, 40 - 2 * bw);
+    }
+    // Reset fault white with red lettering on the fault's black (0.13.19,
+    // Ryan: not the blue of the other actions).
+    static int act_fault = -1;
+    if (act_fault != (kind == UI_STRIP_FAULT)) {
+        act_fault = kind == UI_STRIP_FAULT;
+        if (act_fault) {
+            lv_obj_remove_style(strip_act, &st_act, 0);
+            lv_obj_remove_style(strip_act, &st_act_pr, LV_STATE_PRESSED);
+            lv_obj_set_style_text_color(strip_act, UI_FAULT, 0);
+        } else {
+            lv_obj_remove_local_style_prop(strip_act, LV_STYLE_TEXT_COLOR, 0);
+            lv_obj_add_style(strip_act, &st_act, 0);
+            lv_obj_add_style(strip_act, &st_act_pr, LV_STATE_PRESSED);
+        }
+    }
+    lv_obj_t *act_small = btn_small(strip_act);   // "2 faults" under Reset fault
+    if (act_small && act_fault)
+        ui_set_color(act_small, UI_FAULT);
+    else if (act_small)
+        lv_obj_remove_local_style_prop(act_small, LV_STYLE_TEXT_COLOR, 0);
     show(strip_spark, spark);
     static uint32_t seen = UINT32_MAX;
     if (spark && trend_seconds() != seen) {   // a new sample: redraw it
