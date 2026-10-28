@@ -618,6 +618,17 @@ static void motor_fast(void)
     if (m.held && (!busy || !lv_obj_has_state(m.held, LV_STATE_PRESSED)))
         hold_end();
 
+    // The strip follows the limit override and the motor within 0.1 s, not
+    // at the next 0.5 s refresh (0.13.9, Ryan 28 Oct: it lagged the button).
+    static int shown = -1;
+    int now = (over_on ? 1 : 0) | (m.held2 ? 2 : 0) | (stepper3_override() ? 4 : 0) |
+              ((stepper3_direction() + 1) << 3) | (stepper3_limit_open() ? 32 : 0);
+    if (now != shown) {
+        if (shown >= 0)
+            ui_refresh_soon();
+        shown = now;
+    }
+
     lv_snprintf(t, sizeof t, "%ld", (long)stepper3_position());
     ui_set_text(m.pos, t);
 

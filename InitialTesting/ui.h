@@ -106,6 +106,10 @@ typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } u
 #define UI_ICON_VALVE  "\x01v"
 #define UI_ICON_TARGET "\x01t"
 void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);
+// Redraws the frame (header, strip, the screen's refresh) within 0.1 s
+// rather than at the next 0.5 s refresh; for a state the strip must show
+// at once.
+void ui_refresh_soon(void);
 // Strip width for this screen (343 unless a screen sets it in build()).
 void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none

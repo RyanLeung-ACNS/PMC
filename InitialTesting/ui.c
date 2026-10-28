@@ -906,6 +906,8 @@ static void frame_refresh(void)
 // refresh (0.13.5, Ryan 28 Oct: Back from a pick list left the strip grey).
 static bool frame_due;
 
+void ui_refresh_soon(void) { frame_due = true; }
+
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
