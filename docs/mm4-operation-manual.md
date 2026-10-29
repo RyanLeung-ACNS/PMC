@@ -208,17 +208,17 @@ Calibrate when a sensor is first fitted to a board, when the sensor or the Click
 From the screen (Menu > Calibrate > Transducer):
 
 1. Pump the sensor down. Press Capture vacuum. The question "Sensor at vacuum? Capture sets 0 mB" has Capture, which takes the point as 0 mbar, and Not 0 mB, which opens a keypad for the reference gauge reading (0 to 50 mbar). Type what the Pfeiffer gauge shows. The capture averages 5 readings and takes about 5 s.
-2. Vent the sensor to the room. Press Capture air and type the laboratory barometer reading in mbar, for example 1013.2 (500 to 1100 mbar). The capture averages 5 readings.
+2. Vent the sensor to the room. Press Capture air. With the Pressure 21 room sensor fitted, the question "Sensor open to room air?" shows its reading: Capture takes the air point at the room sensor's reading averaged over the same 5 readings, and Enter value opens a keypad for a laboratory barometer reading instead. Without the room sensor the keypad opens straight away: type the barometer reading in mbar, for example 1013.2 (500 to 1100 mbar).
 3. Once both points are held the new calibration is in use and unsaved. Compare Saved cal against Captured on the page.
 4. Press Save settings (Settings > Review and save). Discard changes puts the last save back.
 
 Either point can be redone on its own; the other is kept.
 
-Over the text link the same calibration is CAL VAC (with an optional gauge reading in mbar), CAL AIR followed by the barometer reading, CAL? to check, then CAL SAVE. CAL ERASE goes back to nominal and saves. A calibration table of up to 32 points can also be typed in with CAL NEW, CAL PT and CAL APPLY.
+Over the text link the same calibration is CAL VAC (with an optional gauge reading in mbar), CAL AIR followed by the barometer reading (or CAL AIR alone to use the room sensor), CAL? to check, then CAL SAVE. CAL ERASE goes back to nominal and saves. A calibration table of up to 32 points can also be typed in with CAL NEW, CAL PT and CAL APPLY.
 
 Up to four sensors can be kept on one board, each with its own calibration, under Settings > Choose sensor. Add a sensor with its serial number and range in psi, then calibrate it. Only the sensor in use is read.
 
-The Pressure 21 Click will give the controller its own room-pressure reading so the air point can be taken without a barometer. The driver is in the firmware and BARO? reads it, but the Click has not arrived and this has not been benched.
+The Pressure 21 Click in S2 gives the controller its own room-pressure reading (BARO?). Besides the air point it runs an air check: whenever the transducer reads within 30 mbar of the room sensor and both are steady for 10 s, the transducer is taken to be open to the room and the difference is logged as a CAL event. Over 2 mbar the Home strip in MANUAL says "Transducer reads X mB below room: calibrate" with a Calibrate button. The difference is kept until the next calibration; BARO STATUS? shows it. The Click has not arrived and this has not been benched.
 
 ## 9. Faults and warnings
 

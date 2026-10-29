@@ -304,7 +304,7 @@ static bool remote_help(const char *c)
         "Engineering commands (bench build only; old names, replies end in OK or ERR):",
         "  VALVE? | VALVE CAL | VALVE CLOSED | VALVE SETZERO | VALVE SKIP | VALVE SAVED? | VALVE RESTORE",
         "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n> | CTRL? | TUNE STEP [<+-%>] | TUNE? | TUNE STOP",
-        "  PID? | PID KP|TI|OUTMIN|DB|BAND <v> | PID KDIR +1|-1 | CAL? | CAL VAC [mbar] | CAL AIR <mbar>",
+        "  PID? | PID KP|TI|OUTMIN|DB|BAND <v> | PID KDIR +1|-1 | CAL? | CAL VAC [mbar] | CAL AIR [mbar]",
         "  CAL SAVE | CAL ERASE | CAL NEW [id] | CAL PT <mV/V> <mbar> | CAL APPLY",
         "  CFG? | CFG DIFF? | CFG SAVE | CFG LOAD LAST|PREVIOUS|DEFAULTS | CFG NAME? | CFG NAME <text>",
         "  CFG TEST CORRUPT|ERASE | NET? | NET IP <address> <mask> | NET IP DEFAULT (USB build)",

@@ -239,6 +239,8 @@ void bench_init(void)
     B.he = B.pump = B.coupled = B.druck = B.pm = true;
     B.exc_v = 10.051;
     B.room_mbar = 1013.2;
+    B.baro = true;
+    B.baro_err = 0;
     B.supply_v = 12.1;
     B.die_c = 31.0;
     B.early_half = 2 * 600;

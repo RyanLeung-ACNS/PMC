@@ -172,13 +172,14 @@ bool touch_second(int32_t *x, int32_t *y)
     return true;
 }
 
-// No Pressure 21 in the simulator (baro.c is not built): BARO STATUS? as
-// on a board without the Click (BARO? replies BARO NONE).
+// The Pressure 21 is simulated in sim_clicks.c (baro.c is not built; from
+// 0.14.0, before that not fitted): BARO STATUS? as on the board.
 bool baro_command(const char *line)
 {
     if (strcmp(line, "BARO STATUS?") != 0)
         return false;
-    link_printf("S2 Pressure 21: not fitted (simulator)\r\nOK\r\n");
+    link_printf("S2 Pressure 21: %s (simulator)\r\n%s\r\nOK\r\n", B.baro ? "BMP581 found" : "not fitted",
+                cal_air_text());
     return true;
 }
 
@@ -341,6 +342,8 @@ EXPORT(sim_get) double sim_get(int id)
     case 17: return B.stalled;
     case 18: return B.early_half;
     case 19: return B.room_mbar;
+    case 20: return B.baro;
+    case 21: return B.baro_err;
     case 30: return stepper3_position();
     case 31: return valve_pct_milli();
     default: return 0;
@@ -362,6 +365,8 @@ EXPORT(sim_set) void sim_set(int id, double v)
     case 13: B.die_c = v; break;
     case 18: B.early_half = (int32_t)v; break;
     case 19: B.room_mbar = v; break;
+    case 20: B.baro = v != 0; break;
+    case 21: B.baro_err = v; break;
     case 40: B.P = v; break;
     case 41: B.T = v; break;
     case 42: B.mL = v; break;

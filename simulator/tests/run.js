@@ -154,6 +154,30 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   second(298, 0); over(0); s.run(2000);
   check('override + Open opens', opened > rel2 + 300, opened + ' vs ' + rel2);
 }
+{ // Pressure 21 (0.14.0): CAL AIR without a number takes the room sensor; the air check.
+  const s = load(); s.boot(); s.run(3000);
+  s.set(11, 0); s.run(3000); s.cmd('CAL VAC', 15000);
+  s.set(11, 1); s.set(19, 1008.4); s.run(3000);
+  const a = s.cmd('CAL AIR', 15000), ev = events(s, 4);
+  check('CAL AIR from the room sensor', !/ERR/.test(a) && /Air point [\d.]+ mV\/V at 1008\.40 mbar from the room sensor/.test(ev), a + ev.slice(-400));
+  s.run(15000);
+  const st = s.cmd('BARO STATUS?', 1000);
+  check('air check after the cal near 0', /Air check: transducer minus room sensor -?0\.[0-4]\d mbar, at room pressure now/.test(st), st);
+  check('no calibrate warning after the cal', !/calibrate/.test(events(s, 4)));
+  // The transducer drifts 5 mbar low (the room sensor reads 5 high): logged, and the Home strip asks.
+  s.set(21, 5); s.run(15000);
+  const ev2 = events(s, 4);
+  check('air check logs the drift', /Air check: transducer [45]\.\d\d mbar below the room sensor, calibrate/.test(ev2), ev2.slice(-400));
+  shot(s, 'air-check');
+  s.set(11, 0); s.set(21, 0); s.run(5000);
+  check('drift kept after pumping down', /minus room sensor -[45]\.\d\d mbar\r\n/.test(s.cmd('BARO STATUS?', 1000)));
+  // No room sensor: CAL AIR needs a number, BARO? says NONE.
+  const u = load(); u.boot(); u.set(20, 0); u.run(3000); u.set(11, 1); u.run(3000);
+  check('BARO NONE without the sensor', u.cmd('BARO?', 1000) === 'BARO NONE\r\n', u.cmd('BARO?', 1000));
+  const r = u.cmd('CAL AIR', 2000);
+  check('CAL AIR refused without the sensor', /no room pressure sensor: give the pressure/i.test(r), r);
+  { const r2 = u.cmd('CAL AIR 1013', 15000); check('CAL AIR 1013 still works', !/ERR/.test(r2), r2); }
+}
 { // The remote set (0.13.0): the reply rules of the handover page.
   const s = homed(load());
   const one = c => s.cmd(c, 1000);
@@ -171,7 +195,7 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   check('PRES SP 5.04;PRES SP? gives 5.0', one('PRES SP 5.04;PRES SP?') === 'PRES SP 5.0 mbar\r\n', one('PRES SP?'));
   const poll = one('PRES?;PRES SP?;MODE?;VALV?;ALRM?');
   check('chained poll', /^PRES \d+\.\d{3} mbar;PRES SP 5\.0 mbar;MODE MANUAL;VALV 30\.00 %;ALRM NONE\r\n$/.test(poll), poll);
-  check('BARO? and NETW? NONE in the simulator', one('BARO?;NETW?') === 'BARO NONE;NETW NONE\r\n');
+  check('BARO? and NETW? in the simulator', one('BARO?;NETW?') === 'BARO 1013.20 mbar;NETW NONE\r\n', one('BARO?;NETW?'));
   check('*IDN?', /^MercShore,iPC,[0-9A-F]{24},\d+\.\d+\.\d+\r\n$/.test(one('*IDN?')), one('*IDN?'));
   // EVNT?: the count line, then that many lines, newest first.
   const ev = s.cmd('EVNT? 3', 2000).split('\r\n');

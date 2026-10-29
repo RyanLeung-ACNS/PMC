@@ -7,6 +7,7 @@
 #include "fixed.h"
 #include "link.h"
 #include "baro.h"
+#include "cal.h"   // the air check line
 
 #if PMC_BARO
 
@@ -173,7 +174,7 @@ bool baro_command(const char *line)
 {
     if (strcmp(line, "BARO STATUS?") != 0)
         return false;
-    link_printf("%s\r\nOK\r\n", status);
+    link_printf("%s\r\n%s\r\nOK\r\n", status, cal_air_text());
     return true;
 }
 #endif
