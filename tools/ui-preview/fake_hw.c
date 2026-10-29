@@ -99,13 +99,14 @@ bool cal_bench(int32_t *r_vac, int32_t *p_vac, int32_t *r_air, int32_t *p_air)
 void link_init(void) {}
 void link_task(void) {}
 bool link_getline(char *buf, size_t n) { (void)buf; (void)n; return false; }
-const char *link_status(void) { return "Ethernet: 192.168.1.23 port 5000, client connected"; }
+const char *link_status(void) { return "Ethernet: 192.168.1.23 port 8888, client connected"; }
 const char *link_chip_text(void) { return "192.168.1.23"; }
 bool link_chip_ok(void) { return true; }
 bool link_take_new_client(void) { return false; }
 const char *sysinfo_reset_reason(void) { return fake_wdt ? "watchdog" : "power-on"; }
 bool sysinfo_reset_abnormal(void) { return fake_wdt; }
 const char *sysinfo_line(void) { return "PMC firmware 0.3.0 (preview), last reset: power-on"; }
+void sysinfo_restart(void) {}
 // Link output goes to stderr so the DATA line format can be checked.
 size_t link_tx_room(void) { return 4096; }
 void link_printf(const char *fmt, ...)
@@ -210,3 +211,6 @@ bool supply_fitted(void) { return true; }
 // W-3 (sense.h): set by the "hot" scenario.
 bool fake_hot;
 bool sense_hot(int32_t *die_mc) { *die_mc = 57300; return fake_hot; }
+
+// No second finger in the previews.
+bool touch_second(int32_t *x, int32_t *y) { (void)x; (void)y; return false; }

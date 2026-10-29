@@ -1,10 +1,11 @@
 #include <string.h>
 
 #include "lvgl.h"        // lv_tick_get, lv_strlcpy
+#include "pmc_config.h"
 #include "link.h"
 #include "clicks.h"
 #include "cal.h"
-#include "sysinfo.h"
+#include "stepper3.h"
 #include "fixed.h"
 #include "valve.h"
 #include "trend.h"
@@ -12,57 +13,40 @@
 
 /*
  * Once a second from the main loop (was main_screen.c to 0.8.x): re-read
- * the boards, update the cal and valve fault checks, print any
- * changed status line and the DATA line. Outside LVGL, so a slow redraw
- * does not delay the reading or the fault checks.
+ * the boards, update the cal and valve fault checks. Outside LVGL, so a
+ * slow redraw does not delay the reading or the fault checks.
  *
- * With DATA ON, once a second, one CSV line for logging (tools/logger);
- * DATA? prints the column names (0.11.52):
+ * Engineering commands (PMC_ENG_COMMANDS, a bench build): DATA? one CSV
+ * line of the last reading, DATA HDR? the column names:
  *   DATA,t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar
  * t_s since start-up, 0.1 s. p_mbar and baro_mbar 0.01 mbar, target 0.1
- * mbar, valve 0.01 %. Empty: p_mbar and ratio with no valid reading,
- * target_mbar with none set, valve_pct before the valve is homed or its
- * position set, baro_mbar with no Pressure 21 reading. alarm: the highest
- * latched fault, else the warning on the strip, else empty.
- * Lines not starting with DATA are status text, each printed when its
- * state changes; SENSE? gives the live Power Monitor and Druck readings.
+ * mbar, valve 0.01 %. Empty: no value. alarm: the highest latched fault,
+ * else the warning on the strip, else empty. SENSE? gives the live Power
+ * Monitor and Druck readings. The remote set (remote.c) has PRES?, VALV?,
+ * ALRM? and the rest.
  */
+#if PMC_ENG_COMMANDS
 #define DATA_COLUMNS "t_s,p_mbar,target_mbar,valve_pct,mode,alarm,ratio_mV_per_V,exc_mV,die_C,baro_mbar"
-#define STATUS_LINES 6
-static const char *last_line[STATUS_LINES];
-static char line_copy[STATUS_LINES][192];
 
-// DATA lines once a second. Off at boot; DATA ON (the logger sends it)
-// turns them on, DATA OFF pauses them.
-static bool data_on = false;
+static void print_data_line(const clicks_state_t *s);
 
 bool sense_data_command(const char *line)
 {
-    if (strcmp(line, "DATA?") == 0) {
-        link_printf("DATA %s\r\nOK\r\n", DATA_COLUMNS);
-        return true;
-    }
-    if (strcmp(line, "SENSE?") == 0) {
+    if (strcmp(line, "DATA HDR?") == 0)
+        link_printf("DATA HDR %s\r\nOK\r\n", DATA_COLUMNS);
+    else if (strcmp(line, "DATA?") == 0)
+        print_data_line(clicks_state());
+    else if (strcmp(line, "SENSE?") == 0)
         link_printf("%s\r\n%s\r\nOK\r\n", clicks_powermonitor_status(), clicks_druck_status());
-        return true;
-    }
-    if (strcmp(line, "DATA OFF") == 0)
-        data_on = false;
-    else if (strcmp(line, "DATA ON") == 0)
-        data_on = true;
     else
         return false;
-    link_printf("OK data %s\r\n", data_on ? "on" : "off");
     return true;
 }
 
-// The highest latched fault, else the warning on the strip, else "".
-static const char *alarm_tag(char *buf, size_t n)
+// The warning on the strip (W-1 question first), else W-3 controller hot, else "".
+static const char *warning_tag(char *buf, size_t n)
 {
-    const char *tag, *text;
     int32_t at, mc;
-    if (valve_fault_first(&tag, &text))
-        return tag;
     if (valve_question(&at))
         return "W-1";
     const char *w = valve_warning();   // "W-4 Switch pressed ...": the tag is the first word
@@ -75,6 +59,15 @@ static const char *alarm_tag(char *buf, size_t n)
         return buf;
     }
     return sense_hot(&mc) ? "W-3" : "";
+}
+
+// The highest latched fault, else the warning on the strip, else "".
+static const char *alarm_tag(char *buf, size_t n)
+{
+    const char *tag, *text;
+    if (valve_fault_first(&tag, &text))
+        return tag;
+    return warning_tag(buf, n);
 }
 
 static void print_data_line(const clicks_state_t *s)
@@ -93,55 +86,12 @@ static void print_data_line(const clicks_state_t *s)
         fixed_fmt(v, sizeof v, fixed_round(valve_pct_milli(), 1), 2);
     if (s->baro_ok)
         fixed_fmt(baro, sizeof baro, fixed_round(s->baro_mmbar, 1), 2);
-    link_printf("DATA,%lu.%lu,%s,%s,%s,%s,%s,%s,%ld,%s,%s\r\n",
+    link_printf("DATA,%lu.%lu,%s,%s,%s,%s,%s,%s,%ld,%s,%s\r\nOK\r\n",
                 (unsigned long)(ms / 1000), (unsigned long)(ms % 1000 / 100), p, sp, v,
                 valve_mode_name(), alarm_tag(al, sizeof al), r, (long)s->bus_mv,
                 fixed_fmt(die, sizeof die, fixed_round(s->die_mc, 2), 1), baro);
 }
-
-// The Power Monitor and Druck lines carry live readings. Only the words
-// before the first number after the name are compared, so they print when
-// their state changes (found, lost, not connected), not every second.
-static size_t state_len(const char *s)
-{
-    const char *c = strstr(s, ": ");
-    if (!c)
-        return strlen(s);
-    for (c += 2; *c && !(*c >= '0' && *c <= '9') && *c != '-'; c++)
-        ;
-    return (size_t)(c - s);
-}
-
-static bool same_state(const char *a, const char *b, bool live)
-{
-    if (!live)
-        return strcmp(a, b) == 0;
-    size_t n = state_len(a);
-    return n == state_len(b) && strncmp(a, b, n) == 0;
-}
-
-static void print_changed_lines(void)
-{
-    const char *line[STATUS_LINES] = { sysinfo_line(), clicks_stepper3_status(), clicks_boost10_status(),
-                                       clicks_powermonitor_status(), clicks_druck_status(), valve_status() };
-
-    // A PC that connects later still gets every line once.
-    bool resend = link_take_new_client();
-
-    const bool live[STATUS_LINES] = { false, false, false, true, true, false };
-    // In AUTO the motor line changes every second: DATA carries the position.
-    bool in_auto = valve_auto();
-
-    for (int i = 0; i < STATUS_LINES; i++) {
-        if (!line[i][0] || (i == 1 && in_auto))
-            continue;
-        if (resend || last_line[i] == NULL || !same_state(line_copy[i], line[i], live[i])) {
-            lv_strlcpy(line_copy[i], line[i], sizeof line_copy[i]);
-            last_line[i] = line_copy[i];
-            link_printf("%s\r\n", line[i]);
-        }
-    }
-}
+#endif
 
 static bool hot;
 static int32_t hot_mc;
@@ -170,13 +120,10 @@ bool sense_hot(int32_t *die_mc)
 void sense_second(void)
 {
     clicks_poll();
-    print_changed_lines();
 
     const clicks_state_t *s = clicks_state();
     cal_update(s);
     valve_sense(s);
     trend_second(s);
     hot_check(s);
-    if (s->pm_found && data_on)
-        print_data_line(s);
 }

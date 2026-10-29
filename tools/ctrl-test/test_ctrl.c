@@ -32,6 +32,12 @@ static double fault_t;
 
 static uint32_t ms(void) { return (uint32_t)llround(M.t * 1000); }
 
+// false: no pressure filter and no reversal hold, as the simulator v63 (the
+// reference cases). fresh() applies it.
+static bool smooth = true;
+static long n_starts, n_rev;   // moves sent and reversals among them
+static int last_way;
+
 // The simulator's requestMove(target, quiet) in AUTO.
 static bool request_move(int32_t target)
 {
@@ -39,7 +45,15 @@ static bool request_move(int32_t target)
     if (target < 0) target = 0;
     if (target > K.pos_max) target = K.pos_max;
     if (!M.moving && target < M.pos && M.lim_active) return false;
-    return model_start_move(target);
+    // valve.c: stepper3_goto, at MOT RATE.
+    int way = target > M.pos ? 1 : target < M.pos ? -1 : 0;
+    if (!model_start_move(target)) return false;
+    if (way) {
+        n_starts++;
+        if (last_way && way != last_way) n_rev++;
+        last_way = way;
+    }
+    return true;
 }
 
 static void ctrl_tick(void)
@@ -110,6 +124,7 @@ static void fresh(void)
 {
     model_init();
     ctrl_init(&C);
+    if (!smooth) C.pv_tau = C.rev_pct = 0;
     mode = MANUAL;
     fault = CTRL_RUN;
     w02 = w06 = false;
@@ -146,7 +161,7 @@ int main(int argc, char **argv)
     CHECK(!strcmp(ctrl_check(&C, &K, false, false, true, 1, FS), "Home the valve first"), "refused unhomed");
     CHECK(!strcmp(ctrl_check(&C, &K, true, true, true, 1, FS), "Reset the fault first"), "refused with a fault");
     CHECK(!strcmp(ctrl_check(&C, &K, true, false, false, 1, FS), "No valid pressure"), "refused without a reading");
-    CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, 1, FS), "Set a target first"), "refused without a target");
+    CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, 1, FS), "Set a setpoint first"), "refused without a setpoint");
     CHECK(!ctrl_set_sp(&C, FS + 1, FS, 0), "target above the range rejected");
     ctrl_set_sp(&C, 5, FS, 0);
     CHECK(!strcmp(ctrl_check(&C, &K, true, false, true, FS + 1, FS), "Pressure above the sensor range"), "refused above the range");
@@ -163,7 +178,9 @@ int main(int argc, char **argv)
     to_auto();
     CHECK(C.pos_cmd == at && C.last_sent == at, "bumpless: command %ld = position %ld", (long)C.pos_cmd, (long)at);
 
-    // The reference sequence (also run in the simulator, sim_ref.js).
+    // The reference sequence (also run in the simulator, sim_ref.js), with
+    // the pressure filter and the reversal hold off, as there.
+    smooth = false;
     fresh();
     set_sp(5);
     to_auto();
@@ -189,12 +206,58 @@ int main(int argc, char **argv)
         settle &= m.t_band > 0 && fabs(m.end - seq[i]) <= K.band;
     }
     CHECK(!trip && settle, "targets 5, 7, 3, 5: settled, no false trip");
+    smooth = true;
     M.he = false;
     double t0 = M.t;
     run(2000, 5);
     // No wrong-way fault: with the valve pinned open and the pressure flat,
     // the response monitor catches it instead.
     CHECK(fault == CTRL_F06 && mode == MANUAL && !M.moving, "helium off: F-6 after %.0f s, MANUAL, valve idle", fault_t - t0);
+
+    // The same targets as the firmware runs, with the reversal hold (and the
+    // pressure filter if on, 0.12.12): in band no later than 60 s after the reference.
+    {
+        fresh();
+        set_sp(5);
+        to_auto();
+        const float sp[] = { 5, 4.5f, 10, 5, 7, 3, 5 };
+        const double len[] = { 1500, 900, 1200, 900, 900, 900, 900 };
+        const ref_t *ref[] = { &REF_5, &REF_45, &REF_10, &REF_SEQ[0], &REF_SEQ[1], &REF_SEQ[2], &REF_SEQ[3] };
+        bool ok = true;
+        for (int i = 0; i < 7; i++) {
+            set_sp(sp[i]);
+            met_t m = run(len[i], sp[i]);
+            printf("     with the hold, target %.1f: in band at %.0f s (reference %.0f), then %+.3f / %+.3f mB (reference %+.3f / %+.3f), end %.3f\n",
+                   sp[i], m.t_band, ref[i]->t_band, m.over, m.under, ref[i]->over, ref[i]->under, m.end);
+            ok &= m.t_band > 0 && m.t_band <= ref[i]->t_band + 60 && fabs(m.end - sp[i]) <= K.band &&
+                  fault == CTRL_RUN && mode == AUTO && (i || m.step <= 0.1);
+        }
+        CHECK(ok, "with the hold: targets 5, 4.5, 10, 5, 7, 3, 5 settle within 60 s of the reference, no trip");
+    }
+    // Settled at 5 mbar, 10 minutes: how often the motor turns round.
+    {
+        long st[2], rv[2];
+        double lo[2], hi[2];
+        for (int f = 0; f < 2; f++) {
+            smooth = f == 1;
+            fresh();
+            set_sp(5);
+            to_auto();
+            run(1200, 5);
+            n_starts = n_rev = 0;
+            lo[f] = 1e9; hi[f] = -1e9;
+            for (int i = 0; i < 600; i++) {
+                run(1, 5);
+                lo[f] = fmin(lo[f], M.pv); hi[f] = fmax(hi[f], M.pv);
+            }
+            st[f] = n_starts; rv[f] = n_rev;
+        }
+        smooth = true;
+        printf("     settled 10 min: %ld moves, %ld reversals, %.3f to %.3f mB without; "
+               "%ld moves, %ld reversals, %.3f to %.3f mB with the hold\n", st[0], rv[0], lo[0], hi[0], st[1], rv[1], lo[1], hi[1]);
+        CHECK(rv[1] * 4 <= rv[0] && hi[1] - 5 <= K.band && 5 - lo[1] <= K.band,
+              "settled: reversals %ld, from %ld without the hold, still within the band", rv[1], rv[0]);
+    }
 
     // Pump off at 5 mB.
     fresh();

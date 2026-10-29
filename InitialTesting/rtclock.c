@@ -2,7 +2,6 @@
 
 #include "mcu.h"
 #include "lvgl.h"   // lv_snprintf
-#include "link.h"
 #include "rtclock.h"
 
 #define BDCR_RTCSEL_LSE  (1UL << 8)
@@ -111,51 +110,25 @@ static bool set_time(int y, int mo, int d, int h, int mi, int s)
     return true;
 }
 
-bool rtclock_command(const char *line)
+// TIME SET (remote.c): p is "YYYY-MM-DD HH:MM:SS".
+const char *rtclock_set_text(const char *p)
 {
     int y, mo, d, h, mi, s;
 
-    if (strcmp(line, "TIME?") == 0) {
-        if (rtclock_valid())
-            link_printf("TIME %s\r\nOK\r\n", rtclock_iso());
-        else
-            link_printf("TIME not set%s\r\nOK\r\n", lse_ok ? "" : " (32 kHz crystal not running yet)");
-        return true;
-    }
-    if (strncmp(line, "TIME", 4) != 0)
-        return false;
-    if (strncmp(line, "TIME SET ", 9) != 0) {
-        link_printf("ERR expected: TIME? or TIME SET YYYY-MM-DD HH:MM:SS\r\n");
-        return true;
-    }
-
-    // Fixed layout: YYYY-MM-DD HH:MM:SS
-    const char *p = line + 9;
-    if (strlen(p) != 19 || p[4] != '-' || p[7] != '-' || p[10] != ' ' || p[13] != ':' || p[16] != ':') {
-        link_printf("ERR expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
-        return true;
-    }
+    if (strlen(p) != 19 || p[4] != '-' || p[7] != '-' || p[10] != ' ' || p[13] != ':' || p[16] != ':')
+        return "Expected: TIME SET <YYYY-MM-DD> <HH:MM:SS>";
     for (int i = 0; i < 19; i++)
-        if (i != 4 && i != 7 && i != 10 && i != 13 && i != 16 && (p[i] < '0' || p[i] > '9')) {
-            link_printf("ERR expected: TIME SET YYYY-MM-DD HH:MM:SS\r\n");
-            return true;
-        }
+        if (i != 4 && i != 7 && i != 10 && i != 13 && i != 16 && (p[i] < '0' || p[i] > '9'))
+            return "Expected: TIME SET <YYYY-MM-DD> <HH:MM:SS>";
 #define NUM2(i) ((p[i] - '0') * 10 + (p[(i) + 1] - '0'))
     y = NUM2(0) * 100 + NUM2(2); mo = NUM2(5); d = NUM2(8);
     h = NUM2(11); mi = NUM2(14); s = NUM2(17);
 #undef NUM2
-    if (y < 2000 || y > 2099 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
-        link_printf("ERR date or time out of range\r\n");
-        return true;
-    }
-    if (!lse_ok) {
-        link_printf("ERR 32 kHz crystal not running\r\n");
-        return true;
-    }
-    if (!set_time(y, mo, d, h, mi, s)) {
-        link_printf("ERR RTC did not enter init mode\r\n");
-        return true;
-    }
-    link_printf("OK time set\r\n");
-    return true;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59)
+        return "Expected: TIME SET <YYYY-MM-DD> <HH:MM:SS>";
+    if (y < 2000 || y > 2099)
+        return "Outside 2000 to 2099";
+    if (!lse_ok || !set_time(y, mo, d, h, mi, s))
+        return "Clock not running";
+    return NULL;
 }

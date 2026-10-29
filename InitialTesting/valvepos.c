@@ -1,3 +1,4 @@
+#include "pmc_config.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -262,6 +263,7 @@ void valvepos_decline(void)
     offer = false;
 }
 
+#if PMC_ENG_COMMANDS
 bool valvepos_command(const char *line)
 {
     const char *why;
@@ -281,9 +283,11 @@ bool valvepos_command(const char *line)
         if (valvepos_use(&why))
             link_printf("OK position %ld from the saved count\r\n", (long)boot_count);
         else
-            link_printf("ERR %s\r\n", why);
+            link_err(why);
     } else {
         return false;
     }
     return true;
 }
+#endif
+

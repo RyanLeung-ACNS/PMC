@@ -34,6 +34,7 @@ extern model_t M;
 void model_init(void);
 bool model_tick(void);              // true after a 1 s pressure read
 bool model_start_move(int32_t target);
+bool model_start_move_rate(int32_t target, double rate);   // stepper3_goto_rate
 void model_stop(void);
 double model_random(void);
 

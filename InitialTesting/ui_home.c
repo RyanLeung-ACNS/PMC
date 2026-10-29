@@ -1,4 +1,5 @@
 #include <string.h>
+#include "supply.h"
 
 #include "lvgl.h"
 #include "clicks.h"
@@ -249,7 +250,7 @@ static bool start_set(int32_t v10, const char **why)
 
 static void keypad_start(void)
 {
-    ui_kp_t k = { .title = "Target for AUTO, mB", .info = range_info(), .dec = 1, .min = 0,
+    ui_kp_t k = { .title = "Setpoint for AUTO, mB", .info = range_info(), .dec = 1, .min = 0,
                   .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
                   .live_dec = 1, .on_set = start_set };
     ui_keypad_ex(&k);
@@ -273,8 +274,8 @@ static bool sp_set(int32_t v10, const char **why)
     if (v10 - now > (int32_t)(CTRL_SP_CONFIRM * 10) || now - v10 > (int32_t)(CTRL_SP_CONFIRM * 10)) {
         static char q[64];
         char b[16];
-        lv_snprintf(q, sizeof q, "Change target to %s mB?", ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
-        ui_confirm(q, "Change\ntarget", sp_change);
+        lv_snprintf(q, sizeof q, "Change setpoint to %s mB?", ui_fmt1(b, sizeof b, (int64_t)v10 * 100));
+        ui_confirm(q, "Change\nsetpoint", sp_change);
         return true;
     }
     return valve_set_target(v10 * 100, why);
@@ -282,7 +283,7 @@ static bool sp_set(int32_t v10, const char **why)
 
 static void keypad_sp(void)
 {
-    ui_kp_t k = { .title = "Target, mB", .info = range_info(), .dec = 1, .min = 0,
+    ui_kp_t k = { .title = "Setpoint, mB", .info = range_info(), .dec = 1, .min = 0,
                   .max = valve_range_mmbar() / 100, .live_label = "Now, mB", .live_milli = pv_milli,
                   .live_dec = 1, .on_set = sp_set };
     ui_keypad_ex(&k);
@@ -323,7 +324,7 @@ static void target_event(lv_event_t *e)
     if (valve_auto())
         keypad_sp();
     else
-        ui_msg(valve_mode() == VALVE_MANUAL ? "Target is used in AUTO: Start AUTO asks for it"
+        ui_msg(valve_mode() == VALVE_MANUAL ? "Setpoint is used in AUTO: Start AUTO asks for it"
                                             : not_manual_why());
 }
 
@@ -377,7 +378,7 @@ static bool set_position(int32_t v100, const char **why)
 }
 
 /* Home and Set position are two jobs, kept apart on every screen (Ryan,
- * 23 Oct): Home finds 0 % on the limit switch; Set position takes the
+ * 23 Oct): Home finds the limit switch (0 % is the back-off above it); Set position takes the
  * position from the operator (closed, a typed %, or the saved position),
  * not verified by homing. */
 static void set_position_ask(void)
@@ -435,7 +436,7 @@ static const char *home_minutes(void)
     return t;
 }
 
-// Home only (Valve homing's Home tab, the start-up question).
+// Home only (Valve position's Home tab, the start-up question).
 void ui_home_ask(void)
 {
     lv_snprintf(home_q, sizeof home_q, "Home the valve? It closes onto the limit switch to find 0 %%, %s.",
@@ -462,14 +463,14 @@ static void mode_event(lv_event_t *e)
     if (m == VALVE_CALIBRATING)
         ui_msg("Homing: STOP to cancel");
     else if (m == VALVE_AUTO)
-        ui_manual_ask();
+        to_manual();   // no confirm (Ryan, 28 Oct); Go to in AUTO still asks
     else if (m == VALVE_MANUAL && valve_fault_count())
         ui_msg("Reset the fault first");
     else if (m == VALVE_MANUAL && !have)
         keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
     else if (m == VALVE_MANUAL) {
         lv_snprintf(q, sizeof q, "Start AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
-        ui_ask3(q, "Cancel", NULL, "New\ntarget", keypad_start, "Start\nAUTO", start_auto);
+        ui_ask3(q, "Cancel", NULL, "New\nsetpoint", keypad_start, "Start\nAUTO", start_auto);
     } else if (valve_motion_blocked())
         ui_msg("Reset the fault first");
     else
@@ -492,7 +493,7 @@ static void menu_event(lv_event_t *e)
     ui_open(&ui_scr_menu);
 }
 
-static void reset_event(lv_event_t *e)
+void ui_reset_fault_event(lv_event_t *e)
 {
     (void)e;
     char left[40], t[64];
@@ -506,7 +507,7 @@ static void reset_event(lv_event_t *e)
 /* Build and refresh ------------------------------------------------------ */
 static void home_build(lv_obj_t *scr)
 {
-    make_tile(scr, &pt, 10, "Pressure", "mB", "Target", true, target_event);
+    make_tile(scr, &pt, 10, "Pressure", "mB", "Setpoint", true, target_event);
     make_tile(scr, &vt, 186, "Valve", "%", "Go to", false, goto_event);
     mode_btn = ui_btn(scr, 361, 48, 109, 48, UI_PRIMARY, "Home valve", mode_event, NULL);
     valve_btn = ui_btn(scr, 361, 104, 109, 48, UI_NAV, "Valve", valve_event_cb, NULL);
@@ -563,35 +564,42 @@ static void home_refresh(void)
     // Mode button.
     int step = valve_cal_step();
         if (m == VALVE_CALIBRATING) {
-        lv_snprintf(buf, sizeof buf, "%d of 3", step < 1 ? 1 : step);
+        lv_snprintf(buf, sizeof buf, "%d of 4", step < 1 ? 1 : step);
         ui_btn_text(mode_btn, "Homing", buf);
         ui_btn_enable(mode_btn, false);
+        ui_btn_outline(mode_btn, false);
     } else if (m == VALVE_MANUAL) {
-        ui_btn_text(mode_btn, "Start AUTO", NULL);   // a fault is refused on press
-        ui_btn_enable(mode_btn, true);
+        // Greyed while it would be refused (HMI review H1, 28 Oct); a press
+        // still says why.
+        ui_btn_text(mode_btn, "Start AUTO", NULL);
+        ui_btn_enable(mode_btn, !valve_fault_count() && !supply_off());
+        ui_btn_outline(mode_btn, false);
+        ui_btn_primary(mode_btn, true);
     } else if (m == VALVE_AUTO) {
+        // Not filled in AUTO: nothing is expected of the operator (H4);
+        // outlined in Start AUTO's blue (Ryan, 28 Oct: plain white was not liked).
         ui_btn_text(mode_btn, "Switch to\nMANUAL", NULL);
         ui_btn_enable(mode_btn, true);
+        ui_btn_primary(mode_btn, false);
+        ui_btn_outline(mode_btn, true);
     } else {
         ui_btn_text(mode_btn, "Home valve", NULL);   // a fault is refused on press
         ui_btn_enable(mode_btn, true);
+        ui_btn_outline(mode_btn, false);
+        ui_btn_primary(mode_btn, true);
     }
 
     ui_status_line();
 }
 
-// Status line and Reset fault, for Home and the operator screens; the
-// frame puts faults and messages over it.
+// Status line for Home and the operator screens; the frame puts faults
+// (with Reset fault, on every screen from 0.13.19) and messages over it.
 void ui_status_line(void)
 {
     char buf[32];
     valve_mode_t m = valve_mode();
     int step = valve_cal_step();
     int nf = valve_fault_count();
-    if (nf) {
-        lv_snprintf(buf, sizeof buf, "%d faults", nf);
-        ui_strip_action("Reset fault", nf > 1 ? buf : NULL, reset_event);
-    }
     int32_t q;
     if (valve_question(&q)) {
         char t[64], v[16];
@@ -602,9 +610,10 @@ void ui_status_line(void)
         // A plain info line with the valve icon, as the others (Ryan, 22 Oct).
         ui_strip_set(UI_STRIP_INFO, UI_ICON_VALVE, "Valve not homed");
     } else if (m == VALVE_CALIBRATING) {
-        static const char *const what[4] = { "Homing: moving off the switch", "Homing 1 of 3: fast close",
-                                             "Homing 2 of 3: backing off",
-                                             "Homing 3 of 3: slow close" };
+        static const char *const what[5] = { "Homing: moving off the switch", "Homing 1 of 4: fast close",
+                                             "Homing 2 of 4: backing off",
+                                             "Homing 3 of 4: slow close",
+                                             "Homing 4 of 4: return" };
         ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_REFRESH, what[step < 0 ? 0 : step]);
     } else if (m == VALVE_MANUAL && valve_warning()) {
         // No PAUSED state (Ryan, 22 Oct): W-2, W-4, W-5 and W-6 drop to
@@ -621,16 +630,11 @@ void ui_status_line(void)
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
     } else {
-        // Idle: where the valve is, nothing alarming (Ryan, 16 Oct); a
-        // position set rather than homed says so (Ryan, 23 Oct).
-        char t[48], v[16];
-        valve_ref_t how = valve_reference();
-        ui_fmt2(v, sizeof v, valve_pct_milli());
-        if (how == VALVE_REF_HAND || how == VALVE_REF_SAVED)
-            lv_snprintf(t, sizeof t, "%s %%, %s", v, how == VALVE_REF_HAND ? "entered" : "last saved");
-        else
-            lv_snprintf(t, sizeof t, "Valve at %s %%", v);
-        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
+        // Idle: the valve icon, Valve idle and the pressure sparkline
+        // (0.13.16, Ryan 28 Oct; "Idle. Pressure, last 5 min" without the
+        // icon from 0.13.8). How the position was set (entered, last saved)
+        // is on Home valve.
+        ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, "Valve idle");
     }
 }
 
@@ -652,8 +656,8 @@ static void menu_build(lv_obj_t *scr)
 {
     // Grouped in rows with a caption on the left, as on Diagnostics.
     static const char *const rows[3] = { "Records", "Calibrate", "System" };
-    static const char *const names[6] = { "Trend", "Faults and log", "Valve homing",
-                                          "Sensor", "Diagnostics", "Settings" };
+    static const char *const names[6] = { "Trend", "Faults and log", "Valve position",
+                                          "Transducer", "Diagnostics", "Settings" };
     // Caption and two tiles in 1 : 1.5 : 1.5, the caption centred on its row.
     for (int r = 0; r < 3; r++) {
         lv_obj_t *l = ui_label(scr, 10, 0, 111, &ui_font_16, UI_MUTED, LV_TEXT_ALIGN_LEFT, rows[r]);

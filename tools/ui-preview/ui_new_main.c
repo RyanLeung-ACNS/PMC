@@ -135,7 +135,6 @@ bool valve_event_get(int i, uint32_t *age, const char **tag, const char **text)
     return true;
 }
 bool valve_last_cal(uint32_t *age, uint32_t *took) { if (!v_cal) return false; *age = 186000; *took = 15; return true; }
-bool valve_beyond_switch(int32_t *s) { *s = 0; return false; }
 bool limit_open_now(void) { return v_cal && v_pct10 == 0; }
 const char *rtclock_iso(void) { return "2026-10-15 14:32:05"; }
 const char *valve_last_cal_iso(void) { return "2026-10-05 14:28:59"; }
@@ -156,8 +155,8 @@ bool extflash_write(uint32_t a, const void *b, size_t n)
     for (size_t i = 0; i < n; i++) flash[a + i] &= p[i];
     return true;
 }
-static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0 };
-static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET" };
+static int32_t v_set[VALVE_N_SETTINGS] = { 99072, 400, 25, 400, 800, 0, 400 };
+static const char *const v_name[VALVE_N_SETTINGS] = { "POSMAX", "FHOME", "FCREEP", "BACKOFF", "CLEAR", "OFFSET", "RETURN" };
 const char *valve_setting_name(int i) { return v_name[i]; }
 void valve_settings(int32_t v[VALVE_N_SETTINGS]) { memcpy(v, v_set, sizeof v_set); }
 const char *valve_settings_check(const int32_t v[VALVE_N_SETTINGS]) { (void)v; return NULL; }
@@ -189,7 +188,7 @@ static void seed_flash(void)
     struct {
         uint32_t magic, version, size, rev;
         int32_t mot[7];
-        int32_t valve[VALVE_N_SETTINGS];
+        int32_t valve[6];   // a version 1 record
         uint32_t has_cal;
         cal_rec_t cal;
         uint32_t crc;
@@ -198,7 +197,7 @@ static void seed_flash(void)
     r.magic = 0x47464350UL; r.version = 1; r.size = sizeof r; r.rev = 5;
     int32_t mot[7] = { 400, 200, 3200, 1, 0, 0, 213 };
     memcpy(r.mot, mot, sizeof mot);
-    memcpy(r.valve, v_set, sizeof v_set);
+    memcpy(r.valve, v_set, sizeof r.valve);
     r.has_cal = 1;
     cal_rec_t *c = &r.cal;
     c->magic = CAL_MAGIC; c->version = CAL_VERSION; c->npts = 2;
@@ -275,7 +274,7 @@ int main(int argc, char **argv)
     const char *st = argv[1];
     fake_hw_set_scenario(!strcmp(st, "nodruck") ? "nodruck" : !strcmp(st, "neg") ? "neg" : "cal");
     bool page = !strcmp(st, "valve") || !strcmp(st, "valvenc") || !strcmp(st, "limithit") ||
-                !strcmp(st, "calpage") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") || !strcmp(st, "supdiag") || !strcmp(st, "supoff") || !strcmp(st, "suplow") || !strcmp(st, "hot") ||
+                !strcmp(st, "calpage") || !strcmp(st, "calhelp") || !strcmp(st, "faults") || !strcmp(st, "detail") || !strcmp(st, "diag") || !strcmp(st, "supdiag") || !strcmp(st, "supoff") || !strcmp(st, "suplow") || !strcmp(st, "hot") ||
                 !strcmp(st, "help") || !strcmp(st, "help2") || !strcmp(st, "help3") || !strcmp(st, "back") || !strcmp(st, "svc") ||
                 !strncmp(st, "set-", 4) || !strncmp(st, "cal", 3) || strstr(st, "trend");
     if (!strcmp(st, "manual") || !strcmp(st, "moving") || !strcmp(st, "stop") || !strcmp(st, "keypad") ||
@@ -283,7 +282,7 @@ int main(int argc, char **argv)
         v_mode = VALVE_MANUAL; v_cal = true; v_pct10 = 342;
     }
     if (!strcmp(st, "moving")) { extern bool fake_busy; fake_busy = moving = true; v_target10 = 500; }
-    if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 2; }
+    if (!strcmp(st, "calib") || !strcmp(st, "calpage2")) { v_mode = VALVE_CALIBRATING; v_step = 4; }
     if (!strcmp(st, "nodruck")) v_f01 = true;
     // AUTO (stage 8).
     bool aut = !strncmp(st, "auto", 4) || !strcmp(st, "paused") || !strncmp(st, "warn", 4) || !strcmp(st, "f08") || !strcmp(st, "trendauto");
@@ -333,6 +332,17 @@ int main(int argc, char **argv)
     memset(flash, 0xFF, 8u << 20);
     if (strcmp(st, "nosave"))
         seed_flash();
+    if (!strcmp(st, "splash")) {   // the start-up screen (0.13.3; logo from 0.13.13), part way
+        ui_splash();
+        ui_splash_step(65);
+        for (int i = 0; i < 60; i++)
+            ui_splash_tick();   // the bar caught up
+        FILE *f = fopen(argv[2], "wb");
+        if (!f) { perror(argv[2]); return 1; }
+        fwrite(fb, sizeof fb, 1, f);
+        fclose(f);
+        return 0;
+    }
     cal_init();
     cfg_init();
     ui_init();
@@ -379,8 +389,10 @@ int main(int argc, char **argv)
 
     if (!strcmp(st, "stop")) tap(415, 240);
     if (!strncmp(st, "motor", 5)) { tap(415, 184); tap(379, 184); ui_service(); }   // Settings > Motor override
-    if (!strcmp(st, "motor-held")) fake_override = true;   // Limit override held
+    if (!strcmp(st, "motor-held")) { extern bool fake_busy; fake_override = true; fake_busy = true; }   // Limit override held
+    if (!strcmp(st, "motor-moving")) { extern bool fake_busy; fake_busy = true; ui_service(); }   // a move running
     if (!strcmp(st, "motor-speed")) tap(122, 72);
+    if (!strcmp(st, "motor-steps")) { tap(301, 128); ui_service(); }   // 100 steps instead of Hold to run
     if (!strcmp(st, "motor-coils") || !strcmp(st, "motor-ask")) tap(194, 72);
     if (!strcmp(st, "motor-ask")) { v_cal = true; tap(120, 184); }   // Coil order while homed: asks
     if (!strcmp(st, "overon")) { fake_override = true; tap(415, 184); }   // Menu, override armed
@@ -422,8 +434,23 @@ int main(int argc, char **argv)
     if (!strcmp(st, "set-sensor") || !strcmp(st, "set-pick") || !strncmp(st, "set-add", 7) ||
         !strcmp(st, "set-caldetail")) tap(356, 72);
     if (!strcmp(st, "set-pick")) tap(120, 72);
-    if (!strncmp(st, "set-name", 8)) { tap(120, 72); tap(331, 189); tap(331, 189); tap(24, 65); tap(338, 65); }
-    if (!strcmp(st, "set-named")) { tap(415, 128); tap(24, 20); tap(24, 20); }   // Use name, Settings, Home
+    if (!strncmp(st, "set-name", 8)) { tap(120, 72); tap(120, 72); tap(331, 189); tap(331, 189); tap(24, 65); tap(338, 65); }
+    if (!strcmp(st, "set-named")) { tap(415, 128); tap(24, 20); tap(24, 20); tap(24, 20); }   // Use name, Settings, Home
+    // System, Fallback address (0.12.13): keys at x 45/122/199, y 66/107/149/190.
+    if (!strncmp(st, "set-net", 7)) tap(120, 72);
+    if (!strcmp(st, "set-remote")) { tap(120, 72); tap(357, 184); }   // System, Remote control Off (On by default)
+    if (!strncmp(st, "set-netaddr", 11) || !strcmp(st, "set-netused")) tap(356, 72);
+    if (!strcmp(st, "set-netaddr2") || !strcmp(st, "set-netused")) {
+        for (int i = 0; i < 13; i++) tap(199, 190);
+        static const int16_t k1[][2] = { {45,66},{122,190},{45,190},{45,66},{45,190},{122,66},{45,190},{122,107},{122,190} };
+        for (size_t i = 0; i < sizeof k1 / sizeof k1[0]; i++) tap(k1[i][0], k1[i][1]);   // 10.1.2.50
+        tap(356, 128);
+        for (int i = 0; i < 11; i++) tap(199, 190);
+        static const int16_t k2[][2] = { {122,66},{122,107},{122,107},{45,190},{122,66},{122,107},{122,107},{45,190},
+                                         {122,66},{122,107},{122,107},{45,190},{122,190} };
+        for (size_t i = 0; i < sizeof k2 / sizeof k2[0]; i++) tap(k2[i][0], k2[i][1]);   // 255.255.255.0
+    }
+    if (!strcmp(st, "set-netused")) tap(298, 184);
     if (!strncmp(st, "set-add", 7)) { tap(298, 72); tap(41, 240); tap(111, 240); tap(181, 240); tap(321, 184); }
     if (!strcmp(st, "set-addask") || !strcmp(st, "set-addcal")) tap(250, 84);   // 30 psi (second column)
     if (!strcmp(st, "set-addcal")) tap(318, 164);   // Calibrate
@@ -453,6 +480,7 @@ int main(int argc, char **argv)
     if (!strcmp(st, "faults") || !strcmp(st, "detail")) { tap(415, 184); tap(350, 72); }
     if (!strcmp(st, "detail")) tap(150, 72);
     if (!strcmp(st, "calpage") || !strcmp(st, "calpage2") || !strncmp(st, "calset", 6)) { tap(415, 184); tap(210, 128); }
+    if (!strcmp(st, "calhelp")) { tap(415, 184); tap(210, 128); tap(415, 72); }
     if (!strcmp(st, "bootpick")) { run(600); tap(240, 146); }   // start-up question, Set position
     if (!strcmp(st, "diag") || !strcmp(st, "supdiag")) { tap(415, 184); tap(200, 184); }
     run(1200);

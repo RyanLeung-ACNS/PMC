@@ -50,6 +50,7 @@ bool cfg_save(void);
 // Number of settings differing from the newest saved record (or, with none
 // saved, from the start-up values).
 int cfg_unsaved(void);
+// Engineering (PMC_ENG_COMMANDS): PID?, PID, NET?, NET IP, CFG ...
 bool cfg_command(const char *line);
 
 /* --------------------------------------------------------------------------
@@ -64,12 +65,31 @@ const char *cfg_name(void);
 bool cfg_name_ok(const char *n);
 bool cfg_set_name(const char *n, const char **why);
 
+// Ethernet fallback address (0.12.13), a.b.c.d as a << 24 | b << 16 | c << 8
+// | d; 0 0 is the build's PMC_FALLBACK_IP. Set live, unsaved until a save;
+// the link uses the one loaded at start-up (cfg_net_boot).
+bool cfg_net_parse(const char *s, uint32_t *v);          // "a.b.c.d"
+const char *cfg_net_why(uint32_t ip, uint32_t mask);    // NULL if usable
+const char *cfg_net_text(char *buf, size_t n, uint32_t ip, uint32_t mask);
+void cfg_net(uint32_t *ip, uint32_t *mask);
+bool cfg_set_net(uint32_t ip, uint32_t mask, const char **why);
+void cfg_net_boot(char ip[16], char mask[16]);
+bool cfg_net_restart_due(void);   // the live address differs from the one in use
+
+// Remote control (0.13.4): Off, the network can only read (remote.c ERR 211,
+// Modbus exception 1). On by default and in records before version 5 (0.13.7;
+// Off to 0.13.6). Set live, unsaved until a save, like the name; a change is
+// a NET event.
+bool cfg_remote(void);
+void cfg_set_remote(bool on);
+
 // Settings with a field on the screens. CFG_KP to CFG_BAND stay in order.
 typedef enum {
     CFG_POSMAX,    // steps for 100 %
     CFG_REVERSE,   // motor direction, 0 / 1 (a change clears the calibration)
-    CFG_OFFSET,    // count given to the switch point, steps
+    CFG_OFFSET,    // count at 0 %, the back-off above the switch, steps
     CFG_BACKOFF,   // steps
+    CFG_RETURN,    // steps off the switch after the slow close, homing step 4 (0.13.6)
     CFG_FHOME,     // reference speed, steps/s
     CFG_FCREEP,    // creep speed, steps/s
     CFG_RATE,      // run speed, steps/s

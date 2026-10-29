@@ -31,7 +31,9 @@ static cal_rec_t cal_default = {
 static char sensor_serial[12] = PMC_DRUCK_SERIAL;
 
 static cal_rec_t active;
-static cal_rec_t staging;
+#if PMC_ENG_COMMANDS
+static cal_rec_t staging;   // CAL NEW / CAL PT / CAL APPLY
+#endif
 static bool active_is_default = true;
 static bool active_saved;          // active matches what is in flash
 static bool flash_ok;
@@ -217,6 +219,7 @@ int cal_capture_left(void) { return cap.what ? CAPTURE_N - cap.n : 0; }
  * Commands
  * ------------------------------------------------------------------------ */
 
+#if PMC_ENG_COMMANDS   // CAL? and the CAL commands (engineering)
 static void show(void)
 {
     char r[20], p[20];
@@ -224,7 +227,7 @@ static void show(void)
                       active_is_default ? "default" : active_saved ? "flash" : "ram", active.id,
                       (unsigned long)active.npts, flash_ok ? "ok" : "missing");
     if (old_version)
-        link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo CAL VAC and CAL AIR\r\n",
+        link_printf("CAL old v%lu record in flash (CAL ATM era) not loaded: redo the bench cal on the screen\r\n",
                     (unsigned long)old_version);
     if (!active_is_default && active.kind == CAL_KIND_BENCH) {
         fixed_fmt(p, sizeof p, active.p_mmbar[0], 3);
@@ -238,10 +241,11 @@ static void show(void)
     for (uint32_t i = 0; i < active.npts; i++) {
         fixed_fmt(r, sizeof r, active.r_ppb[i], 6);
         fixed_fmt(p, sizeof p, active.p_mmbar[i], 3);
-        link_printf("CAL PT %s %s\r\n", r, p);
+        link_printf("CAL point %s mV/V %s mbar\r\n", r, p);
     }
     link_printf("OK\r\n");
 }
+#endif
 
 /*
  * Bench two-point cal, through the INA228 as wired:
@@ -250,10 +254,12 @@ static void show(void)
  *   CAL AIR <mbar>   vent to the room and give the room pressure (500 to
  *                    1100 mbar)
  * A number after the pressure (the uncertainty, to 0.11.36) is ignored.
- * Each averages the live ratio over CAPTURE_N readings, then replies. Once
+ * Each averages the live ratio over CAPTURE_N readings, then logs a CAL
+ * event (the command itself is answered at the start). Once
  * both points are held the two-point table is applied (RAM only, then CAL
  * SAVE). Either point can be redone alone; the other is kept.
  */
+#if PMC_ENG_COMMANDS
 static void capture_start(int what, const char *s)
 {
     int64_t p = 0;
@@ -262,18 +268,19 @@ static void capture_start(int what, const char *s)
     while (*s == ' ') s++;
     if ((*s || !vac) &&
         (!fixed_parse(&s, 3, &p) || (vac ? p < 0 || p > 50000 : p < 500000 || p > 1100000))) {
-        link_printf(vac ? "ERR expected: CAL VAC [mbar 0 to 50]\r\n"
-                        : "ERR expected: CAL AIR <mbar 500 to 1100>\r\n");
+        link_printf(vac ? "ERR Expected: CAL VAC [mbar 0 to 50]\r\n"
+                        : "ERR Expected: CAL AIR <mbar 500 to 1100>\r\n");
         return;
     }
     const char *why;
     if (!cal_capture(what, (int32_t)p, &why)) {
-        link_printf("ERR %s\r\n", why);
+        link_err(why);
         return;
     }
     link_printf("OK capturing %s point, %d readings, keep the pressure steady\r\n",
                 vac ? "vacuum" : "air", CAPTURE_N);
 }
+#endif
 
 bool cal_capture(int what, int32_t p_mmbar, const char **why)
 {
@@ -311,7 +318,7 @@ static void bench_apply(void)
     r.r_ppb[0] = bench.r_vac; r.p_mmbar[0] = bench.p_vac;
     r.r_ppb[1] = bench.r_air; r.p_mmbar[1] = bench.p_air;
     if (rec_check(&r) != NULL) {
-        link_printf("ERR air ratio not above vacuum ratio: check the pump-down and venting, redo both\r\n");
+        valve_event("CAL", "Air ratio not above vacuum ratio: check the pump-down and venting, redo both");
         return;
     }
     active = r;
@@ -320,8 +327,7 @@ static void bench_apply(void)
     char z[20], sp[20];
     fixed_fmt(z, sizeof z, (int64_t)r.r_ppb[0] * 10, 6);
     fixed_fmt(sp, sizeof sp, (int64_t)(r.r_ppb[1] - r.r_ppb[0]) * 10, 6);
-    link_printf("OK bench cal applied: zero %s mV, %s mV per (air - vacuum) at 10 V, not saved: CAL SAVE to keep\r\n",
-                z, sp);
+    valve_event("CAL", "Bench cal applied: zero %s mV, %s mV per (air - vacuum) at 10 V, unsaved", z, sp);
 }
 
 void cal_update(const clicks_state_t *s)
@@ -329,7 +335,7 @@ void cal_update(const clicks_state_t *s)
     if (!cap.what)
         return;
     if (!s->reading_ok) {
-        link_printf("ERR capture stopped: Druck reading lost\r\n");
+        valve_event("CAL", "Capture stopped: Druck reading lost");
         cap.what = 0;
         return;
     }
@@ -351,20 +357,22 @@ void cal_update(const clicks_state_t *s)
     if (vac) { bench.have_vac = true; bench.r_vac = r; bench.p_vac = cap.p; }
     else     { bench.have_air = true; bench.r_air = r; bench.p_air = cap.p; }
     cap.what = 0;
-    link_printf("OK %s point %s mV/V (sd %s mV/V over %d readings)\r\n",
-                vac ? "vacuum" : "air", a, b, CAPTURE_N);
-    if (bench.have_vac && bench.have_air)
+    // The command was answered when the capture started: the result is an
+    // EVT line, so nothing late reads as the reply to the next command.
+    bool both = bench.have_vac && bench.have_air;
+    valve_event("CAL", "%s point %s mV/V (sd %s over %d readings)%s", vac ? "Vacuum" : "Air", a, b,
+                CAPTURE_N, both ? "" : vac ? ", CAL AIR next" : ", CAL VAC next");
+    if (both)
         bench_apply();
-    else
-        link_printf("OK now CAL %s\r\n", vac ? "AIR <mbar>" : "VAC");
 }
 
+#if PMC_ENG_COMMANDS
 // Back to nominal: erase the old record too, then save the settings so
 // neither comes back at the next start-up.
 static void erase(void)
 {
-    if (!flash_ok) { link_printf("ERR serial flash not found\r\n"); return; }
-    if (!extflash_erase_4k(CAL_FLASH_ADDR)) { link_printf("ERR erase timed out\r\n"); return; }
+    if (!flash_ok) { link_printf("ERR Serial flash not found\r\n"); return; }
+    if (!extflash_erase_4k(CAL_FLASH_ADDR)) { link_printf("ERR Erase timed out\r\n"); return; }
     cal_set_default(false);
     old_version = 0;
     from_old = false;
@@ -380,7 +388,9 @@ bool cal_command(const char *line)
 
     if (strcmp(a, "?") == 0) {
         show();
-    } else if (valve_auto()) {
+        return true;
+    }
+    if (valve_auto()) {
         link_printf("ERR Switch to MANUAL first\r\n");   // a cal change moves the reading AUTO uses
     } else if (strncmp(a, " NEW", 4) == 0) {
         const char *id = a + 4;
@@ -395,10 +405,10 @@ bool cal_command(const char *line)
         const char *s = a + 4;
         int64_t r, p;
         if (staging.magic != CAL_MAGIC) { link_printf("ERR CAL NEW first\r\n"); return true; }
-        if (staging.npts >= CAL_MAX_POINTS) { link_printf("ERR table full (32)\r\n"); return true; }
+        if (staging.npts >= CAL_MAX_POINTS) { link_printf("ERR Table full (32)\r\n"); return true; }
         if (!fixed_parse(&s, 6, &r) || !fixed_parse(&s, 3, &p) ||
             r < -50000000 || r > 50000000 || p < -10000000 || p > 100000000) {
-            link_printf("ERR expected: CAL PT <mV/V> <mbar>\r\n");
+            link_printf("ERR Expected: CAL PT <mV/V> <mbar>\r\n");
             return true;
         }
         staging.r_ppb[staging.npts] = (int32_t)r;
@@ -407,12 +417,12 @@ bool cal_command(const char *line)
         link_printf("OK pt %lu\r\n", (unsigned long)staging.npts);
     } else if (strcmp(a, " APPLY") == 0) {
         const char *why = rec_check(&staging);
-        if (why) { link_printf("ERR %s\r\n", why); return true; }
+        if (why) { link_err(why); return true; }
         active = staging;
         active_is_default = false;
         active_saved = false;
         memset(&bench, 0, sizeof bench);
-        link_printf("OK applied %s (not saved)\r\n", active.id);
+        link_printf("OK applied %s, unsaved\r\n", active.id);
     } else if (strcmp(a, " VAC") == 0 || strncmp(a, " VAC ", 5) == 0) {
         capture_start(1, a + 4);
     } else if (strcmp(a, " AIR") == 0 || strncmp(a, " AIR ", 5) == 0) {
@@ -422,7 +432,8 @@ bool cal_command(const char *line)
     } else if (strcmp(a, " ERASE") == 0) {
         erase();
     } else {
-        link_printf("ERR unknown CAL command\r\n");
+        link_printf("ERR Unknown CAL command\r\n");
     }
     return true;
 }
+#endif

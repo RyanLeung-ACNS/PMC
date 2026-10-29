@@ -2,7 +2,6 @@
 
 #include "lvgl.h"
 #include "pmc_config.h"
-#include "ethlink.h"
 #include "clicks.h"
 #include "limit.h"
 #include "stepper3.h"
@@ -24,6 +23,7 @@
 static const char *why_not_manual(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
+    if (supply_off()) return "Motor supply off";   // greys the moves (H2)
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
     if (valve_auto()) return "Switch to MANUAL first";
     if (valve_mode() != VALVE_MANUAL) return "Home the valve or set its position first";
@@ -73,7 +73,7 @@ static const char *const valve_help =
     "Go to: 0 closed to 100 open.\n"
     "Fully close, Fully open: to 0 % or 100 %.\n\n"
     "Moves only with no fault, and only once the valve is homed or its position is set. "
-    "Before that the screen is greyed: home the valve or set its position from Home or Valve homing.\n"
+    "Before that the screen is greyed: home the valve or set its position from Home or Valve position.\n"
     "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
@@ -295,11 +295,14 @@ static struct {
  * state, turns and Help; then Home valve and the three ways to set the
  * position. */
 static const char *const calib_help =
-    "Home valve finds 0 % on the limit switch: a fast close to the switch, a back-off, "
-    "then a slow close onto it. Takes up to a few minutes. STOP cancels it.\n\n"
+    "Home valve finds the limit switch: a fast close to the switch, a back-off, "
+    "a slow close onto it, then the return off it (Settings > Valve setup > Homing). 0 % is that last point, just off the seat, "
+    "so a seated valve reads about -0.6 %. "
+    "Takes up to a few minutes. STOP cancels it.\n\n"
     "Set as 0 %, Set as other % and Use last saved record a position without moving the valve. "
     "They are not verified against the limit switch.\n"
-    "Set as 0 %: use only when the valve is known to be seated.\n"
+    "Set as 0 %: use only when the valve is known to be seated. It then reads the seat, "
+    "about -0.6 %, as after homing.\n"
     "Set as other %: use when the position is known, for example from the previous run.\n"
     "Use last saved: the position stored before power was lost. Available after start-up "
     "until the valve moves or is homed.\n\n"
@@ -322,7 +325,7 @@ static void start_cb(lv_event_t *e)
 static void calib_help_cb(lv_event_t *e)
 {
     (void)e;
-    ui_text_view("Valve homing", calib_help);
+    ui_text_view("Valve position", calib_help);
 }
 
 // Set position: the same guards as Home valve, then the list's actions.
@@ -382,21 +385,22 @@ static void calib_refresh(void)
     int step = valve_cal_step();
     valve_ref_t how = valve_reference();
     // While homing the caption says Homing and the box the stage, the
-    // strip's "Homing 2 of 3: backing off" in two parts (too long for 226).
-    static const char *const doing[4] = { "Off the switch", "1 of 3: fast close",
-                                          "2 of 3: backing off", "3 of 3: slow close" };
+    // strip's "Homing 2 of 4: backing off" in two parts (too long for 226).
+    static const char *const doing[5] = { "Off the switch", "1 of 4: fast close",
+                                          "2 of 4: backing off", "3 of 4: slow close",
+                                          "4 of 4: return" };
     uint32_t age = 0, took = 0;
     bool ran = valve_last_cal(&age, &took);
     const char *iso = valve_last_cal_iso();
     const char *when = !ran ? NULL : iso[0] ? ui_date(d, sizeof d, iso) : ui_when(w, sizeof w, age);
     if (calib)
-        lv_strlcpy(st, doing[step < 0 ? 0 : step > 3 ? 3 : step], sizeof st);
+        lv_strlcpy(st, doing[step < 0 ? 0 : step > 4 ? 4 : step], sizeof st);
     else if (how == VALVE_REF_HOMED && when)
         lv_snprintf(st, sizeof st, "Homed %s", when);
     else if (how == VALVE_REF_HAND)
-        lv_strlcpy(st, "Entered, not homed", sizeof st);
+        lv_strlcpy(st, "Entered by hand, not homed", sizeof st);
     else if (how == VALVE_REF_SAVED)
-        lv_strlcpy(st, "Last saved, not homed", sizeof st);
+        lv_strlcpy(st, "From last save, not homed", sizeof st);
     else
         lv_strlcpy(st, "Not homed", sizeof st);
     ui_set_text(cp.state, st);
@@ -404,6 +408,7 @@ static void calib_refresh(void)
     calib_fast();
     ui_btn_text(cp.start, calib ? "Homing" : "Home valve", NULL);
     ui_btn_enable(cp.start, !calib && !valve_motion_blocked() && !valve_auto());
+    ui_btn_primary(cp.start, !valve_calibrated());   // filled only while needed (H5)
 
     bool can = !setpos_why();
     int32_t q;
@@ -421,7 +426,7 @@ static void calib_refresh(void)
     ui_status_line();
 }
 
-const ui_screen_t ui_scr_calib = { "Valve homing", calib_build, calib_refresh, calib_fast };
+const ui_screen_t ui_scr_calib = { "Valve position", calib_build, calib_refresh, calib_fast };
 
 /* --------------------------------------------------------------------------
  * Faults and log
@@ -752,34 +757,33 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9], *sup;
+    lv_obj_t *v[9], *sup;   // v[5] the board temperature from 0.13.4; v[7] unused
 } dp;
 
-// Valve motor row: position, limit switch and steps past it, at 50 Hz so
-// the switch shows as the hardware reads it (limit.c samples every 5 ms).
+// Valve motor row: position and limit switch, at 50 Hz so the switch
+// shows as the hardware reads it (limit.c samples every 5 ms).
 static void diag_motor(lv_timer_t *t)
 {
     (void)t;
     char buf[16];
     lv_snprintf(buf, sizeof buf, "%ld", (long)stepper3_position());
     ui_set_text(dp.v[3], buf);
-    bool pressed = limit_open_now();
-    ui_set_text(dp.v[4], pressed ? "Pressed" : "Released");
-    int32_t beyond;
-    if (pressed && valve_beyond_switch(&beyond))
-        lv_snprintf(buf, sizeof buf, "%ld", (long)beyond);
-    else
-        lv_strlcpy(buf, "--", sizeof buf);
-    ui_set_text(dp.v[5], buf);
+    ui_set_text(dp.v[4], limit_open_now() ? "Pressed" : "Released");
 }
 
 
 static void diag_build(lv_obj_t *scr)
 {
-    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Last move" };
+    // The board temperature in the bottom row from 0.13.4, as the strip
+    // shows the Home status line (Ryan, 28 Oct); Moved, steps went.
+    static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Controller" };
+    // The valve motor row: supply, steps, limit switch ("Past limit" went
+    // in 0.12.9, Ryan 26 Oct).
     static const char *const caps[9] = { "Signal, mV", "Supply, V", "Before cal, mB",
-                                         "Position, steps", "Limit switch", "Beyond limit",
-                                         "Result", "Moved, steps", "Took, s" };
+                                         "Supply, V", "Steps", "Limit switch",
+                                         "Temperature, \xC2\xB0" "C", "Last move", "Move took, s" };
+    lv_obj_t **const to[9] = { &dp.v[0], &dp.v[1], &dp.v[2], &dp.sup, &dp.v[3], &dp.v[4],
+                               &dp.v[5], &dp.v[6], &dp.v[8] };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
         // 16 px as the Menu captions, centred on the row (Ryan, 22 Oct).
@@ -787,17 +791,8 @@ static void diag_build(lv_obj_t *scr)
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_update_layout(l);
         lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
-        // The valve motor row has four: its supply first (0.11.35).
-        if (r == 1) {
-            static const char *const mcap[4] = { "Supply, V", "Steps", "Limit switch", "Past limit" };
-            lv_obj_t **to[4] = { &dp.sup, &dp.v[3], &dp.v[4], &dp.v[5] };
-            static const int32_t mx[4] = { 98, 182, 272, 380 }, mw[4] = { 80, 86, 104, 90 };
-            for (int c = 0; c < 4; c++)
-                *to[c] = ui_info(scr, mx[c], 104, mw[c], 48, mcap[c]);
-            continue;
-        }
         for (int c = 0; c < 3; c++)
-            dp.v[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
+            *to[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
     lv_timer_t *t = lv_timer_create(diag_motor, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
@@ -830,8 +825,6 @@ static void diag_refresh(void)
         default: break;
     }
     ui_set_text(dp.v[6], res);
-    lv_snprintf(buf, sizeof buf, "%ld", (long)(stepper3_position() - from));
-    ui_set_text(dp.v[7], any ? buf : "--");
     ui_set_text(dp.v[8], any ? ui_fmt1(buf, sizeof buf, ms) : "--");
     // Motor supply (supply.h): coloured only when abnormal.
     supply_state_t sup = supply_state();
@@ -842,17 +835,11 @@ static void diag_refresh(void)
     ui_set_text(dp.sup, buf);
     ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
-    char t[16], info[96];
-#if PMC_LINK_ETHERNET
-    // The address, or why there is none (NO CABLE, DHCP..., NET NO CLK,
-    // NET NO PHY) (0.11.51), and the MAC for a DHCP reservation (0.12.1).
-    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C.\nEthernet %s, MAC %s", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc), link_chip_text(), ethlink_mac()[0] ? ethlink_mac() : "none");
-#else
-    lv_snprintf(info, sizeof info, "Firmware %s. Board %s \xC2\xB0" "C. Link USB.", PMC_FW_VERSION,
-                ui_fmt1(t, sizeof t, s->die_mc));
-#endif
-    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, info);
+    // Raw readings only (0.13.2, Ryan 28 Oct); the firmware, address, MAC
+    // and Restart are on Settings > System setup. The strip is Home's
+    // status line from 0.13.4 (Ryan, 28 Oct).
+    ui_set_text(dp.v[5], ui_fmt1(buf, sizeof buf, s->die_mc));
+    ui_status_line();
 }
 
 const ui_screen_t ui_scr_diag = { "Diagnostics", diag_build, diag_refresh, NULL };

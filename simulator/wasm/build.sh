@@ -4,6 +4,10 @@
 # simulated board in this folder. Needs zig 0.13 (pip install ziglang==0.13.0,
 # then ZIG="python3 -m ziglang") for its WebAssembly C library.
 #
+# PMC_ENG_COMMANDS=0 sh build.sh builds the operator firmware's command set
+# (no engineering commands) into out/pmc-op.wasm for tests/remote-only.js,
+# and leaves pmc-wasm.js alone.
+#
 # Only stepper3.c and supply.c are changed on the way in, and only where they
 # write fixed hardware addresses (NVIC, PRIMASK, the VREFINT factory value).
 set -e
@@ -11,9 +15,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 PROJ="$HERE/../../InitialTesting"
 OUT="$HERE/out"
 ZIG=${ZIG:-"python3 -m ziglang"}
+ENG=${PMC_ENG_COMMANDS:-1}
 mkdir -p "$OUT/lvgl" "$OUT/patched"
 
-CFLAGS="-target wasm32-wasi -O2 -w -DPMC_MOTOR_SENSE=1 -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
+CFLAGS="-target wasm32-wasi -O2 -w -DPMC_MOTOR_SENSE=1 -DPMC_LINK_ETHERNET=0 -DPMC_REMOTE_SWITCH=1 -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
   -I$HERE/include -I$PROJ/lvgl_940 -I$PROJ -I$PROJ/build-MM4/generated -I$HERE"
 
 if [ ! -f "$OUT/liblvgl.a" ]; then
@@ -39,9 +44,9 @@ if grep -q "0xE000E\|primask" "$OUT/patched/stepper3.c" || grep -q "0x1FFF7A2A" 
   exit 1
 fi
 
-FW="limit.c rtclock.c sysinfo.c link.c cal.c cfg.c valve.c ctrl.c valvepos.c trend.c sense.c fixed.c \
+FW="limit.c rtclock.c sysinfo.c link.c remote.c cal.c cfg.c valve.c ctrl.c valvepos.c trend.c sense.c fixed.c \
     ui.c ui_home.c ui_valve.c ui_settings.c ui_trend.c motor_screen.c \
-    ui_font_12.c ui_font_16.c ui_font_26.c ui_font_40.c"
+    ui_font_12.c ui_font_16.c ui_font_26.c ui_font_40.c ui_img_logo.c"
 SRC=""
 # tune.c (TUNE STEP) from 0.12.7; taken when it is there.
 [ -f "$PROJ/tune.c" ] && FW="$FW tune.c"
@@ -49,10 +54,13 @@ for f in $FW; do SRC="$SRC $PROJ/$f"; done
 # The buzzer (from 0.12.14) is silent here: the no-op stub the host tests use.
 [ -f "$PROJ/buzzer.c" ] && SRC="$SRC $PROJ/../tools/cfg-test/buzzer_stub.c"
 
-$ZIG cc $CFLAGS -mexec-model=reactor -o "$OUT/pmc.wasm" \
+WASM="$OUT/pmc.wasm"
+[ "$ENG" = 0 ] && WASM="$OUT/pmc-op.wasm"
+$ZIG cc $CFLAGS -DPMC_ENG_COMMANDS=$ENG -mexec-model=reactor -o "$WASM" \
   "$HERE/sim_main.c" "$HERE/sim_clicks.c" "$HERE/bench.c" \
   "$OUT/patched/stepper3.c" "$OUT/patched/supply.c" $SRC "$OUT/liblvgl.a" \
   -Wl,--export=malloc -Wl,--strip-all -lm
+if [ "$ENG" = 0 ]; then ls -l "$WASM"; exit 0; fi
 # The page loads it from a script, so it also opens from a file:// path.
 { printf '// Built by simulator/wasm/build.sh from InitialTesting (PMC_FW_VERSION in pmc_config.h). Do not edit.\n'
   printf 'window.PMC_WASM = "'; base64 -w0 "$OUT/pmc.wasm"; printf '";\n'; } > "$HERE/../pmc-wasm.js"

@@ -22,10 +22,10 @@
  * copies it into the settings record and leaves the old one in place. If
  * neither holds a valid table, the nominal 0 mV / 100 mV at 10 V (15 psia)
  * is used and cal_is_default() is true. An old record from before 0.3.30
- * (versions 1 to 3, CAL ATM era) is not loaded: CAL? says to redo the
- * bench cal.
+ * (versions 1 to 3, CAL ATM era) is not loaded: redo the bench cal.
  *
- * Set over COM3, one command per line:
+ * Engineering commands (PMC_ENG_COMMANDS, a bench build); otherwise all of
+ * this is on the Calibration screen:
  *   CAL?                       show the active calibration
  *   CAL VAC [mbar]             vacuum point: average the live ratio over 5
  *                              readings; pressure 0 unless given

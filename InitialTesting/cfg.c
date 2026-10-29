@@ -11,11 +11,22 @@
 #include "fixed.h"
 #include "ctrl.h"
 #include "cfg.h"
+#include "pmc_config.h"
 
 /* --------------------------------------------------------------------------
  * Record. Little-endian, fixed layout, CRC32 (IEEE) over everything before
  * the crc field. One per 4 KB sector, two sectors used in turn, the higher
  * rev is the newest. Below the old cal record at 0x7FF000.
+ *
+ * Version 6 (0.13.6) adds the homing return (valve[6], RETURN: steps off
+ * the switch after the slow close); older records load it as their
+ * back-off, which homing used for that step until then.
+ *
+ * Version 5 (0.13.4) adds the Remote control switch (0 Off, 1 On); older
+ * records load with it Off.
+ *
+ * Version 4 (0.12.13) adds the Ethernet fallback address and mask (0 for
+ * the build's PMC_FALLBACK_IP); version 3 records load with 0.
  *
  * Version 3 (0.10.9) adds the cryostat name; version 2 records load with
  * the default name.
@@ -29,7 +40,8 @@
 #define CFG_ADDR_A   0x7FD000UL
 #define CFG_ADDR_B   0x7FE000UL
 #define CFG_MAGIC    0x47464350UL   // "PCFG"
-#define CFG_VERSION  3
+#define CFG_VERSION  6
+#define OLD_VALVE_N  6       // valve[] in records before version 6
 
 enum { M_RATE, M_START, M_ACCEL, M_MODE, M_HOLD, M_DIR, M_ORDER, M_N };
 static const char *const mot_name[M_N] = { "RATE", "START", "ACCEL", "MODE", "HOLD", "DIR", "ORDER" };
@@ -41,6 +53,26 @@ static const int32_t tune_def[T_N] = { 400, 25, 0, 8, 1, 10 };
 static const int32_t tune_lo[T_N]  = { 1,     0,     0,   0,    -1, 10 };
 static const int32_t tune_hi[T_N]  = { 10000, 10000, 500, 2000,  1, 1000 };
 static int32_t tune[T_N] = { 400, 25, 0, 8, 1, 10 };
+// Fixed point: 0.01 %/mbar, 0.01 min, 0.1 %, steps, +-1, 0.01 mbar.
+static const int tune_dec[T_N] = { 2, 2, 1, 0, 0, 2 };
+static const char *const tune_unit[T_N] = { " %/mbar", " min", " %", " steps", "", " mbar" };
+
+// One tuning value as PID? prints it, without the unit.
+static const char *tune_fmt(char *buf, size_t n, int i, int32_t v)
+{
+    if (i == T_KDIR) {
+        lv_snprintf(buf, n, "%s", v > 0 ? "+1" : "-1");
+        return buf;
+    }
+    return fixed_fmt(buf, n, v, tune_dec[i]);
+}
+
+#if PMC_ENG_COMMANDS
+static const char *tune_text(char *buf, size_t n, int i)
+{
+    return tune_fmt(buf, n, i, tune[i]);
+}
+#endif
 
 typedef struct {
     uint32_t serial;
@@ -62,27 +94,74 @@ typedef struct {
     cfg_sens_t sens[CFG_SENS_MAX];
     char saved_at[20];           // "YYYY-MM-DD HH:MM:SS", "" if the clock was not set
     char name[CFG_NAME_LEN + 4]; // cryostat name, NUL-terminated (version 3)
+    uint32_t net_ip, net_mask;   // fallback address, a.b.c.d as a << 24 | ...; 0 0 = build default (version 4)
+    uint32_t remote;             // Remote control: 0 Off, 1 On (version 5)
     uint32_t crc;
 } cfg_rec_t;
+
+// Version 5 (0.13.4 and 0.13.5), read only: version 6 with one valve
+// setting fewer.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[OLD_VALVE_N];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t net_ip, net_mask;
+    uint32_t remote;
+    uint32_t crc;
+} cfg_rec_v5_t;
+
+// Version 4 (0.12.13 to 0.13.3), read only: version 5 without the switch.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[OLD_VALVE_N];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t net_ip, net_mask;
+    uint32_t crc;
+} cfg_rec_v4_t;
+_Static_assert(offsetof(cfg_rec_v4_t, crc) == offsetof(cfg_rec_v5_t, remote), "v4 is v5 up to the switch");
+
+// Version 3 (0.10.9 to 0.12.12), read only: version 4 without the address.
+typedef struct {
+    uint32_t magic, version, size, rev;
+    int32_t mot[M_N];
+    int32_t valve[OLD_VALVE_N];
+    int32_t tune[T_N];
+    uint32_t nsens, active;
+    cfg_sens_t sens[CFG_SENS_MAX];
+    char saved_at[20];
+    char name[CFG_NAME_LEN + 4];
+    uint32_t crc;
+} cfg_rec_v3_t;
+_Static_assert(offsetof(cfg_rec_v3_t, crc) == offsetof(cfg_rec_v5_t, net_ip), "v3 is v4 up to the address");
 
 // Version 2 (0.9.0 to 0.10.8), read only: version 3 without the name.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     int32_t tune[T_N];
     uint32_t nsens, active;
     cfg_sens_t sens[CFG_SENS_MAX];
     char saved_at[20];
     uint32_t crc;
 } cfg_rec_v2_t;
-_Static_assert(offsetof(cfg_rec_v2_t, crc) == offsetof(cfg_rec_t, name), "v2 is v3 up to the name");
+_Static_assert(offsetof(cfg_rec_v2_t, crc) == offsetof(cfg_rec_v5_t, name), "v2 is v3 up to the name");
 
 // Version 1 (0.6.0 to 0.8.x), read only.
 typedef struct {
     uint32_t magic, version, size, rev;
     int32_t mot[M_N];
-    int32_t valve[VALVE_N_SETTINGS];
+    int32_t valve[OLD_VALVE_N];
     uint32_t has_cal;
     cal_rec_t cal;
     uint32_t crc;
@@ -98,6 +177,12 @@ static cfg_sens_t sens[CFG_SENS_MAX] = { { FACTORY_SERIAL, FACTORY_PSI10, 0, { 0
 // Live cryostat name, in the header ("CF-11 pressure controller").
 #define FACTORY_NAME "CF-11"
 static char cname[CFG_NAME_LEN + 1] = FACTORY_NAME;
+// Live fallback address (unsaved until a save, like the name), and the one
+// loaded at start-up, which the Ethernet link uses until the next restart.
+static uint32_t net_ip, net_mask, net_boot_ip, net_boot_mask;
+// Live Remote control switch (0.13.4): On by default (0.13.7, Ryan 28 Oct),
+// as a saved record says once one is loaded.
+static bool remote_on = true;
 
 static const uint32_t slot_addr[2] = { CFG_ADDR_A, CFG_ADDR_B };
 static cfg_rec_t slot[2];        // as read from each sector (version 1 converted)
@@ -187,6 +272,9 @@ static void capture(cfg_rec_t *r)
     r->active = active_sens;
     memcpy(r->sens, sens, sizeof r->sens);
     lv_strlcpy(r->name, cname, sizeof r->name);
+    r->net_ip = net_ip;
+    r->net_mask = net_mask;
+    r->remote = remote_on;
     cfg_sens_t *a = &r->sens[active_sens];
     a->has_cal = !cal_is_default();
     if (a->has_cal)
@@ -222,6 +310,10 @@ static const char *values_why(const cfg_rec_t *r)
         return "SENSOR";
     if (!cfg_name_ok(r->name))
         return "NAME";
+    if (cfg_net_why(r->net_ip, r->net_mask))
+        return "NET IP";
+    if (r->remote > 1)
+        return "REMOTE";
     for (uint32_t i = 0; i < r->nsens; i++) {
         const cfg_sens_t *q = &r->sens[i];
         if (q->psi10 < 10 || q->psi10 > 10000 || q->has_cal > 1 || (q->has_cal && !cal_record_ok(&q->cal)))
@@ -233,7 +325,8 @@ static const char *values_why(const cfg_rec_t *r)
     return NULL;
 }
 
-// A version 1 record as version 2: one sensor, default tuning.
+// A version 1 record as version 6: one sensor, default tuning, the return
+// as the back-off.
 static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
@@ -242,7 +335,8 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     r->size = sizeof *r;
     r->rev = v->rev;
     memcpy(r->mot, v->mot, sizeof r->mot);
-    memcpy(r->valve, v->valve, sizeof r->valve);
+    memcpy(r->valve, v->valve, sizeof v->valve);
+    r->valve[6] = v->valve[3];
     memcpy(r->tune, tune_def, sizeof r->tune);
     r->nsens = 1;
     r->sens[0].serial = FACTORY_SERIAL;
@@ -250,17 +344,28 @@ static void from_v1(const cfg_rec_v1_t *v, cfg_rec_t *r)
     r->sens[0].has_cal = v->has_cal;
     r->sens[0].cal = v->cal;
     lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
+    r->remote = 1;
 }
 
-// A version 2 record as version 3: the default name.
-static void from_v2(const cfg_rec_v2_t *v, cfg_rec_t *r)
+// A version 2 to 5 record as version 6. They are version 6 without the
+// return (valve[6]) and without the fields after crc_at; the return is
+// their back-off, so homing ends where it did. Fields they lack are 0 (the
+// build's fallback address), except Remote control, On as the default; a
+// version 5 record has its own.
+static void from_old(const void *v, size_t tune_at, size_t crc_at, cfg_rec_t *r)
 {
     memset(r, 0, sizeof *r);
-    memcpy(r, v, offsetof(cfg_rec_v2_t, crc));
+    r->remote = 1;                                                 // version 5 overwrites it
+    memcpy(r, v, tune_at);                                         // header, mot, valve[0..5]
+    memcpy(r->tune, (const uint8_t *)v + tune_at, crc_at - tune_at);   // tune on
+    r->valve[6] = r->valve[3];
     r->version = CFG_VERSION;
     r->size = sizeof *r;
-    lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);
 }
+_Static_assert(offsetof(cfg_rec_v5_t, tune) == offsetof(cfg_rec_t, valve) + OLD_VALVE_N * 4, "old valve[] then tune");
+_Static_assert(offsetof(cfg_rec_v5_t, crc) - offsetof(cfg_rec_v5_t, tune) ==
+               offsetof(cfg_rec_t, crc) - offsetof(cfg_rec_t, tune), "v5 is v6 from tune on");
+#define FROM_OLD(T, v, r) from_old((v), offsetof(T, tune), offsetof(T, crc), (r))
 
 // Reads one sector into slot[i]; NULL if usable, else why not.
 static const char *read_slot(int i)
@@ -268,6 +373,9 @@ static const char *read_slot(int i)
     static union {                 // one old version per read
         cfg_rec_v1_t v1;
         cfg_rec_v2_t v2;
+        cfg_rec_v3_t v3;
+        cfg_rec_v4_t v4;
+        cfg_rec_v5_t v5;
     } old;
     cfg_rec_t *r = &slot[i];
     extflash_read(slot_addr[i], r, sizeof *r);
@@ -283,7 +391,23 @@ static const char *read_slot(int i)
         memcpy(&old.v2, r, sizeof old.v2);
         if (old.v2.crc != crc32(&old.v2, offsetof(cfg_rec_v2_t, crc)))
             return "CRC mismatch";
-        from_v2(&old.v2, r);
+        FROM_OLD(cfg_rec_v2_t, &old.v2, r);
+        lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);   // no name before version 3
+    } else if (r->magic == CFG_MAGIC && r->version == 3 && r->size == sizeof old.v3) {
+        memcpy(&old.v3, r, sizeof old.v3);
+        if (old.v3.crc != crc32(&old.v3, offsetof(cfg_rec_v3_t, crc)))
+            return "CRC mismatch";
+        FROM_OLD(cfg_rec_v3_t, &old.v3, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 4 && r->size == sizeof old.v4) {
+        memcpy(&old.v4, r, sizeof old.v4);
+        if (old.v4.crc != crc32(&old.v4, offsetof(cfg_rec_v4_t, crc)))
+            return "CRC mismatch";
+        FROM_OLD(cfg_rec_v4_t, &old.v4, r);
+    } else if (r->magic == CFG_MAGIC && r->version == 5 && r->size == sizeof old.v5) {
+        memcpy(&old.v5, r, sizeof old.v5);
+        if (old.v5.crc != crc32(&old.v5, offsetof(cfg_rec_v5_t, crc)))
+            return "CRC mismatch";
+        FROM_OLD(cfg_rec_v5_t, &old.v5, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
         return "not a settings record of this version";
     } else if (r->crc != rec_crc(r)) {
@@ -365,15 +489,34 @@ static int diff(const cfg_rec_t *live, const cfg_rec_t *b, bool print, char *buf
         if (live->tune[i] == b->tune[i])
             continue;
         count++;
-        if (print)
-            link_printf("CFG DIFF TUNE %s saved %ld, now %ld\r\n", tune_name[i], (long)b->tune[i],
-                        (long)live->tune[i]);
+        if (print) {
+            char x[2][16];
+            link_printf("CFG DIFF TUNE %s saved %s, now %s%s\r\n", tune_name[i],
+                        tune_fmt(x[0], sizeof x[0], i, b->tune[i]), tune_fmt(x[1], sizeof x[1], i, live->tune[i]),
+                        tune_unit[i]);
+        }
     }
     if (strcmp(live->name, b->name) != 0) {
         count++;
         LINE("Cryostat name: %s\n", live->name[0] ? live->name : "none");
         if (print)
             link_printf("CFG DIFF NAME saved \"%s\", now \"%s\"\r\n", b->name, live->name);
+    }
+    if (live->net_ip != b->net_ip || live->net_mask != b->net_mask) {
+        char x[2][48];
+        count++;
+        cfg_net_text(x[0], sizeof x[0], live->net_ip, live->net_mask);
+        LINE("Fallback address: %s\n", x[0]);
+        if (print) {
+            cfg_net_text(x[1], sizeof x[1], b->net_ip, b->net_mask);
+            link_printf("CFG DIFF NET saved %s, now %s\r\n", x[1], x[0]);
+        }
+    }
+    if (live->remote != b->remote) {
+        count++;
+        LINE("Remote control: %s\n", live->remote ? "On" : "Off");
+        if (print)
+            link_printf("CFG DIFF REMOTE saved %s, now %s\r\n", b->remote ? "On" : "Off", live->remote ? "On" : "Off");
     }
     if (live->sens[live->active].serial != b->sens[b->active].serial) {
         count++;
@@ -455,6 +598,12 @@ static bool apply(const cfg_rec_t *r, bool with_sensors)
     valve_set_settings(r->valve);
     memcpy(tune, r->tune, sizeof tune);
     lv_strlcpy(cname, r->name, sizeof cname);
+    net_ip = r->net_ip;
+    net_mask = r->net_mask;
+    if ((r->remote != 0) != remote_on) {
+        remote_on = r->remote != 0;
+        valve_event("NET", remote_on ? "Remote control on (settings loaded)" : "Remote control off (settings loaded)");
+    }
     if (with_sensors) {
         nsens = r->nsens;
         active_sens = r->active;
@@ -497,6 +646,8 @@ void cfg_init(void)
     memset(sens, 0, sizeof sens);
     sens[0].serial = FACTORY_SERIAL;
     sens[0].psi10 = FACTORY_PSI10;
+    net_ip = net_mask = 0;
+    remote_on = true;
     // The cal found by cal_init() (old record, or nominal) is the factory sensor's.
     tell_cal();
     capture(&factory);
@@ -510,11 +661,14 @@ void cfg_init(void)
         if (slot_why[i] && slot_why[i] != EMPTY)
             valve_event("CFG", "Record in %c not used: %s", slot_letter(i), slot_why[i]);
     if (newest < 0) {
+        net_boot_ip = net_boot_mask = 0;
         valve_event("CFG", "No saved settings, factory defaults%s",
                     cal_from_old_record() ? ", cal from the old record" : "");
         return;
     }
     apply(&slot[newest], true);   // idle at start-up: cannot be refused
+    net_boot_ip = net_ip;
+    net_boot_mask = net_mask;
     loaded = newest;
     loaded_rev = slot[newest].rev;
     valve_event("CFG", "Settings saved %s loaded from %c%s", when(&slot[newest]),
@@ -528,7 +682,7 @@ static bool write_scratch(const char **why)
 {
     const char *bad;
     if (!flash_ok) {
-        link_printf("ERR serial flash not found, nothing saved\r\n");
+        link_printf("ERR Serial flash not found, nothing saved\r\n");
         *why = "serial flash not found, nothing saved";
         return false;
     }
@@ -550,10 +704,10 @@ static bool write_scratch(const char **why)
         scan();
         valve_event("CFG", "Save failed in %c, nothing saved", slot_letter(t));
         if (newest >= 0)
-            link_printf("ERR flash write or read-back failed in %c, nothing saved, rev %lu in %c kept\r\n",
+            link_printf("ERR Flash write or read-back failed in %c, nothing saved, rev %lu in %c kept\r\n",
                         slot_letter(t), (unsigned long)slot[newest].rev, slot_letter(newest));
         else
-            link_printf("ERR flash write or read-back failed in %c, nothing saved\r\n", slot_letter(t));
+            link_printf("ERR Flash write or read-back failed in %c, nothing saved\r\n", slot_letter(t));
         *why = "flash write failed, nothing saved";
         return false;
     }
@@ -591,6 +745,7 @@ static int32_t *key_ref(cfg_rec_t *r, cfg_key_t k)
     case CFG_FCREEP:  return &r->valve[2];
     case CFG_BACKOFF: return &r->valve[3];
     case CFG_OFFSET:  return &r->valve[5];
+    case CFG_RETURN:  return &r->valve[6];
     case CFG_REVERSE: return &r->mot[M_DIR];
     case CFG_RATE:    return &r->mot[M_RATE];
     case CFG_START:   return &r->mot[M_START];
@@ -604,7 +759,7 @@ static int32_t *key_ref(cfg_rec_t *r, cfg_key_t k)
     default:          return NULL;
     }
 }
-_Static_assert(VALVE_N_SETTINGS == 6, "key_ref() valve indices");
+_Static_assert(VALVE_N_SETTINGS == 7, "key_ref() valve indices");
 
 static const cfg_rec_t *source(cfg_from_t from)
 {
@@ -644,7 +799,7 @@ bool cfg_rev(cfg_from_t from, uint32_t *rev, const char **saved_at)
 
 void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
 {
-    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 5000 };
+    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0, 10 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 5000, 5000 };
     _Static_assert(sizeof vlo / sizeof vlo[0] == VALVE_N_SETTINGS, "valve ranges");
     *lo = 0; *hi = 0;
     if (k >= CFG_KP && k <= CFG_BAND) {
@@ -656,7 +811,8 @@ void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
     } else if (k == CFG_REVERSE) {
         *hi = 1;
     } else if (k != CFG_SENSOR) {
-        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 : 5;
+        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 :
+                k == CFG_RETURN ? 6 : 5;
         *lo = vlo[i]; *hi = vhi[i];   // the indices key_ref() uses
     }
 }
@@ -835,6 +991,7 @@ bool cfg_sensor_use(uint32_t serial, const char **why)
 /* --------------------------------------------------------------------------
  * Commands
  * ------------------------------------------------------------------------ */
+#if PMC_ENG_COMMANDS   // CFG?, CFG LOAD, CFG TEST
 static void show(void)
 {
     link_printf("CFG flash %s\r\n", flash_ok ? "ok" : "not found");
@@ -851,10 +1008,11 @@ static void show(void)
                     slot_letter(loaded));
     else
         link_printf("CFG start-up: factory defaults, no saved record\r\n");
-    link_printf("CFG TUNE KP %ld TI %ld OUTMIN %ld DB %ld KDIR %ld BAND %ld"
-                " (0.01 %%/mbar, 0.01 min, 0.1 %%, steps, +-1, 0.01 mbar)\r\n",
-                (long)tune[T_KP], (long)tune[T_TI], (long)tune[T_OUTMIN], (long)tune[T_DB],
-                (long)tune[T_KDIR], (long)tune[T_BAND]);
+    char t[T_N][16];
+    for (int i = 0; i < T_N; i++)
+        tune_text(t[i], sizeof t[i], i);
+    link_printf("CFG TUNE KP %s %%/mbar, TI %s min, OUTMIN %s %%, DB %s steps, KDIR %s, BAND %s mbar\r\n",
+                t[T_KP], t[T_TI], t[T_OUTMIN], t[T_DB], t[T_KDIR], t[T_BAND]);
     for (uint32_t i = 0; i < nsens; i++)
         link_printf("CFG SENSOR s/n %lu, %ld.%ld psi%s\r\n", (unsigned long)sens[i].serial,
                     (long)(sens[i].psi10 / 10), (long)(sens[i].psi10 % 10), i == active_sens ? ", in use" : "");
@@ -876,16 +1034,16 @@ static void load(const char *what)
     else if (strcmp(what, "PREVIOUS") == 0) from = CFG_FROM_PREVIOUS;
     else if (strcmp(what, "DEFAULTS") == 0) from = CFG_FROM_DEFAULTS;
     else {
-        link_printf("ERR expected: CFG LOAD LAST|PREVIOUS|DEFAULTS\r\n");
+        link_printf("ERR Expected: CFG LOAD LAST|PREVIOUS|DEFAULTS\r\n");
         return;
     }
     if (!source(from)) {
-        link_printf(from == CFG_FROM_SAVED ? "ERR nothing saved\r\n" : "ERR no previous record\r\n");
+        link_printf(from == CFG_FROM_SAVED ? "ERR Nothing saved\r\n" : "ERR No previous record\r\n");
         return;
     }
     const cfg_rec_t *src = source(from);
     if (!cfg_load_live(from, &why)) {
-        link_printf("ERR %s\r\n", why);
+        link_err(why);
         return;
     }
     if (from == CFG_FROM_DEFAULTS)
@@ -898,9 +1056,9 @@ static void load(const char *what)
 
 static void test(const char *what)
 {
-    if (!flash_ok) { link_printf("ERR serial flash not found\r\n"); return; }
+    if (!flash_ok) { link_printf("ERR Serial flash not found\r\n"); return; }
     if (strcmp(what, "CORRUPT") == 0) {
-        if (newest < 0) { link_printf("ERR nothing saved\r\n"); return; }
+        if (newest < 0) { link_printf("ERR Nothing saved\r\n"); return; }
         static const uint8_t zero[4];
         int was = newest;
         // Programming clears bits without an erase: the CRC no longer matches.
@@ -915,11 +1073,12 @@ static void test(const char *what)
         scan();
         valve_event("CFG", "Test: both settings sectors erased");
         link_printf(ok ? "OK both erased, restart for factory defaults (old cal record kept)\r\n"
-                       : "ERR erase timed out\r\n");
+                       : "ERR Erase timed out\r\n");
     } else {
-        link_printf("ERR expected: CFG TEST CORRUPT|ERASE\r\n");
+        link_printf("ERR Expected: CFG TEST CORRUPT|ERASE\r\n");
     }
 }
+#endif
 
 bool cfg_name_ok(const char *n)
 {
@@ -944,19 +1103,165 @@ bool cfg_set_name(const char *n, const char **why)
     return true;
 }
 
+/* --------------------------------------------------------------------------
+ * Ethernet fallback address (0.12.13, Ryan 26 Oct): used when no DHCP server
+ * answers. Set live and unsaved until a save, like the name; the link takes
+ * the one loaded at start-up, so a change applies after the next restart.
+ * 0 0 is the build's PMC_FALLBACK_IP and PMC_FALLBACK_MASK.
+ * ------------------------------------------------------------------------ */
+bool cfg_net_parse(const char *s, uint32_t *v)
+{
+    uint32_t a = 0;
+    for (int i = 0; i < 4; i++) {
+        if (*s < '0' || *s > '9')
+            return false;
+        uint32_t o = 0;
+        for (int d = 0; *s >= '0' && *s <= '9'; d++, s++) {
+            if (d == 3)
+                return false;
+            o = o * 10 + (uint32_t)(*s - '0');
+        }
+        if (o > 255 || (i < 3 && *s++ != '.'))
+            return false;
+        a = a << 8 | o;
+    }
+    *v = a;
+    return *s == '\0';
+}
+
+const char *cfg_net_why(uint32_t ip, uint32_t mask)
+{
+    if (ip == 0 && mask == 0)
+        return NULL;   // the build default
+    uint32_t inv = ~mask;
+    if ((inv & (inv + 1)) != 0 || mask < 0xFF000000UL || mask > 0xFFFFFFFCUL)
+        return "mask must be 255.0.0.0 to 255.255.255.252, ones then zeros";
+    uint32_t top = ip >> 24;
+    if (top == 0 || top == 127 || top >= 224)
+        return "not a device address";
+    if ((ip & inv) == 0 || (ip & inv) == inv)
+        return "that is the network or broadcast address of the mask";
+    return NULL;
+}
+
+static void net_addr(char *buf, size_t n, uint32_t a)
+{
+    lv_snprintf(buf, n, "%lu.%lu.%lu.%lu", (unsigned long)(a >> 24), (unsigned long)(a >> 16 & 255),
+                (unsigned long)(a >> 8 & 255), (unsigned long)(a & 255));
+}
+
+const char *cfg_net_text(char *buf, size_t n, uint32_t ip, uint32_t mask)
+{
+    char a[16], m[16];
+    if (ip == 0 && mask == 0) {
+        lv_snprintf(buf, n, "%s %s (build default)", PMC_FALLBACK_IP, PMC_FALLBACK_MASK);
+        return buf;
+    }
+    net_addr(a, sizeof a, ip);
+    net_addr(m, sizeof m, mask);
+    lv_snprintf(buf, n, "%s %s", a, m);
+    return buf;
+}
+
+void cfg_net(uint32_t *ip, uint32_t *mask) { *ip = net_ip; *mask = net_mask; }
+
+bool cfg_set_net(uint32_t ip, uint32_t mask, const char **why)
+{
+    if ((*why = cfg_net_why(ip, mask)) != NULL)
+        return false;
+    net_ip = ip;
+    net_mask = mask;
+    return true;
+}
+
+void cfg_net_boot(char ip[16], char mask[16])
+{
+    if (net_boot_ip == 0 && net_boot_mask == 0) {
+        lv_strlcpy(ip, PMC_FALLBACK_IP, 16);
+        lv_strlcpy(mask, PMC_FALLBACK_MASK, 16);
+    } else {
+        net_addr(ip, 16, net_boot_ip);
+        net_addr(mask, 16, net_boot_mask);
+    }
+}
+
+bool cfg_net_restart_due(void) { return net_ip != net_boot_ip || net_mask != net_boot_mask; }
+
+/* --------------------------------------------------------------------------
+ * Remote control (0.13.4, Ryan 28 Oct, network plan A): while Off, set
+ * commands over the network (port 8888, STOP included) and Modbus writes are
+ * refused; queries and reads are not. Live at once, kept by a save.
+ * ------------------------------------------------------------------------ */
+bool cfg_remote(void) { return remote_on; }
+
+void cfg_set_remote(bool on)
+{
+    if (on == remote_on)
+        return;
+    remote_on = on;
+    valve_event("NET", on ? "Remote control on (screen): the network can set" :
+                            "Remote control off (screen): the network can only read");
+}
+
+#if PMC_ENG_COMMANDS   // NET?, NET IP, PID?, PID, CFG (engineering)
+// NET? and NET IP <address> <mask> | NET IP DEFAULT. Over Ethernet NET IP is
+// refused, so nobody sets an address that cuts off their own link; the
+// screen (Settings > System setup) or the USB build sets it.
+static void net_command(const char *a)
+{
+    char t[2][48];
+    if (strcmp(a, "?") == 0) {
+        char ip[16], m[16];
+        cfg_net_boot(ip, m);
+        cfg_net_text(t[0], sizeof t[0], net_ip, net_mask);
+        link_printf("NET fallback %s, used if no DHCP server answers\r\n", t[0]);
+        link_printf("NET in use since start-up %s %s%s\r\n", ip, m,
+                    cfg_net_restart_due() ? "; the change applies after a save and a restart" : "");
+        link_printf("OK\r\n");
+        return;
+    }
+    if (strncmp(a, " IP ", 4) != 0) {
+        link_printf("ERR Expected: NET? | NET IP <address> <mask> | NET IP DEFAULT\r\n");
+        return;
+    }
+#if PMC_LINK_ETHERNET
+    link_printf("ERR NET IP is set on the screen (Settings > System setup), not over the network\r\n");
+#else
+    uint32_t ip = 0, mask = 0;
+    const char *why;
+    a += 4;
+    if (strcmp(a, "DEFAULT") != 0) {
+        char x[20];
+        const char *sp = strchr(a, ' ');
+        size_t n = sp ? (size_t)(sp - a) : 0;
+        if (!sp || n >= sizeof x) {
+            link_printf("ERR Expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            return;
+        }
+        memcpy(x, a, n);
+        x[n] = '\0';
+        if (!cfg_net_parse(x, &ip) || !cfg_net_parse(sp + 1, &mask)) {
+            link_printf("ERR Expected: NET IP <address> <mask>, e.g. NET IP 192.168.1.50 255.255.255.0\r\n");
+            return;
+        }
+        if (ip == 0 && mask == 0) {
+            link_printf("ERR Use NET IP DEFAULT for the build default\r\n");
+            return;
+        }
+    }
+    if (!cfg_set_net(ip, mask, &why)) {
+        link_err(why);
+        return;
+    }
+    cfg_net_text(t[0], sizeof t[0], net_ip, net_mask);
+    valve_event("CFG", "Fallback address set to %s, not saved", t[0]);
+    link_printf("OK NET fallback %s, unsaved, used after a restart\r\n", t[0]);
+#endif
+}
+
 /* PID? and PID <name> <value>: the simulator's console names. The six
  * tuning values are set live (AUTO picks them up at its next step) and
  * kept by CFG SAVE; the rest are fixed in ctrl.h. */
-static const int tune_dec[T_N] = { 2, 2, 1, 0, 0, 2 };
-
-static const char *tune_text(char *buf, size_t n, int i)
-{
-    if (i == T_KDIR) {
-        lv_snprintf(buf, n, "%s", tune[i] > 0 ? "+1" : "-1");
-        return buf;
-    }
-    return fixed_fmt(buf, n, tune[i], tune_dec[i]);
-}
 
 static void pid_show(void)
 {
@@ -969,7 +1274,7 @@ static void pid_show(void)
     link_printf("PID TCHECK %d s, NRESP %d, DPMIN 0.05 mbar, TCONV %d s, CHECKMIN %d steps\r\n", CTRL_TCHECK_S,
                 CTRL_NRESP, CTRL_TCONV_S, CTRL_CHECKMIN);
     link_printf("PID LEAD %d steps, TLAG %d s\r\n", CTRL_LEAD_MAX, CTRL_TLAG_S);
-    link_printf("OK KP TI OUTMIN DB KDIR BAND can be set; KD TS STABLE TCHECK NRESP DPMIN TCONV CHECKMIN LEAD TLAG are fixed\r\n");
+    link_printf("OK\r\n");
 }
 
 static void pid_set(const char *a)
@@ -986,16 +1291,16 @@ static void pid_set(const char *a)
         if (!fixed_parse(&s, tune_dec[i], &v) || *s || v < tune_lo[i] || v > tune_hi[i] ||
             (i == T_KDIR && v == 0)) {
             if (i == T_KDIR)
-                link_printf("ERR expected: PID KDIR +1|-1\r\n");
+                link_printf("ERR Expected: PID KDIR +1|-1\r\n");
             else
-                link_printf("ERR expected: PID %s <%s-%s>\r\n", tune_name[i],
+                link_printf("ERR Expected: PID %s <%s-%s>\r\n", tune_name[i],
                             fixed_fmt(lo, sizeof lo, tune_lo[i], tune_dec[i]),
                             fixed_fmt(hi, sizeof hi, tune_hi[i], tune_dec[i]));
             return;
         }
         tune[i] = (int32_t)v;
         valve_event("CFG", "PID %s set to %s, not saved", tune_name[i], tune_text(t, sizeof t, i));
-        link_printf("OK PID %s %s (unsaved until CFG SAVE)\r\n", tune_name[i], t);
+        link_printf("OK PID %s %s%s, unsaved\r\n", tune_name[i], t, tune_unit[i]);
         return;
     }
     for (size_t i = 0; i < sizeof fixed_names / sizeof fixed_names[0]; i++) {
@@ -1005,13 +1310,17 @@ static void pid_set(const char *a)
             return;
         }
     }
-    link_printf("ERR expected: PID KP|TI|OUTMIN|DB|KDIR|BAND <value>\r\n");
+    link_printf("ERR Expected: PID KP|TI|OUTMIN|DB|KDIR|BAND <value>\r\n");
 }
 
 bool cfg_command(const char *line)
 {
     if (strcmp(line, "PID?") == 0) {
         pid_show();
+        return true;
+    }
+    if (strncmp(line, "NET", 3) == 0 && (line[3] == ' ' || line[3] == '?')) {
+        net_command(line + 3);
         return true;
     }
     if (strncmp(line, "PID ", 4) == 0) {
@@ -1027,10 +1336,16 @@ bool cfg_command(const char *line)
     } else if (strcmp(a, " DIFF?") == 0) {
         capture(&scratch);
         int n = diff(&scratch, base(), true, NULL, 0);
-        link_printf("OK %d difference%s from %s\r\n", n, n == 1 ? "" : "s",
-                    newest >= 0 ? "the newest save" : "the start-up values");
+        const char *from = newest >= 0 ? "the newest save" : "the start-up values";
+        if (n)
+            link_printf("CFG DIFF %d difference%s from %s\r\nOK\r\n", n, n == 1 ? "" : "s", from);
+        else
+            link_printf("CFG DIFF none from %s\r\nOK\r\n", from);
     } else if (strcmp(a, " SAVE") == 0) {
-        cfg_save();
+        if (valve_auto())
+            link_printf("ERR Switch to MANUAL first\r\n");   // as CAL SAVE
+        else
+            cfg_save();
     } else if (strncmp(a, " LOAD ", 6) == 0) {
         load(a + 6);
     } else if (strcmp(a, " NAME?") == 0) {
@@ -1038,13 +1353,14 @@ bool cfg_command(const char *line)
     } else if (strncmp(a, " NAME", 5) == 0 && (a[5] == ' ' || a[5] == '\0')) {
         const char *why;
         if (cfg_set_name(a[5] ? a + 6 : "", &why))
-            link_printf("OK name \"%s\" (unsaved until CFG SAVE)\r\n", cname);
+            link_printf("OK NAME \"%s\", unsaved\r\n", cname);
         else
-            link_printf("ERR %s\r\n", why);
+            link_err(why);
     } else if (strncmp(a, " TEST ", 6) == 0) {
         test(a + 6);
     } else {
-        link_printf("ERR unknown CFG command\r\n");
+        link_printf("ERR Unknown CFG command\r\n");
     }
     return true;
 }
+#endif

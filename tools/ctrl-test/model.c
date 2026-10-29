@@ -194,15 +194,18 @@ static void motor_tick(double dt)
         if (M.pos == M.target) { finish("DONE"); return; }
     }
 }
-bool model_start_move(int32_t target)
+bool model_start_move(int32_t target) { return model_start_move_rate(target, M.run); }
+bool model_start_move_rate(int32_t target, double rate)
 {
-    M.vrun = M.run;
+    M.vrun = rate;
     M.target = target;
     if (!M.moving) {
         if (target == M.pos) return true;
         if (target < M.pos && M.lim_active) { M.last_stop = "LIMIT"; return false; }
         M.moving = true; M.dir = sgn((double)(target - M.pos));
         M.vstart = M.start < M.vrun ? M.start : M.vrun; M.v = M.vstart; M.acc = 0;
+    } else if (M.vstart > M.vrun) {
+        M.vstart = M.vrun;   // stepper3: the start rate is never above the move rate
     }
     return true;
 }

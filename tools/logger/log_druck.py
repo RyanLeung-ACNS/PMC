@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""Log the board's once-a-second DATA lines to CSV, over USB or Ethernet.
+"""Log the board's pressure, target, valve, mode and alarms to CSV, once a second.
 
     python log_druck.py 192.168.1.23         # Ethernet build: IP shown on the board
     python log_druck.py COM3                 # USB build
     python log_druck.py 192.168.1.23 -o run1.csv
 
 Writes druck_YYYYMMDD_HHMMSS.csv unless -o is given. Stop with Ctrl+C.
-Ethernet: TCP port 5000 (give host:port for another). The board takes one
-connection at a time; a new one replaces the old, and the logger then
-reconnects on its own (so running druck_cal.py only leaves a short gap).
-USB: close the NECTO UART Terminal first, only one program can hold the
-COM port. Needs pyserial either way (pip install pyserial).
+Ethernet: TCP port 8888 (firmware 0.13.0 on; give host:port for another).
+The board takes one connection at a time; a new one replaces the old, and
+the logger then reconnects on its own. USB: close the NECTO UART Terminal
+first, only one program can hold the COM port. Needs pyserial either way
+(pip install pyserial).
 
-Columns: pc_time (local, ISO), then the board's fields (firmware 0.11.52
-on; DATA? on the board lists them):
-t_s, p_mbar, target_mbar, valve_pct, mode, alarm, ratio_mV_per_V, exc_mV,
-die_C, baro_mbar. An empty field has no value (no reading, not homed, ...).
-Status lines from the board (anything not starting with DATA) are printed
-to the console only.
+The board sends nothing unasked (0.13.0), so the logger polls one line a
+second, PRES?;PRES SP?;VALV?;MODE?;ALRM?;BARO?, and sets the board clock
+from the PC at connect. Columns: pc_time (local, ISO), p_mbar, target_mbar,
+valve_pct, mode, alarm (the active tags, spaces between), baro_mbar. An
+empty field has no value (no reading, not homed, no target, no barometer).
 """
 import argparse
 import datetime as dt
@@ -27,10 +26,11 @@ import time
 
 import serial   # pip install pyserial
 
-TCP_PORT = 5000
-
-FIELDS = ["t_s", "p_mbar", "target_mbar", "valve_pct", "mode", "alarm",
-          "ratio_mV_per_V", "exc_mV", "die_C", "baro_mbar"]
+TCP_PORT = 8888
+POLL = "PRES?;PRES SP?;VALV?;MODE?;ALRM?;BARO?"
+# The words each reply starts with, in POLL order.
+WORDS = ["PRES", "PRES SP", "VALV", "MODE", "ALRM", "BARO"]
+FIELDS = ["p_mbar", "target_mbar", "valve_pct", "mode", "alarm", "baro_mbar"]
 
 
 class Link:
@@ -40,37 +40,38 @@ class Link:
     writes are the same either way.
     """
 
-    def __init__(self, target, timeout=2.0):
+    def __init__(self, target, timeout=3.0):
         if not re.match(r"^(COM\d+|/dev/)", target, re.I):
             host, _, port = target.partition(":")
             target = f"socket://{host}:{port or TCP_PORT}"
         self.port = serial.serial_for_url(target, baudrate=115200, timeout=timeout)
         self.port.dtr = True    # baud and DTR are ignored over TCP
-        self.buf = b""
-        # In case DATA OFF was left set from a terminal session.
-        self.write("DATA ON\n")
-        # Its reply ("DATA t_s,p_mbar,...") is checked against FIELDS.
-        self.write("DATA?\n")
-        # Board clock from the PC's local time.
-        self.write(time.strftime("TIME SET %Y-%m-%d %H:%M:%S\n"))
+        idn = self.ask("*IDN?")
+        if not idn.startswith("MercShore,iPC,"):
+            raise ConnectionError(f"not an mm4 with firmware 0.13.0 or later (*IDN? gave {idn!r})")
+        print(idn)
+        # Board clock from the PC's local time; the TIME? query makes one reply line.
+        print(self.ask(time.strftime("TIME SET %Y-%m-%d %H:%M:%S;TIME?")))
 
-    def readline(self):
-        """One line without its ending, or "" if none is complete yet.
-
-        A read that times out mid-line keeps the part it has for the next
-        call. A closed TCP connection raises SerialException (an OSError).
-        """
-        self.buf += self.port.readline()
-        if not self.buf.endswith(b"\n"):
-            return ""
-        line, self.buf = self.buf, b""
-        return line.decode("ascii", errors="replace").strip()
-
-    def write(self, text):
-        self.port.write(text.encode("ascii"))
+    def ask(self, line):
+        """Send one line, return its one reply line ("" after the timeout)."""
+        self.port.write((line + "\n").encode("ascii"))
+        return self.port.readline().decode("ascii", errors="replace").strip()
 
     def close(self):
         self.port.close()
+
+
+def value(reply, words):
+    """The value of one reply ("PRES 4.625 mbar" -> "4.625"), "" for NONE."""
+    if not reply.startswith(words + " "):
+        raise ValueError(f"expected {words} ..., got {reply!r}")
+    v = reply[len(words) + 1:]
+    if v == "NONE":
+        return ""
+    if words == "ALRM":
+        return " ".join(a.split(",")[0] for a in v.split("|"))
+    return v.split(" ")[0]
 
 
 def main():
@@ -86,11 +87,11 @@ def main():
         print(f"Logging {a.target} to {out}  (Ctrl+C to stop)")
         try:
             # Reconnect if the board drops the connection (another tool took
-            # it, a cable was pulled, the board reset) or goes quiet for 10 s.
+            # it, a cable was pulled, the board reset) or stops answering.
             while True:
                 try:
                     port = Link(a.target)
-                except OSError as e:
+                except (ConnectionError, OSError) as e:
                     print(f"\nconnect failed ({e}), retrying", file=sys.stderr)
                     time.sleep(2)
                     continue
@@ -106,30 +107,29 @@ def main():
 
 
 def log_rows(port, f, rows):
-    last = time.time()
+    next_t = time.time()
     while True:
-        line = port.readline()
-        if not line:
-            if time.time() - last > 10:
-                raise ConnectionError("no data for 10 s")
-            continue
-        last = time.time()
-        if line.startswith("DATA ") and line[5:] != ",".join(FIELDS):
-            print(f"\nThe board sends other columns ({line[5:]}): "
-                  "use the logger from the same firmware version", file=sys.stderr)
-        if not line.startswith("DATA,"):
-            print(line)
-            continue
-        vals = line.split(",")[1:]
-        if len(vals) != len(FIELDS):
-            print("skipped malformed line:", line, file=sys.stderr)
-            continue
-        now = dt.datetime.now().isoformat(timespec="milliseconds")
-        f.write(now + "," + ",".join(vals) + "\n")
-        f.flush()
-        rows += 1
-        p, v, mode, alarm = vals[1] or "----", vals[3] or "--", vals[4], vals[5]
-        print(f"\r{rows:6d}  {p:>8} mbar   valve {v:>6} %   {mode} {alarm}      ", end="", flush=True)
+        next_t += 1.0
+        reply = port.ask(POLL)
+        if not reply:
+            raise ConnectionError("no reply for 3 s")
+        parts = reply.split(";")
+        try:
+            if len(parts) != len(WORDS):
+                raise ValueError(reply)
+            vals = [value(r, w) for r, w in zip(parts, WORDS)]
+        except ValueError as e:
+            print(f"\nskipped: {e}", file=sys.stderr)
+            vals = None
+        if vals:
+            now = dt.datetime.now().isoformat(timespec="milliseconds")
+            f.write(now + "," + ",".join(vals) + "\n")
+            f.flush()
+            rows += 1
+            p, v, mode, alarm = vals[0] or "----", vals[2] or "--", vals[3], vals[4]
+            print(f"\r{rows:6d}  {p:>8} mbar   valve {v:>6} %   {mode} {alarm}      ", end="", flush=True)
+        time.sleep(max(0.0, next_t - time.time()))
+
 
 if __name__ == "__main__":
     main()

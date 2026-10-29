@@ -19,6 +19,8 @@ void ctrl_init(ctrl_t *c)
 {
     memset(c, 0, sizeof *c);
     c->sp = 5.0f;   // not shown until a target is set (sp_set)
+    c->pv_tau = CTRL_PV_TAU_S;
+    c->rev_pct = CTRL_REV_PCT;
 }
 
 void ctrl_track(ctrl_t *c, int32_t pos, bool lagged)
@@ -37,8 +39,8 @@ const char *ctrl_check(const ctrl_t *c, const ctrl_tune_t *k, bool homed, bool f
     if (!homed)                     return "Home the valve first";
     if (fault)                      return "Reset the fault first";
     if (!pv_ok)                     return "No valid pressure";
-    if (!c->sp_set)                 return "Set a target first";
-    if (c->sp < 0 || c->sp > fs)    return "Target outside the sensor range";
+    if (!c->sp_set)                 return "Set a setpoint first";
+    if (c->sp < 0 || c->sp > fs)    return "Setpoint outside the sensor range";
     if (pv > fs)                    return "Pressure above the sensor range";
     if (!k->kdir)                   return "Pressure response not set";
     if (!(k->kp > 0) || k->ti < 0)  return "Tuning not set";
@@ -60,6 +62,8 @@ void ctrl_start(ctrl_t *c, const ctrl_tune_t *k, uint32_t t_ms, float pv, int32_
     c->move = false;
     c->kp_used = kp_steps(k);
     c->kdir_used = k->kdir;
+    c->pv_f = pv;
+    c->last_dir = 0;
 }
 
 bool ctrl_set_sp(ctrl_t *c, float sp, float fs, uint32_t t_ms)
@@ -77,6 +81,7 @@ bool ctrl_set_sp(ctrl_t *c, float sp, float fs, uint32_t t_ms)
 void ctrl_sent(ctrl_t *c)
 {
     c->last_sent = c->move_to;
+    c->last_dir = c->move_dir;
     c->move = false;
 }
 
@@ -97,10 +102,17 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
         c->in_band_ms = in->t_ms;
     }
 
-    const float e = (float)k->kdir * (c->sp - pv);
+    // The PI works on the filtered pressure: the reading's second-to-second
+    // noise otherwise moves the command tens of steps each way.
+    if (c->pv_tau > 0)
+        c->pv_f += (pv - c->pv_f) * CTRL_TS_S / (c->pv_tau + CTRL_TS_S);
+    else
+        c->pv_f = pv;
+    const float pf = c->pv_f;
+    const float e = (float)k->kdir * (c->sp - pf);
     const float kp = kp_steps(k), ki = k->ti > 0 ? kp / (60.0f * k->ti) : 0;
-    const float d = -(CTRL_KD / 100.0f * pos_max) * (float)k->kdir * (pv - c->prev_pv) / CTRL_TS_S;
-    c->prev_pv = pv;
+    const float d = -(CTRL_KD / 100.0f * pos_max) * (float)k->kdir * (pf - c->prev_pv) / CTRL_TS_S;
+    c->prev_pv = pf;
     if (kp != c->kp_used || k->kdir != c->kdir_used) {
         // Tuning changed in AUTO: keep the output where it is, as on entry,
         // rather than stepping by the change in KP x e.
@@ -131,8 +143,16 @@ ctrl_result_t ctrl_step(ctrl_t *c, const ctrl_tune_t *k, const ctrl_in_t *in)
     int32_t db = k->db > 1 ? k->db : 1;
     int32_t step = c->pos_cmd - c->last_sent;
     if (step >= db || step <= -db) {
-        c->move = true;
-        c->move_to = c->pos_cmd;
+        // Reversal hysteresis: turning round for less than this is lost in
+        // the drive's backlash and only makes the motor hunt.
+        const int32_t to_go = c->pos_cmd - in->pos;
+        const int way = to_go > 0 ? 1 : to_go < 0 ? -1 : 0;
+        const float rev = c->rev_pct / 100.0f * pos_max;
+        if (way && !(c->last_dir && way != c->last_dir && fabsf((float)to_go) < rev)) {
+            c->move = true;
+            c->move_to = c->pos_cmd;
+            c->move_dir = way;
+        }
     }
 
     // Response monitor, with the minimum judged move.

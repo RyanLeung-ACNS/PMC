@@ -26,7 +26,13 @@ bool sysinfo_reset_abnormal(void);
 // One line for the status output: "PMC firmware ..., last reset: ...".
 const char *sysinfo_line(void);
 
-// Handles "VER?". Returns false if the line is not a VER command.
+// Restarts the processor now (the screen's Restart, 0.12.19). The next
+// start-up reports the reset as "software".
+void sysinfo_restart(void);
+// The chip's unique ID, 24 hex digits (the serial in *IDN?).
+const char *sysinfo_chip_id(void);
+
+// Handles "VER?" (engineering). Returns false if the line is not VER?.
 bool sysinfo_command(const char *line);
 
 #endif // _SYSINFO_H_

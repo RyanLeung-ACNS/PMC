@@ -33,7 +33,8 @@ const char *rtclock_screen_text(void);
 // "YYYY-MM-DD HH:MM:SS", or "" if not set.
 const char *rtclock_iso(void);
 
-// Handles one TIME command line. Returns false if it is not a TIME command.
-bool rtclock_command(const char *line);
+// TIME SET (remote.c): p is "YYYY-MM-DD HH:MM:SS". NULL once set, else
+// why not ("Expected: ...", "Outside 2000 to 2099", "Clock not running").
+const char *rtclock_set_text(const char *p);
 
 #endif // _RTCLOCK_H_

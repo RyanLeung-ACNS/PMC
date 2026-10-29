@@ -41,25 +41,39 @@ const char *sysinfo_reset_reason(void) { return reason; }
 bool sysinfo_reset_abnormal(void)      { return abnormal; }
 const char *sysinfo_line(void)         { return line; }
 
-// *IDN? (0.12.2): the IEEE 488.2 identity query most instrument software
-// sends first. One line, maker,model,serial,firmware, with the STM32's
-// 96-bit unique ID as the serial; no echo and no OK, as the standard reply.
-static bool idn_command(const char *cmd)
+void sysinfo_restart(void)
 {
-    if (strcmp(cmd, "*IDN?") != 0)
-        return false;
-    const volatile uint8_t *uid = (const volatile uint8_t *)0x1FFF7A10UL;
-    char id[25];
-    for (int i = 0; i < 12; i++)
-        lv_snprintf(id + 2 * i, 3, "%02X", uid[i]);
-    link_printf("PMC,MM4,%s,%s\r\n", id, PMC_FW_VERSION);
-    return true;
+#ifndef __wasm__
+    // SCB->AIRCR: VECTKEY 0x05FA and SYSRESETREQ (the CMSIS NVIC helpers
+    // are not linked in the mikroSDK build).
+    __asm volatile ("dsb" ::: "memory");
+    *(volatile uint32_t *)0xE000ED0CUL = (0x05FAUL << 16) | (1UL << 2);
+    __asm volatile ("dsb" ::: "memory");
+    for (;;)
+        ;
+#endif
 }
 
+// The STM32's 96-bit unique ID as 24 hex digits: the serial in *IDN?
+// (remote.c).
+const char *sysinfo_chip_id(void)
+{
+    static char id[25];
+    if (id[0])
+        return id;
+#ifdef __wasm__
+    static const uint8_t uid[12] = { 0 };   // the simulator: no chip ID to read
+#else
+    const volatile uint8_t *uid = (const volatile uint8_t *)0x1FFF7A10UL;
+#endif
+    for (int i = 0; i < 12; i++)
+        lv_snprintf(id + 2 * i, 3, "%02X", uid[i]);
+    return id;
+}
+
+#if PMC_ENG_COMMANDS
 bool sysinfo_command(const char *cmd)
 {
-    if (idn_command(cmd))
-        return true;
     if (strcmp(cmd, "VER?") != 0)
         return false;
     link_printf("%s\r\n", line);
@@ -71,3 +85,4 @@ bool sysinfo_command(const char *cmd)
     link_printf("OK\r\n");
     return true;
 }
+#endif

@@ -1,9 +1,14 @@
+#include <stdint.h>
 #include <string.h>
 
 #include "lvgl.h"
 #include "clicks.h"
 #include "cal.h"
 #include "cfg.h"
+#include "pmc_config.h"
+#include "link.h"
+#include "ethlink.h"
+#include "sysinfo.h"
 #include "fixed.h"
 #include "stepper3.h"
 #include "valve.h"
@@ -12,7 +17,7 @@
 /* --------------------------------------------------------------------------
  * Settings (stage 6, simulator v63): Settings, Choose sensor, Valve
  * setup, Control tuning, Review and save, and Calibrate sensor (Menu >
- * Calibrate > Sensor).
+ * Calibrate > Transducer).
  *
  * An edit is a draft (dark edge) until Save settings, which
  * checks the drafts and the settings in use together, puts them in use all
@@ -119,8 +124,9 @@ typedef struct {
 static const field_t F[CFG_N] = {
     [CFG_POSMAX]  = { "100 % travel", "turns", 2, K_TURNS, "Output turns from closed to fully open" },
     [CFG_REVERSE] = { "Motor direction", NULL, 0, K_TOGGLE, "Reversed if Open drives the valve closed; saving it clears the zero" },
-    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count set at the closed limit" },
-    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing step 2: off the switch before the slow close" },
+    [CFG_OFFSET]  = { "Zero offset", "steps", 0, K_NUM, "Count at 0 %, the return above the switch" },
+    [CFG_BACKOFF] = { "Back-off", "steps", 0, K_NUM, "Homing step 2: off the switch after the fast close" },
+    [CFG_RETURN]  = { "Return", "steps", 0, K_NUM, "Homing step 4: off the switch after the slow close; that point is 0 %" },
     [CFG_FHOME]   = { "Fast close", "steps/s", 0, K_NUM, "Homing step 1: closing fast to the switch" },
     [CFG_FCREEP]  = { "Slow close", "steps/s", 0, K_NUM, "Homing step 3: closing slowly onto the switch" },
     [CFG_RATE]    = { "Run speed", "steps/s", 0, K_NUM, "Normal move speed" },
@@ -131,7 +137,7 @@ static const field_t F[CFG_N] = {
     [CFG_OUTMIN]  = { "AUTO min", "% open", 1, K_NUM, "AUTO never closes the valve below this" },
     [CFG_DB]      = { "Deadband", "steps", 0, K_NUM, "AUTO skips moves smaller than this" },
     [CFG_KDIR]    = { "Pressure response", NULL, 0, K_TOGGLE, "How the pressure moves when the valve opens; a needle valve feeding the pot normally raises it" },
-    [CFG_BAND]    = { "Target band", "mB", 2, K_NUM, "Within this of the target reads Within target band" },
+    [CFG_BAND]    = { "Setpoint band", "mB", 2, K_NUM, "Within this of the setpoint reads Within setpoint band" },
     [CFG_SENSOR]  = { "Sensor in use", NULL, 0, K_CHOICE, "The sensor read for the pressure" },
 };
 
@@ -525,7 +531,8 @@ static void side_refresh(void)
 /* --------------------------------------------------------------------------
  * Settings
  * ------------------------------------------------------------------------ */
-extern const ui_screen_t ui_scr_name, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review;
+extern const ui_screen_t ui_scr_name, ui_scr_namenet, ui_scr_netaddr, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune,
+                         ui_scr_review;
 
 static struct {
     lv_obj_t *tile[5];
@@ -548,20 +555,54 @@ static void motor_cb(lv_event_t *e)
     ui_confirm("Open Motor override? Drives the motor by steps.", "Open", motor_go);
 }
 
+// Restart (on Diagnostics from 0.12.19, Name and network from 0.13.2,
+// next to Motor override on Settings from 0.13.5, Ryan 28 Oct): asks
+// first, stops the valve (AUTO ends, homing is cancelled), then waits 2.5 s
+// so the valve position is saved at standstill (valvepos.h, 2 s) and
+// offered at start-up.
+static void restart_now(lv_timer_t *t)
+{
+    (void)t;
+    sysinfo_restart();
+}
+
+static void do_restart(void)
+{
+    valve_stop();
+    valve_event("SYS", "Restart from the screen");
+    ui_msg_no_ok("Restarting.");   // nothing to acknowledge (Ryan, 28 Oct)
+    lv_timer_t *t = lv_timer_create(restart_now, 2500, NULL);
+    lv_timer_set_repeat_count(t, 1);
+}
+
+static void restart_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_confirm("Restart the controller? The valve stops and holds where it is.", "Restart", do_restart);
+}
+
 static void settings_build(lv_obj_t *scr)
 {
-    static const char *const names[5] = { "Cryostat name", "Choose sensor", "Valve setup", "Control tuning",
-                                          "Review and save" };
-    const ui_screen_t *const to[5] = { &ui_scr_name, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
+    // Review and save with the save icon in front (0.13.19, Ryan 28 Oct).
+    static const char *const names[5] = { "System setup", "Choose sensor", "Valve setup", "Control tuning",
+                                          LV_SYMBOL_SAVE "  Review and save" };
+    const ui_screen_t *const to[5] = { &ui_scr_namenet, &ui_scr_sensor_set, &ui_scr_valve_set, &ui_scr_tune,
                                        &ui_scr_review };
     for (int i = 0; i < 5; i++)
         st.tile[i] = ui_btn(scr, i % 2 ? 244 : 10, RY[i / 2], 226, RH, UI_NAV, names[i], tile_cb, (void *)to[i]);
     // Motor override looks apart from the pages: a dark outline. Limit
     // override is on it since 0.11.33 (Ryan, 23 Oct).
-    lv_obj_t *m = ui_btn(scr, 244, RY[2], 226, RH, UI_SECONDARY, "Motor override", motor_cb, NULL);
+    lv_obj_t *m = ui_btn(scr, 244, RY[2], 109, RH, UI_SECONDARY, "Motor\noverride", motor_cb, NULL);
     lv_obj_set_style_border_side(m, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(m, 2, 0);
     lv_obj_set_style_border_color(m, UI_WARN, 0);
+    // Restart beside it, filled dark so it does not read as a page (0.13.5,
+    // Ryan 28 Oct: its own colour, not on Name and network).
+    lv_obj_t *r = ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Restart", restart_cb, NULL);
+    lv_obj_set_style_bg_color(r, UI_TEXT, 0);
+    lv_obj_set_style_text_color(r, lv_color_white(), 0);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_bg_color(r, lv_color_hex(0x3C4856), LV_STATE_PRESSED);
     side.save = side.discard = NULL;
 }
 
@@ -569,12 +610,12 @@ static void settings_refresh(void)
 {
     char t[48], p[32], d[24];
     cfg_sensor_t s;
-    // Which sensor is read; calibrating it is Menu > Calibrate > Sensor.
+    // Which sensor is read; calibrating it is Menu > Calibrate > Transducer.
     if (cfg_sensor(cfg_sensor_active(), &s)) {
         lv_snprintf(t, sizeof t, "In use: %s", sensor_name(p, sizeof p, s.serial));
         ui_btn_text(st.tile[1], "Choose sensor", t);
     }
-    ui_btn_text(st.tile[0], "Cryostat name", cfg_name()[0] ? cfg_name() : "None");
+    ui_btn_text(st.tile[0], "System setup", cfg_name()[0] ? cfg_name() : "None");
     lv_snprintf(t, sizeof t, "%s turns", value_text(d, sizeof d, CFG_POSMAX, live(CFG_POSMAX)));
     ui_btn_text(st.tile[2], "Valve setup", t);
     lv_snprintf(t, sizeof t, "Gain %s", fixed_fmt(d, sizeof d, live(CFG_KP), 2));
@@ -678,35 +719,42 @@ static void nm_cancel(lv_event_t *e)
     ui_back();
 }
 
+// A key grid in the card style, keys raised as the buttons.
+static lv_obj_t *key_grid(lv_obj_t *scr, int32_t w, const char *const *map, lv_event_cb_t cb)
+{
+    lv_obj_t *kb = lv_buttonmatrix_create(scr);
+    lv_obj_set_pos(kb, 10, RY[0]);
+    lv_obj_set_size(kb, w, 160);
+    lv_buttonmatrix_set_map(kb, map);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(kb, 0, 0);
+    lv_obj_set_style_radius(kb, 0, 0);
+    lv_obj_set_style_pad_all(kb, 0, 0);
+    lv_obj_set_style_pad_gap(kb, 6, 0);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, UI_CARD, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(0xE3E9EF), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_radius(kb, 6, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(kb, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 2, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(kb, lv_color_hex(0xAEB9C4), LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(kb, &ui_font_16, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, UI_TEXT, LV_PART_ITEMS);
+    lv_obj_add_event_cb(kb, cb, LV_EVENT_VALUE_CHANGED, NULL);
+    return kb;
+}
+
 static void nm_build(lv_obj_t *scr)
 {
     lv_strlcpy(nm.buf, cfg_name(), sizeof nm.buf);
-    nm.kb = lv_buttonmatrix_create(scr);
-    lv_obj_set_pos(nm.kb, 10, RY[0]);
-    lv_obj_set_size(nm.kb, 343, 160);
-    lv_buttonmatrix_set_map(nm.kb, nm_map);
+    nm.kb = key_grid(scr, 343, nm_map, nm_key);
     // Bottom row: Z to M as the keys above, Space and Del wider.
     for (uint32_t i = 30; i < 37; i++)
         lv_buttonmatrix_set_button_width(nm.kb, i, 4);
     lv_buttonmatrix_set_button_width(nm.kb, 37, 7);
     lv_buttonmatrix_set_button_width(nm.kb, 38, 5);
-    lv_obj_set_style_bg_opa(nm.kb, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(nm.kb, 0, 0);
-    lv_obj_set_style_radius(nm.kb, 0, 0);
-    lv_obj_set_style_pad_all(nm.kb, 0, 0);
-    lv_obj_set_style_pad_gap(nm.kb, 6, 0);
-    lv_obj_set_style_bg_opa(nm.kb, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(nm.kb, UI_CARD, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(nm.kb, lv_color_hex(0xE3E9EF), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_radius(nm.kb, 6, LV_PART_ITEMS);
-    lv_obj_set_style_border_side(nm.kb, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(nm.kb, 2, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(nm.kb, 0, LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(nm.kb, lv_color_hex(0xAEB9C4), LV_PART_ITEMS);
-    lv_obj_set_style_shadow_width(nm.kb, 0, LV_PART_ITEMS);
-    lv_obj_set_style_text_font(nm.kb, &ui_font_16, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(nm.kb, UI_TEXT, LV_PART_ITEMS);
-    lv_obj_add_event_cb(nm.kb, nm_key, LV_EVENT_VALUE_CHANGED, NULL);
     nm.text = ui_info(scr, 361, RY[0], 109, RH, "Name");
     nm.use = ui_btn(scr, 361, RY[1], 109, RH, UI_PRIMARY, "Use name", nm_use, NULL);
     ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Cancel", nm_cancel, NULL);
@@ -719,6 +767,189 @@ static void nm_refresh(void)
 }
 
 const ui_screen_t ui_scr_name = { "Cryostat name", nm_build, nm_refresh, NULL };
+
+/* --------------------------------------------------------------------------
+ * System setup (Settings; Name and network 0.12.13 to 0.13.6, System 0.13.7 to 0.13.18,
+ * Ryan 28 Oct): the cryostat name, the Ethernet fallback address (used when
+ * no DHCP server answers, Ryan 26 Oct), the address in use, the MAC, the
+ * firmware and its build date, and the Remote control switch.
+ * ------------------------------------------------------------------------ */
+static struct { lv_obj_t *name, *net, *now, *mac, *fw, *remote, *rsw, *rtext; } nn;
+
+static void nn_go(lv_event_t *e) { ui_open((const ui_screen_t *)lv_event_get_user_data(e)); }
+
+// Remote control (0.13.4, Ryan 28 Oct, network plan A): a toggle switch
+// since 0.13.7; a press anywhere on the card turns it On or Off, live at
+// once, kept by Save settings like the name.
+static void remote_cb(lv_event_t *e)
+{
+    (void)e;
+    cfg_set_remote(!cfg_remote());
+    lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
+}
+
+static void nn_build(lv_obj_t *scr)
+{
+    nn.name = ui_btn(scr, 10, RY[0], 226, RH, UI_NAV, "Cryostat name", nn_go, (void *)&ui_scr_name);
+    nn.net = ui_btn(scr, 244, RY[0], 226, RH, UI_NAV, "Fallback address", nn_go, (void *)&ui_scr_netaddr);
+    nn.now = ui_info(scr, 10, RY[1], 226, RH, "Address in use");
+    // The MAC, for a DHCP reservation (Ryan, 28 Oct).
+    nn.mac = ui_info(scr, 244, RY[1], 226, RH, "MAC address");
+    nn.fw = ui_info(scr, 10, RY[2], 226, RH, "Firmware");
+    // Remote control: the name and what it means, the switch on the right.
+    lv_obj_t *c = nn.remote = ui_card(scr, 244, RY[2], 226, RH);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(c, remote_cb, LV_EVENT_PRESSED, NULL);
+    ui_label(c, 10, 5, 150, &ui_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT, "Remote control");
+    nn.rtext = ui_label(c, 10, 26, 150, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_LEFT, "");
+    lv_obj_t *sw = nn.rsw = lv_switch_create(c);
+    lv_obj_set_size(sw, 52, 28);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -10, 0);
+    lv_obj_remove_flag(sw, LV_OBJ_FLAG_CLICKABLE);   // the card takes the press
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0xC3CDD7), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sw, UI_BLUE, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_anim_duration(sw, 0, 0);
+}
+
+static void nn_refresh(void)
+{
+    char t[48];
+    uint32_t ip, mask;
+    cfg_net(&ip, &mask);
+    ui_btn_text(nn.name, "Cryostat name", cfg_name()[0] ? cfg_name() : "None");
+    cfg_net_text(t, sizeof t, ip, mask);
+    if (ip == 0 && mask == 0)
+        lv_strlcpy(t, "Build default", sizeof t);
+    else
+        *strchr(t, ' ') = '\0';   // the address; the mask is on its page
+    ui_btn_text(nn.net, "Fallback address", t);
+#if PMC_LINK_ETHERNET
+    ui_set_text(nn.now, ethlink_ip()[0] ? ethlink_ip() : link_chip_text());
+    ui_set_text(nn.mac, ethlink_mac()[0] ? ethlink_mac() : "Not read");
+#else
+    ui_set_text(nn.now, "None, USB build");
+    ui_set_text(nn.mac, "None, USB build");
+#endif
+    ui_set_text(nn.fw, ui_fw_text());
+    if (lv_obj_has_state(nn.rsw, LV_STATE_CHECKED) != cfg_remote())
+        lv_obj_set_state(nn.rsw, LV_STATE_CHECKED, cfg_remote());
+    ui_set_text(nn.rtext, cfg_remote() ? "On: network can set" : "Off: network read only");
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, cfg_net_restart_due()
+                 ? "New fallback address: Save settings, then restart." : "Fallback: used if no DHCP server answers.");
+}
+
+const ui_screen_t ui_scr_namenet = { "System setup", nn_build, nn_refresh, NULL };
+
+/* Fallback address: digits and dots for the address and the mask; Use puts
+ * them in use for the next restart, unsaved until Save settings. */
+static struct {
+    lv_obj_t *kb, *box[2], *val[2], *use;
+    char buf[2][16];
+    int sel;
+} na;
+
+static const char *const na_map[] = {
+    "1", "2", "3", "\n",
+    "4", "5", "6", "\n",
+    "7", "8", "9", "\n",
+    ".", "0", "Del", ""
+};
+
+static void na_show(void)
+{
+    for (int i = 0; i < 2; i++) {
+        ui_set_text(na.val[i], na.buf[i][0] ? na.buf[i] : "None");
+        ui_set_color(na.val[i], na.buf[i][0] ? UI_TEXT : UI_MUTED);
+        lv_obj_set_style_border_width(na.box[i], i == na.sel ? 2 : 0, 0);
+    }
+}
+
+static void na_key(lv_event_t *e)
+{
+    (void)e;
+    const char *k = lv_buttonmatrix_get_button_text(na.kb, lv_buttonmatrix_get_selected_button(na.kb));
+    char *b = na.buf[na.sel];
+    size_t n = strlen(b);
+    if (!k)
+        return;
+    if (!strcmp(k, "Del")) {
+        if (n)
+            b[n - 1] = '\0';
+    } else if (n < 15) {
+        b[n] = k[0];
+        b[n + 1] = '\0';
+    }
+    na_show();
+}
+
+static void na_pick(lv_event_t *e)
+{
+    na.sel = (int)(intptr_t)lv_event_get_user_data(e);
+    na_show();
+}
+
+static void na_use(lv_event_t *e)
+{
+    (void)e;
+    uint32_t ip, mask;
+    const char *why;
+    char t[48];
+    if (!cfg_net_parse(na.buf[0], &ip) || !cfg_net_parse(na.buf[1], &mask)) {
+        ui_msg("Type both as four numbers with dots, e.g. 192.168.1.50");
+        return;
+    }
+    if (!cfg_set_net(ip, mask, &why)) {
+        ui_msg(why);
+        return;
+    }
+    cfg_net_text(t, sizeof t, ip, mask);
+    valve_event("CFG", "Fallback address set to %s (screen), not saved", t);
+    ui_back();
+}
+
+static void na_default(lv_event_t *e)
+{
+    (void)e;
+    const char *why;
+    cfg_set_net(0, 0, &why);
+    valve_event("CFG", "Fallback address set to the build default (screen), not saved");
+    ui_back();
+}
+
+static void na_build(lv_obj_t *scr)
+{
+    uint32_t ip, mask;
+    char t[48];
+    cfg_net(&ip, &mask);
+    cfg_net_text(t, sizeof t, ip, mask);   // "a.b.c.d m.m.m.m[ (build default)]"
+    char *sp = strchr(t, ' ');
+    *sp = '\0';
+    lv_strlcpy(na.buf[0], t, sizeof na.buf[0]);
+    char *end = strchr(sp + 1, ' ');
+    if (end)
+        *end = '\0';
+    lv_strlcpy(na.buf[1], sp + 1, sizeof na.buf[1]);
+    na.sel = 0;
+    na.kb = key_grid(scr, 226, na_map, na_key);
+    static const char *const cap[2] = { "Address (tap to type)", "Mask (tap to type)" };
+    for (int i = 0; i < 2; i++) {
+        na.val[i] = ui_info(scr, 244, RY[i], 226, RH, cap[i]);
+        na.box[i] = lv_obj_get_parent(na.val[i]);
+        lv_obj_set_style_border_color(na.box[i], UI_BLUE, 0);
+        lv_obj_add_flag(na.box[i], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(na.box[i], na_pick, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
+    na.use = ui_btn(scr, 244, RY[2], 109, RH, UI_PRIMARY, "Use", na_use, NULL);
+    ui_btn(scr, 361, RY[2], 109, RH, UI_SECONDARY, "Default", na_default, NULL);
+    na_show();
+}
+
+static void na_refresh(void)
+{
+    ui_strip_set(UI_STRIP_INFO, LV_SYMBOL_SETTINGS, "Used if no DHCP server answers, after Save settings and a restart.");
+}
+
+const ui_screen_t ui_scr_netaddr = { "Fallback address", na_build, na_refresh, NULL };
 
 /* --------------------------------------------------------------------------
  * Choose sensor
@@ -934,7 +1165,7 @@ typedef struct {
 
 static const tab_t valve_tabs[3] = {
     { "Valve", { CFG_POSMAX, CFG_REVERSE }, 2, NULL },
-    { "Homing", { CFG_BACKOFF, CFG_FHOME, CFG_FCREEP }, 3, NULL },
+    { "Homing", { CFG_BACKOFF, CFG_RETURN, CFG_FHOME, CFG_FCREEP }, 4, NULL },
     { "Drive", { CFG_RATE, CFG_START, CFG_ACCEL }, 3, "Used by manual and AUTO moves. Saved when the valve is stopped." },
 };
 static const tab_t tune_tab[1] = {
@@ -976,6 +1207,8 @@ static void seg_draw(void)
     }
 }
 
+static void pg_refresh(void);
+
 static void seg_cb(lv_event_t *e)
 {
     int i = (int)(intptr_t)lv_event_get_user_data(e);
@@ -984,6 +1217,7 @@ static void seg_cb(lv_event_t *e)
     pg.tab = i;
     seg_draw();
     pg_fields();
+    pg_refresh();   // the values now, not at the next 0.5 s refresh (Ryan, 28 Oct)
 }
 
 static const char *pg_help(void)
@@ -1238,7 +1472,7 @@ static void rv_refresh(void)
 const ui_screen_t ui_scr_review = { "Review and save", rv_build, rv_refresh, NULL };
 
 /* --------------------------------------------------------------------------
- * Calibrate sensor (Menu > Calibrate > Sensor): CAL VAC / CAL AIR on the
+ * Calibrate sensor (Menu > Calibrate > Transducer): CAL VAC / CAL AIR on the
  * screen. The new cal is in use once both points are held, unsaved until
  * Save settings (as on COM3).
  * ------------------------------------------------------------------------ */

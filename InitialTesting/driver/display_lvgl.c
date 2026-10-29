@@ -50,6 +50,18 @@ void lv_port_disp_init(void)
 static void disp_init(void)
 {
     display_configure();
+
+    /* The SSD1963 frame memory holds random pixels at power-up, and the
+     * SDK init above turns the display and backlight on, so the panel
+     * showed them until LVGL drew Home (about a second, 0.13.2). Turn the
+     * display off, clear the memory to the start-up screen's white (grey
+     * 0.13.3 to 0.13.12) and turn it on again; the start-up screen follows. */
+    write_command(SSD1963_CMD_SET_DISPLAY_OFF);
+    const uint16_t white = 0xFFFF;
+    frame_start(0, _TFT_WIDTH_ - 1, 0, _TFT_HEIGHT_ - 1);
+    display_px_write(&white, 1, (int32_t)_TFT_WIDTH_ * _TFT_HEIGHT_, 0);   /* about 10 ms */
+    display_deselect();
+    write_command(SSD1963_CMD_SET_DISPLAY_ON);
 }
 
 /* Flush the content of the internal buffer to the display.

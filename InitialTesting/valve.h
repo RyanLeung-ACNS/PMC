@@ -35,11 +35,11 @@
  * (F-3 if not found); the switch point is N_offset (0 %).
  *
  * The switch pressed during any other move, once calibrated: the move stops
- * (stepper3.c), a W-1 event, and a question waits for VALVE SETZERO (this
- * point is 0 %) or VALVE SKIP (count kept).
+ * (stepper3.c), a W-1 event, and a question waits on the screen (this point
+ * is 0 %, or keep the count).
  *
- * Faults latch, stop the motor and lock out MOT moves until CTRL RESET,
- * which clears only the latches whose cause has gone:
+ * Faults latch, stop the motor and lock out moves until ALARM RESET (or
+ * Reset on the screen), which clears only the latches whose cause has gone:
  *   F-1 no pressure signal, F-2 excitation outside 9.5-10.5 V or tripped,
  *   F-3 switch not found while calibrating, F-4 switch still pressed
  *   after moving off it, F-5 motion timeout; in AUTO only: F-6 no
@@ -47,21 +47,11 @@
  *   latches nothing; in AUTO it drops to MANUAL.
  * Outside AUTO, STOP stops and holds the valve without a latch (STOP event).
  *
- * Commands:
- *   VALVE?                       mode, position, settings, pending question
- *   VALVE CAL                    calibrate (MANUAL or NOT CALIBRATED, no fault)
- *   VALVE GOTO <0-100>           go to % open (one decimal), once calibrated
- *   VALVE SETZERO | VALVE SKIP   answer the switch-pressed question (or the screen)
- *   VALVE CLOSED                 take the valve as closed (0 %) where it stands, homed
- *   VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n>   settings (idle)
- *   CTRL AUTO                    start AUTO, after the entry checks
- *   CTRL MAN [<0-100>]           to MANUAL (ramped stop), then optionally go to %
- *   CTRL SP <mbar>               target, 0.1 mbar, 0 to the sensor range
- *   CTRL STOP                    stop now, cancel calibration (AUTO ends)
- *   CTRL RESET                   clear latches whose cause has gone
- *   CTRL?                        latched faults, highest priority first
- *   EVT? [n]                     the last n events (default 20, 100 kept)
- * Each event is also sent when it happens as "EVT <s> <tag> <text>".
+ * The remote commands are in remote.c (PRES SP, MODE, VALV SET, STOP, ALRM,
+ * EVNT?); they call the functions below. Engineering commands
+ * (PMC_ENG_COMMANDS): VALVE?, CTRL?, VALVE CAL, VALVE CLOSED, VALVE SETZERO |
+ * SKIP, VALVE POSMAX|FHOME|FCREEP|BACKOFF|RETURN|CLEAR|OFFSET <n>, TUNE.
+ * Events go to the log only; nothing is sent unasked.
  */
 
 typedef enum { VALVE_NOT_CAL, VALVE_CALIBRATING, VALVE_MANUAL, VALVE_AUTO } valve_mode_t;
@@ -91,8 +81,8 @@ bool valve_auto(void);
 // NULL; cleared by OK, Start AUTO and homing.
 const char *valve_warning(void);
 void valve_warning_clear(void);
-bool valve_start_auto(const char **why);         // CTRL AUTO, Start / Resume AUTO
-bool valve_to_manual(const char **why);          // CTRL MAN, Switch to MANUAL
+bool valve_start_auto(const char **why);         // MODE AUTO, Start / Resume AUTO
+bool valve_to_manual(const char **why);          // MODE MANUAL, Switch to MANUAL
 // Target in 0.001 mbar, kept to 0.1 mbar; refused outside 0 to the range.
 bool valve_set_target(int32_t mmbar, const char **why);
 bool valve_target(int32_t *mmbar);               // false: no target set yet
@@ -100,8 +90,9 @@ int32_t valve_range_mmbar(void);                 // sensor in use, full scale
 int32_t valve_band_mmbar(void);                  // target band (BAND)
 ctrl_reg_t valve_regulation(void);               // status words, in AUTO
 
-// Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET (cfg.c).
-#define VALVE_N_SETTINGS 6
+// Settings, in the order POSMAX FHOME FCREEP BACKOFF CLEAR OFFSET RETURN
+// (cfg.c; RETURN from 0.13.6).
+#define VALVE_N_SETTINGS 7
 const char *valve_setting_name(int i);
 void valve_settings(int32_t v[VALVE_N_SETTINGS]);
 // NULL if every value is in range, else the name of the first that is not.
@@ -121,8 +112,8 @@ bool valve_set_closed(const char **why);
 bool valve_set_position(int32_t pct100, const char **why);
 uint32_t valve_cal_budget_s(void);               // longest calibration, s
 uint32_t valve_cal_elapsed_s(void);              // into the calibration running, s; 0 if none
-int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-3 step
-bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE GOTO, 0.1 %
+int valve_cal_step(void);    // -1 not calibrating, 0 moving off the switch, 1-4 step
+bool valve_goto_pct10(int32_t pct10, const char **why);   // VALVE SET, 0.1 %
 bool valve_goto_pct100(int32_t pct100, const char **why); // the same in 0.01 % (keypad)
 // A move by steps from where the valve is (or is going), calibrated or not:
 // the Valve page's Close, Open, -5 % and +5 % before a calibration. A
@@ -131,9 +122,9 @@ bool valve_move_steps(int32_t steps, const char **why);
 int32_t valve_target_pct10(void);                // where the valve is going
 int32_t valve_pct_milli(void);                   // position in 0.001 % (for 2 dp on screen)
 int32_t valve_target_pct_milli(void);
-void valve_stop(void);                           // CTRL STOP (in AUTO: MANUAL, nothing latched)
+void valve_stop(void);                           // STOP (in AUTO: MANUAL, nothing latched)
 bool valve_stop_latches(void);                   // STOP would end AUTO now (red STOP button)
-// CTRL RESET; returns the number latched before, left = those kept.
+// ALARM RESET; returns the number latched before, left = those kept.
 int valve_reset(char *left, size_t n);
 int valve_fault_count(void);
 bool valve_fault_first(const char **tag, const char **text);   // highest priority
@@ -156,10 +147,11 @@ uint32_t valve_event_total(void);                // since boot
 bool valve_event_get(int i, uint32_t *age_ms, const char **tag, const char **text);
 bool valve_last_cal(uint32_t *age_ms, uint32_t *took_s);   // false: not since boot
 const char *valve_last_cal_iso(void);   // "YYYY-MM-DD HH:MM:SS" then, "" if the clock was not set
-// While the closed switch is pressed: steps closed past where it opened.
-bool valve_beyond_switch(int32_t *steps);
 
 // Adds an event to the log (tag up to 5 characters).
 void valve_event(const char *tag, const char *fmt, ...);
+// EVNT? <n>: "EVNT <n>" now, then n lines "<age s>,<tag>,<text>", newest
+// first, sent from valve_task as the link has room.
+void valve_events_send(int n);
 
 #endif // _VALVE_H_

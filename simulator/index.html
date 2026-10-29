@@ -51,16 +51,15 @@ select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; ba
     <div id="bezel"><canvas id="screen" width="480" height="272"></canvas></div>
     <div id="halt"></div>
     <div class="card" style="margin-top:12px">
-      <h2>Serial console (USB COM port)</h2>
+      <h2>Text console (as port 8888)</h2>
       <pre id="console"></pre>
       <div class="row">
-        <input id="cmd" placeholder="Command, e.g. HELP, VALVE?, EVT?" autocomplete="off" spellcheck="false">
+        <input id="cmd" placeholder="Command, e.g. PRES?;MODE?, PRES SP 5, MODE AUTO" autocomplete="off" spellcheck="false">
         <button id="send">Send</button>
-        <button data-cmd="HELP">HELP</button>
-        <button data-cmd="VALVE?">VALVE?</button>
-        <button data-cmd="EVT?">EVT?</button>
-        <button data-cmd="DATA ON">DATA ON</button>
-        <button data-cmd="DATA OFF">DATA OFF</button>
+        <button data-cmd="PRES?;PRES SP?;MODE?;VALV?;ALRM?">Poll</button>
+        <button data-cmd="EVNT? 10">EVNT? 10</button>
+        <button data-cmd="*IDN?">*IDN?</button>
+        <button data-cmd="HELP">HELP (bench)</button>
         <button id="clear">Clear</button>
       </div>
     </div>
@@ -221,6 +220,7 @@ function drain() {
   x.sim_tx_clear();
 }
 function send(line) {
+  conAdd('> ' + line + '\n');   // the board does not echo (0.13.0): the page shows what was sent
   const b = new TextEncoder().encode(line + '\r');
   for (let i = 0; i < b.length; i += 256) {
     const part = b.subarray(i, i + 256);
@@ -240,21 +240,41 @@ $('clear').onclick = () => { conText = ''; con.textContent = ''; };
 
 // Touch. A press is held for at least 80 ms of simulated time, so a quick
 // click is not lost between two reads of the touch panel (every 30 ms).
-let pressed = false, pressAt = 0, releaseDue = false, tx = 0, ty = 0;
+// A second finger (Limit override, 0.13.7) is the board's second touch: on a
+// touchscreen, put a second finger down; with a mouse, Shift+click holds a
+// press down (until the next Shift+click) and a plain click is the second.
+let p1 = null, p2 = null, pressAt = 0, releaseDue = false, tx = 0, ty = 0;
 function touchPos(e) {
   const r = cv.getBoundingClientRect();
-  tx = Math.max(0, Math.min(479, Math.round((e.clientX - r.left) * 480 / r.width)));
-  ty = Math.max(0, Math.min(271, Math.round((e.clientY - r.top) * 272 / r.height)));
+  return [Math.max(0, Math.min(479, Math.round((e.clientX - r.left) * 480 / r.width))),
+          Math.max(0, Math.min(271, Math.round((e.clientY - r.top) * 272 / r.height)))];
 }
 function touchRelease() {
   if (releaseDue && x.sim_ms() - pressAt >= 80) { releaseDue = false; x.sim_touch(tx, ty, 0); }
 }
 cv.addEventListener('pointerdown', e => {
-  pressed = true; releaseDue = false; cv.setPointerCapture(e.pointerId); touchPos(e);
-  pressAt = x.sim_ms(); x.sim_touch(tx, ty, 1);
+  cv.setPointerCapture(e.pointerId);
+  const [px, py] = touchPos(e);
+  if (e.shiftKey && e.pointerType === 'mouse') {
+    if (p1 === 'held') { p1 = null; releaseDue = true; touchRelease(); return; }
+    if (p1 !== null) return;
+    p1 = 'held';
+  } else if (p1 === null) {
+    p1 = e.pointerId;
+  } else {
+    if (p2 === null) { p2 = e.pointerId; x.sim_touch2(px, py, 1); }
+    return;
+  }
+  releaseDue = false; tx = px; ty = py; pressAt = x.sim_ms(); x.sim_touch(tx, ty, 1);
 });
-cv.addEventListener('pointermove', e => { if (pressed) { touchPos(e); x.sim_touch(tx, ty, 1); } });
-const up = e => { if (!pressed) return; pressed = false; touchPos(e); releaseDue = true; touchRelease(); };
+cv.addEventListener('pointermove', e => {
+  if (e.pointerId === p1) { [tx, ty] = touchPos(e); x.sim_touch(tx, ty, 1); }
+  else if (e.pointerId === p2) { const [px, py] = touchPos(e); x.sim_touch2(px, py, 1); }
+});
+const up = e => {
+  if (e.pointerId === p2) { p2 = null; const [px, py] = touchPos(e); x.sim_touch2(px, py, 0); }
+  else if (e.pointerId === p1) { p1 = null; [tx, ty] = touchPos(e); releaseDue = true; touchRelease(); }
+};
 cv.addEventListener('pointerup', up);
 cv.addEventListener('pointercancel', up);
 
@@ -306,7 +326,7 @@ function frame(now) {
   // A finger on the screen runs at real time, so holds and long presses
   // last as long as the finger does.
   let speed = +$('speed').value;
-  if (speed > 1 && (pressed || releaseDue)) { speed = 1; debt = Math.min(debt, 100); }
+  if (speed > 1 && (p1 !== null || releaseDue)) { speed = 1; debt = Math.min(debt, 100); }
   const dt = Math.min(now - last, 100);
   last = now;
   if (x && !halted && speed > 0) {

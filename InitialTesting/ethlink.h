@@ -36,6 +36,10 @@ const char *ethlink_mac(void);
 
 // IPv4 address as text, "" until one is set.
 const char *ethlink_ip(void);
+// Subnet mask as text, "" until an address is set (NETW?).
+const char *ethlink_mask(void);
+// True when the address is the fallback (no DHCP server answered).
+bool ethlink_fallback(void);
 
 bool ethlink_link_up(void);
 bool ethlink_client_connected(void);

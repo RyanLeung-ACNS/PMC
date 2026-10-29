@@ -16,6 +16,7 @@
 #include "ethlink.h"
 #include "link.h"
 #include "modbus.h"
+#include "cfg.h"
 
 /* --------------------------------------------------------------------------
  * One TCP server on PMC_TCP_PORT, one client at a time (a new connection
@@ -33,6 +34,7 @@ static bool fallback;
 static int phy_addr = ETH_HW_NO_PHY;
 static uint32_t phy_id;
 static char ip_text[16] = "";
+static char mask_text[16] = "";
 static char mac_text[18] = "";
 static char status_text[112] = "Ethernet: not started";
 static const char *chip_err = "NET";   // short fault for the header
@@ -67,9 +69,11 @@ void stm32f4xxEthInitGpio(NetInterface *interface)
 static void dhcp_timeout(DhcpClientContext *context, NetInterface *interface)
 {
     Ipv4Addr a, m;
+    char ip[16], mask[16];
     dhcpClientStop(context);
-    ipv4StringToAddr(PMC_FALLBACK_IP, &a);
-    ipv4StringToAddr(PMC_FALLBACK_MASK, &m);
+    cfg_net_boot(ip, mask);   // saved (0.12.13), else PMC_FALLBACK_IP
+    ipv4StringToAddr(ip, &a);
+    ipv4StringToAddr(mask, &m);
     ipv4SetHostAddr(interface, a);
     ipv4SetSubnetMask(interface, m);
     fallback = true;
@@ -289,10 +293,14 @@ void ethlink_task(void)
 
     Ipv4Addr a = IPV4_UNSPECIFIED_ADDR;
     ipv4GetHostAddr(ifc, &a);
-    if (a != IPV4_UNSPECIFIED_ADDR)
+    if (a != IPV4_UNSPECIFIED_ADDR) {
+        Ipv4Addr m = IPV4_UNSPECIFIED_ADDR;
+        ipv4GetSubnetMask(ifc, &m);
         ipv4AddrToString(a, ip_text);
-    else
-        ip_text[0] = '\0';
+        ipv4AddrToString(m, mask_text);
+    } else {
+        ip_text[0] = mask_text[0] = '\0';
+    }
 }
 
 size_t ethlink_tx_room(void)
@@ -363,6 +371,9 @@ const char *ethlink_mac(void)
 {
     return mac_text;
 }
+
+const char *ethlink_mask(void) { return mask_text; }
+bool ethlink_fallback(void) { return fallback; }
 
 const char *ethlink_ip(void)
 {

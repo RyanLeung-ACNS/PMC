@@ -13,7 +13,7 @@
  * Built once on lv_layer_top(), over every screen:
  *   header  0,0 480x40    Back (one screen back; not on Home), title, mode word and dot
  *   strip   10,216 343x48 status: fault, message (with OK), prompt or info
- *   STOP    361,216 109x48 CTRL STOP (in AUTO: MANUAL), on every screen
+ *   STOP    361,216 109x48 VALVE STOP (in AUTO: MANUAL), on every screen
  * Home is kept; other screens are created on open and deleted on leave.
  * A keypad or confirm dialog covers 0,40 480x232 except the STOP slot.
  *
@@ -37,6 +37,7 @@ extern lv_font_t ui_num_16, ui_num_26, ui_num_40;
 #define UI_FAULT   lv_color_hex(0xD63031)
 #define UI_BLUE    lv_color_hex(0x2D5877)
 #define UI_WARN    lv_color_hex(0x3F3F3F)
+#define UI_YELLOW  lv_color_hex(0xF2C230)   // warning yellow: the header's unsaved icon
 #define UI_TRACK   lv_color_hex(0xE8EEF4)
 #define UI_FILL    lv_color_hex(0x7B8794)
 #define UI_TICK    lv_color_hex(0xA3AFBB)
@@ -51,6 +52,9 @@ lv_obj_t *ui_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
                  ui_btn_kind_t kind, const char *text, lv_event_cb_t cb, void *user);
 void ui_btn_text(lv_obj_t *btn, const char *text, const char *small);
 void ui_btn_enable(lv_obj_t *btn, bool on);
+// Filled (primary) or plain, for a button whose role changes with the state.
+void ui_btn_primary(lv_obj_t *btn, bool on);
+void ui_btn_outline(lv_obj_t *btn, bool on);   // white, blue edge and word
 bool ui_btn_disabled(lv_event_t *e);
 
 lv_obj_t *ui_card(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h);
@@ -80,6 +84,12 @@ typedef struct {
     void (*fast)(void);
 } ui_screen_t;
 
+void ui_splash(void);          // start-up screen, right after the display driver
+void ui_splash_step(int pct);  // the bar's goal, 0 to 100
+int ui_splash_tick(void);     // call every 30 ms; 1 once the bar is full
+void ui_splash_done(void);     // the bar's goal full
+// "0.13.13, built 28/10/26": the version and the build date (DD/MM/YY).
+const char *ui_fw_text(void);
 void ui_init(void);            // after the drivers and valve/cfg init
 void ui_open(const ui_screen_t *s);
 bool ui_showing(const ui_screen_t *s);   // that screen is up
@@ -90,15 +100,20 @@ void ui_service(void);         // Settings > Motor override (motor_screen.c)
 // Status strip. A message shows for 5 s with an OK, over the screen's own
 // line; refusals use it. The strip's action button is Home's.
 void ui_msg(const char *text);
+void ui_msg_no_ok(const char *text);   // the same without the OK (Restarting)
 typedef enum { UI_STRIP_INFO, UI_STRIP_PROMPT, UI_STRIP_WARN, UI_STRIP_FAULT } ui_strip_kind_t;
 // icon: a font symbol (LV_SYMBOL_...), one of the drawn icons below, or
 // NULL; drawn grey on an info line (Ryan, 22 Oct: icons, not dots). Warning
 // and fault lines take the triangle. UI_ICON_MODE: the status line's icon,
-// picked from the valve state.
+// picked from the valve state, with the pressure sparkline.
 #define UI_ICON_MODE   "\x01m"
 #define UI_ICON_VALVE  "\x01v"
 #define UI_ICON_TARGET "\x01t"
 void ui_strip_set(ui_strip_kind_t kind, const char *icon, const char *text);
+// Redraws the frame (header, strip, the screen's refresh) within 0.1 s
+// rather than at the next 0.5 s refresh; for a state the strip must show
+// at once.
+void ui_refresh_soon(void);
 // Strip width for this screen (343 unless a screen sets it in build()).
 void ui_strip_width(int32_t w);
 void ui_strip_action(const char *text, const char *small, lv_event_cb_t cb);   // NULL text: none
@@ -150,7 +165,8 @@ void ui_overlay_close(void);
 
 // Home and Menu (ui_home.c).
 extern const ui_screen_t ui_scr_home, ui_scr_menu;
-void ui_status_line(void);     // mode/move line and Reset fault, in a screen's refresh()
+void ui_status_line(void);     // mode/move line, in a screen's refresh()
+void ui_reset_fault_event(lv_event_t *e);   // the strip's Reset fault (ui_home.c)
 // Home and Set position (ui_home.c): ui_home_ask the Home confirm,
 // ui_set_position_ask the Set position list, ui_position_ask both (Home's
 // mode button while not homed).
@@ -168,7 +184,7 @@ lv_obj_t *ui_spark(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
 // Valve, Calibrate valve, Faults and log, Diagnostics (ui_valve.c).
 extern const ui_screen_t ui_scr_valve, ui_scr_calib, ui_scr_faults, ui_scr_diag;
 // Settings, its five pages and Calibrate sensor (ui_settings.c).
-extern const ui_screen_t ui_scr_settings, ui_scr_name, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review,
+extern const ui_screen_t ui_scr_settings, ui_scr_name, ui_scr_namenet, ui_scr_netaddr, ui_scr_sensor_set, ui_scr_valve_set, ui_scr_tune, ui_scr_review,
                          ui_scr_sensor_cal;
 
 #endif // _UI_H_

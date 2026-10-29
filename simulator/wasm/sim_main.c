@@ -157,6 +157,31 @@ void lv_port_indev_init(void)
 
 void touch_poll(void) {}
 
+// A second finger (sim_touch2), seen only while the first is down, as on
+// the board.
+static int touch2_x, touch2_y, touch2_down;
+
+bool touch_second(int32_t *x, int32_t *y)
+{
+    if (!touch_down || !touch2_down)
+        return false;
+    if (x && y) {
+        *x = touch2_x;
+        *y = touch2_y;
+    }
+    return true;
+}
+
+// No Pressure 21 in the simulator (baro.c is not built): BARO STATUS? as
+// on a board without the Click (BARO? replies BARO NONE).
+bool baro_command(const char *line)
+{
+    if (strcmp(line, "BARO STATUS?") != 0)
+        return false;
+    link_printf("S2 Pressure 21: not fitted (simulator)\r\nOK\r\n");
+    return true;
+}
+
 bool touch_command(const char *line)
 {
     if (strcmp(line, "TOUCH?") != 0)
@@ -272,6 +297,7 @@ EXPORT(sim_flash_erase_all) void sim_flash_erase_all(void) { memset(flash, 0xFF,
 EXPORT(sim_fb) uint16_t *sim_fb(void) { return fb; }
 EXPORT(sim_frames) uint32_t sim_frames(void) { return frames; }
 EXPORT(sim_touch) void sim_touch(int x, int y, int down) { touch_x = x; touch_y = y; touch_down = down; }
+EXPORT(sim_touch2) void sim_touch2(int x, int y, int down) { touch2_x = x; touch2_y = y; touch2_down = down; }
 
 EXPORT(sim_rx_buf) char *sim_rx_buf(void) { static char b[256]; return b; }
 EXPORT(sim_rx) void sim_rx(int n)
@@ -362,7 +388,7 @@ EXPORT(sim_boot) void sim_boot(int reset, double now)
 // The main loop, ms passes of it.
 EXPORT(sim_run) void sim_run(int ms)
 {
-    char line[96];
+    char line[LINK_LINE_MAX + 1];
     for (int i = 0; i < ms; i++) {
         tim7_ms();
         if (++ms_count == 5) {
@@ -390,13 +416,8 @@ EXPORT(sim_run) void sim_run(int ms)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-        bool got = link_getline(line, sizeof line);
-        if (got)
-            link_printf("> %s\r\n", line);
-        if (got && !help_command(line) && !cfg_command(line) && !cal_command(line) && !sysinfo_command(line) && !trend_command(line) && !rtclock_command(line) && !touch_command(line) && !perf_command(line) &&
-            !limit_command(line) && !supply_command(line) && !valvepos_command(line) && !valve_command(line) && !stepper3_command(line) &&
-            !sense_data_command(line))
-            link_printf("ERR unknown command\r\n");
+        if (link_getline(line, sizeof line))
+            remote_line(line);
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();
         perf_note(t0);
@@ -405,3 +426,5 @@ EXPORT(sim_run) void sim_run(int ms)
 }
 
 EXPORT(sim_version) const char *sim_version(void) { return PMC_FW_VERSION; }
+// The Remote control switch, for tests (the screen's Settings > System).
+EXPORT(sim_remote) void sim_remote(int on) { cfg_set_remote(on != 0); }

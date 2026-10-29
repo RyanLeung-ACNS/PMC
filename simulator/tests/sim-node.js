@@ -1,10 +1,12 @@
 // Loads simulator/pmc.wasm in node: the same calls the page makes.
 const fs = require('fs'), path = require('path');
-function wasmBytes() {
+// file: a .wasm built by wasm/build.sh (out/pmc-op.wasm); else pmc-wasm.js.
+function wasmBytes(file) {
+  if (file) return fs.readFileSync(file);
   const js = fs.readFileSync(path.join(__dirname, '..', 'pmc-wasm.js'), 'utf8');
   return Buffer.from(js.match(/PMC_WASM = "([^"]*)"/)[1], 'base64');
 }
-function load() {
+function load(file) {
   let inst, halted = null;
   const mem = () => new Uint8Array(inst.exports.memory.buffer);
   const cstr = p => { const m = mem(); let e = p; while (m[e]) e++; return Buffer.from(m.subarray(p, e)).toString(); };
@@ -12,13 +14,15 @@ function load() {
     env: { js_halt: p => { halted = cstr(p); } },
     wasi_snapshot_preview1: { random_get: (p, n) => { const m = mem(); for (let i = 0; i < n; i++) m[p + i] = (Math.random() * 256) | 0; return 0; } },
   };
-  inst = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes()), imports);
+  inst = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes(file)), imports);
   const x = inst.exports;
   x._initialize();
   const sim = {
     x, halted: () => halted,
     out: '',
-    boot(flash) {
+    // opts.remote: false turns Remote control Off; otherwise it is On, the
+    // default from 0.13.7, so the link takes set commands.
+    boot(flash, opts = {}) {
       // application_init() runs once per instance, as on the board: use a new load() per boot.
       if (sim.booted) throw new Error('boot() twice on one instance: use a new load()');
       sim.booted = true;
@@ -27,6 +31,7 @@ function load() {
       if (flash) f.set(flash); else f.fill(0xff);
       const d = new Date(2026, 9, 24, 14, 0, 0);
       x.sim_boot(0, d.getTime() / 1000 - d.getTimezoneOffset() * 60);
+      if (opts.remote === false) x.sim_remote(0);
     },
     run(ms) { for (let t = 0; t < ms; t += 100) { x.sim_run(Math.min(100, ms - t)); sim.drain(); } },
     drain() { const n = x.sim_tx_len(); if (n) { sim.out += Buffer.from(new Uint8Array(x.memory.buffer, x.sim_tx(), n)).toString(); x.sim_tx_clear(); } },

@@ -59,8 +59,11 @@ add_executable(InitialTesting
     trend.c
     ctrl.h
     ctrl.c
+    tune.c
     sense.h
     sense.c
+    remote.h
+    remote.c
     extflash.h
     extflash.c
     cal.h
@@ -77,6 +80,7 @@ add_executable(InitialTesting
     ui_font_16.c
     ui_font_26.c
     ui_font_40.c
+    ui_img_logo.c
     sysinfo.h
     sysinfo.c
     rtclock.c

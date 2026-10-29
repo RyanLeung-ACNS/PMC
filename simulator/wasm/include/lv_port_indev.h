@@ -5,4 +5,8 @@
 void lv_port_indev_init(void);
 void touch_poll(void);
 bool touch_command(const char *line);
+
+// While a press is down: a second finger on the glass, and where (x, y may
+// be NULL). Not given to LVGL; Motor override's Limit override reads it.
+bool touch_second(int32_t *x, int32_t *y);
 #endif
