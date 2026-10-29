@@ -3,7 +3,6 @@
 
 #include "lvgl.h"
 #include "clicks.h"
-#include "cal.h"
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
@@ -313,12 +312,6 @@ void ui_manual_ask(void)
     ui_confirm("Switch to MANUAL? Valve holds where it is.", "Switch to\nMANUAL", to_manual);
 }
 
-static void air_cal_event(lv_event_t *e)
-{
-    (void)e;
-    ui_open(&ui_scr_sensor_cal);
-}
-
 static void warn_ok_event(lv_event_t *e)
 {
     (void)e;
@@ -603,7 +596,6 @@ static void home_refresh(void)
 // (with Reset fault, on every screen from 0.13.19) and messages over it.
 void ui_status_line(void)
 {
-    int32_t air_off;
     valve_mode_t m = valve_mode();
     int step = valve_cal_step();
     int nf = valve_fault_count();
@@ -636,16 +628,6 @@ void ui_status_line(void)
         char t[40], v[16];
         lv_snprintf(t, sizeof t, "Moving to %s %%", ui_fmt2(v, sizeof v, valve_target_pct_milli()));
         ui_strip_set(UI_STRIP_INFO, UI_ICON_MODE, t);
-    } else if (m == VALVE_MANUAL && cal_air_off(&air_off)) {
-        // The air check found the cal off at room pressure (0.14.0):
-        // a message, not a fault, with the way to fix it.
-        char t[64], v[16];
-        int32_t a = air_off < 0 ? -air_off : air_off;
-        lv_snprintf(t, sizeof t, "Transducer reads %s mB %s room: calibrate", ui_fmt1(v, sizeof v, a),
-                    air_off < 0 ? "below" : "above");
-        if (!nf)
-            ui_strip_action("Calibrate", NULL, air_cal_event);
-        ui_strip_set(UI_STRIP_WARN, NULL, t);
     } else {
         // Idle: the valve icon, Valve idle and the pressure sparkline
         // (0.13.16, Ryan 28 Oct; "Idle. Pressure, last 5 min" without the

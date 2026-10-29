@@ -154,23 +154,12 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   second(298, 0); over(0); s.run(2000);
   check('override + Open opens', opened > rel2 + 300, opened + ' vs ' + rel2);
 }
-{ // Pressure 21 (0.14.0): CAL AIR without a number takes the room sensor; the air check.
+{ // Pressure 21 (0.14.0): CAL AIR without a number takes the room sensor.
   const s = load(); s.boot(); s.run(3000);
   s.set(11, 0); s.run(3000); s.cmd('CAL VAC', 15000);
   s.set(11, 1); s.set(19, 1008.4); s.run(3000);
   const a = s.cmd('CAL AIR', 15000), ev = events(s, 4);
   check('CAL AIR from the room sensor', !/ERR/.test(a) && /Air point [\d.]+ mV\/V at 1008\.40 mbar from the room sensor/.test(ev), a + ev.slice(-400));
-  s.run(15000);
-  const st = s.cmd('BARO STATUS?', 1000);
-  check('air check after the cal near 0', /Air check: transducer minus room sensor -?0\.[0-4]\d mbar, at room pressure now/.test(st), st);
-  check('no calibrate warning after the cal', !/calibrate/.test(events(s, 4)));
-  // The transducer drifts 5 mbar low (the room sensor reads 5 high): logged, and the Home strip asks.
-  s.set(21, 5); s.run(15000);
-  const ev2 = events(s, 4);
-  check('air check logs the drift', /Air check: transducer [45]\.\d\d mbar below the room sensor, calibrate/.test(ev2), ev2.slice(-400));
-  shot(s, 'air-check');
-  s.set(11, 0); s.set(21, 0); s.run(5000);
-  check('drift kept after pumping down', /minus room sensor -[45]\.\d\d mbar\r\n/.test(s.cmd('BARO STATUS?', 1000)));
   // No room sensor: CAL AIR needs a number, BARO? says NONE.
   const u = load(); u.boot(); u.set(20, 0); u.run(3000); u.set(11, 1); u.run(3000);
   check('BARO NONE without the sensor', u.cmd('BARO?', 1000) === 'BARO NONE\r\n', u.cmd('BARO?', 1000));

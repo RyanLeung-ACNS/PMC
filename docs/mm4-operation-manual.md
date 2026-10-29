@@ -218,7 +218,7 @@ Over the text link the same calibration is CAL VAC (with an optional gauge readi
 
 Up to four sensors can be kept on one board, each with its own calibration, under Settings > Choose sensor. Add a sensor with its serial number and range in psi, then calibrate it. Only the sensor in use is read.
 
-The Pressure 21 Click in S2 gives the controller its own room-pressure reading (BARO?). Besides the air point it runs an air check: whenever the transducer reads within 30 mbar of the room sensor and both are steady for 10 s, the transducer is taken to be open to the room and the difference is logged as a CAL event. Over 2 mbar the Home strip in MANUAL says "Transducer reads X mB below room: calibrate" with a Calibrate button. The difference is kept until the next calibration; BARO STATUS? shows it. The Click has not arrived and this has not been benched.
+The Pressure 21 Click in S2 gives the controller its own room-pressure reading (BARO?). It is used for the air point. The Click has not arrived and this has not been benched.
 
 ## 9. Faults and warnings
 

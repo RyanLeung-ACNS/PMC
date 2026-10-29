@@ -1505,9 +1505,7 @@ static const char *cs_help(void)
            "Saved cal: the pressure from the saved calibration. Captured: the pressure from the points "
            "captured here, once both are held (None yet until then).\n"
            "Once both are held the new calibration is in use and unsaved: check Saved cal against Captured, "
-           "then Save settings. Discard changes puts the last save back.\n"
-           "Air check: whenever the sensor sits at room pressure, it is compared with the room sensor. More "
-           "than 2 mB apart, Home asks for a calibration.";
+           "then Save settings. Discard changes puts the last save back.";
 }
 
 static bool reading_ok(void)

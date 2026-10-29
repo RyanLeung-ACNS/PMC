@@ -61,100 +61,6 @@ static struct {
     int64_t baro_sum;                  // 0.001 mbar
 } cap;
 
-/* Air check (0.14.0, Pressure 21 plan item 5): while the Druck reads
- * within AIR_NEAR of the room sensor and both are steady (spread under
- * AIR_STEADY over AIR_N readings), the Druck is open to the room and the
- * difference is the cal's error at air. Logged once each time it starts;
- * over AIR_LIMIT the screen asks for a calibration. Cleared by a new cal. */
-#define AIR_N        10        // readings, one a second
-#define AIR_NEAR     30000     // 0.001 mbar
-#define AIR_STEADY   500
-#define AIR_LIMIT    2000
-static struct {
-    int n, i;
-    int32_t p[AIR_N], b[AIR_N];
-    bool in;          // the Druck is at room pressure now
-    bool have;        // an offset since the last cal
-    int32_t off;      // Druck minus room sensor, 0.001 mbar
-} air;
-
-static void air_clear(void)
-{
-    memset(&air, 0, sizeof air);
-}
-
-static int32_t spread(const int32_t *v)
-{
-    int32_t lo = v[0], hi = v[0];
-    for (int i = 1; i < AIR_N; i++) {
-        if (v[i] < lo) lo = v[i];
-        if (v[i] > hi) hi = v[i];
-    }
-    return hi - lo;
-}
-
-static void air_check(const clicks_state_t *s)
-{
-    int32_t d = s->p_mmbar - s->baro_mmbar;
-    if (!s->reading_ok || !s->baro_ok || cap.what || d >= AIR_NEAR || d <= -AIR_NEAR) {
-        air.n = 0;
-        air.in = false;
-        return;
-    }
-    air.p[air.i] = s->p_mmbar;
-    air.b[air.i] = s->baro_mmbar;
-    air.i = (air.i + 1) % AIR_N;
-    if (air.n < AIR_N)
-        air.n++;
-    if (air.n < AIR_N)
-        return;
-    if (spread(air.p) > AIR_STEADY || spread(air.b) > AIR_STEADY) {
-        air.in = false;
-        return;
-    }
-    int64_t sum = 0;
-    for (int i = 0; i < AIR_N; i++)
-        sum += air.p[i] - air.b[i];
-    air.off = (int32_t)(sum / AIR_N);
-    air.have = true;
-    if (!air.in) {
-        air.in = true;
-        char t[20];
-        int32_t a = air.off < 0 ? -air.off : air.off;
-        valve_event("CAL", "Air check: transducer %s mbar %s the room sensor%s",
-                    fixed_fmt(t, sizeof t, fixed_round(a, 1), 2), air.off < 0 ? "below" : "above",
-                    a > AIR_LIMIT ? ", calibrate" : "");
-    }
-}
-
-bool cal_air_offset(int32_t *off_mmbar, bool *now)
-{
-    if (air.have) {
-        *off_mmbar = air.off;
-        *now = air.in;
-    }
-    return air.have;
-}
-
-const char *cal_air_text(void)
-{
-    static char t[80];
-    char v[20];
-    if (!air.have)
-        return "Air check: not seen at room pressure since the last cal";
-    lv_snprintf(t, sizeof t, "Air check: transducer minus room sensor %s mbar%s", fixed_fmt(v, sizeof v, fixed_round(air.off, 1), 2),
-                air.in ? ", at room pressure now" : "");
-    return t;
-}
-
-bool cal_air_off(int32_t *off_mmbar)
-{
-    if (!air.have || (air.off <= AIR_LIMIT && air.off >= -AIR_LIMIT))
-        return false;
-    *off_mmbar = air.off;
-    return true;
-}
-
 static uint32_t crc32(const void *data, size_t len)
 {
     const uint8_t *p = data;
@@ -226,9 +132,6 @@ bool cal_set_record(const cal_rec_t *r, bool saved)
 {
     if (!cal_record_ok(r))
         return false;
-    if (memcmp(r->r_ppb, active.r_ppb, sizeof active.r_ppb) != 0 ||
-        memcmp(r->p_mmbar, active.p_mmbar, sizeof active.p_mmbar) != 0)
-        air_clear();   // a different cal: its error at air is not known yet
     active = *r;
     active.id[CAL_ID_LEN - 1] = '\0';
     active_is_default = false;
@@ -249,7 +152,6 @@ void cal_set_default(bool saved)
     active_is_default = true;
     active_saved = saved;
     memset(&bench, 0, sizeof bench);
-    air_clear();
 }
 
 void cal_set_saved(bool saved) { active_saved = saved; }
@@ -430,7 +332,6 @@ static void bench_apply(void)
     active = r;
     active_is_default = false;
     active_saved = false;
-    air_clear();
     char z[20], sp[20];
     fixed_fmt(z, sizeof z, (int64_t)r.r_ppb[0] * 10, 6);
     fixed_fmt(sp, sizeof sp, (int64_t)(r.r_ppb[1] - r.r_ppb[0]) * 10, 6);
@@ -439,7 +340,6 @@ static void bench_apply(void)
 
 void cal_update(const clicks_state_t *s)
 {
-    air_check(s);
     if (!cap.what)
         return;
     if (!s->reading_ok) {

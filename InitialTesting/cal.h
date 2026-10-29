@@ -107,14 +107,6 @@ int cal_capturing(void);
 // over the same readings (0.14.0). False with *why if refused.
 #define CAL_P_BARO (-1)
 bool cal_capture(int what, int32_t p_mmbar, const char **why);
-// Air check (0.14.0): the Druck minus the Pressure 21 while the Druck sat
-// at room pressure (both steady, within 30 mbar), since the last cal;
-// *now while it is still there. False if not seen since the last cal.
-bool cal_air_offset(int32_t *off_mmbar, bool *now);
-// One line for BARO STATUS?.
-const char *cal_air_text(void);
-// The same, true only while the offset is over the 2 mbar limit.
-bool cal_air_off(int32_t *off_mmbar);
 typedef struct { bool have; int32_t r_ppb, p_mmbar; } cal_point_t;
 // The bench points held for the sensor in use (captured, or from its table).
 void cal_points(cal_point_t *vac, cal_point_t *air);

@@ -178,8 +178,7 @@ bool baro_command(const char *line)
 {
     if (strcmp(line, "BARO STATUS?") != 0)
         return false;
-    link_printf("S2 Pressure 21: %s (simulator)\r\n%s\r\nOK\r\n", B.baro ? "BMP581 found" : "not fitted",
-                cal_air_text());
+    link_printf("S2 Pressure 21: %s (simulator)\r\nOK\r\n", B.baro ? "BMP581 found" : "not fitted");
     return true;
 }
 
