@@ -6,7 +6,7 @@
 
 /**
  * @brief Motor 12 V supply sense (PMC_MOTOR_SENSE in pmc_config.h): a
- * 0-25 V divider module (30k / 7.5k, x5) from the motor supply to S2 RX,
+ * 0-25 V divider module (30k / 7.5k, x5) from the motor supply to S1 RX,
  * PA3 (ADC1 IN3), read every 5 ms against the internal reference.
  * The board can run from USB with the motor supply off; PG15 DC_DETECT
  * only sees the board's own 12 V terminal.

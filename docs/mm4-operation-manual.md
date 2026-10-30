@@ -70,12 +70,12 @@ Operating limits:
 | Part | What it does | Connection |
 | --- | --- | --- |
 | Mikromedia 4 for STM32F4 | Controller and 4.3 inch 480 x 272 touchscreen. Runs the control loop, the screens, the Ethernet link and the Modbus server | 12 V terminal (2.54 mm pitch), USB-C for flashing or the USB text link, RJ45 Ethernet |
-| Stepper 3 Click, socket S1 | Drives the unipolar six-lead valve stepper (PK22, 344:1 gearbox) at 12 V. No current limit | Motor cable to the Click's four coil outputs and the 12 V motor supply |
-| Limit switch, socket S2 | One normally closed dry contact to ground, opens at the closed end of travel | PWM pad PD13 (internal pull-up) and GND |
+| Stepper 3 Click, socket S2 | Drives the unipolar six-lead valve stepper (PK22, 344:1 gearbox) at 12 V. No current limit | Motor cable to the Click's four coil outputs and the 12 V motor supply |
+| Limit switch, socket S1 | One normally closed dry contact to ground, opens at the closed end of travel | PWM pad PD12 (internal pull-up) and GND |
 | Boost 10 Click, socket S3 | Makes about 10 V from the board's 5 V for the Druck excitation. Trips above 11.5 V. Never feed it 12 V | SPI1 |
 | Power Monitor Click (INA228), socket S4 | Reads the Druck output and the excitation, 128 averages over 600 ms, once a second | I2C2, address 0x4A |
 | Druck UNIK 5000 PDCR50G1 | 15 psia absolute pressure transducer, 10 mV/V, insulated from its case | M12: pin 1 +Supply to Boost 10 VOUT and INA228 VBUS; pin 2 +Out to IN+; pin 4 -Out to IN-; pin 3 -Supply to common GND |
-| Pressure 21 Click (BMP581) on Adapter Click, socket S2 | Room pressure for a future air calibration reference. Driver built, Click not yet fitted (not benched) | I2C, address 0x46 |
+| Pressure 21 Click (BMP581) on Adapter Click, socket S1 | Room pressure for the air point of the calibration. Driver built, Click not yet fitted (not benched) | I2C, address 0x46 |
 | On-board serial flash | Settings, calibration and the saved valve position. Survives reflashing | |
 | On-board real-time clock | Time stamps for the event log and saves. Survives a reset, and a power-off with a cell fitted | |
 
@@ -218,7 +218,7 @@ Over the text link the same calibration is CAL VAC (with an optional gauge readi
 
 Up to four sensors can be kept on one board, each with its own calibration, under Settings > Choose sensor. Add a sensor with its serial number and range in psi, then calibrate it. Only the sensor in use is read.
 
-The Pressure 21 Click in S2 gives the controller its own room-pressure reading (BARO?). It is used for the air point. The Click has not arrived and this has not been benched.
+The Pressure 21 Click in S1 gives the controller its own room-pressure reading (BARO?). It is used for the air point. The Click has not arrived and this has not been benched.
 
 ## 9. Faults and warnings
 

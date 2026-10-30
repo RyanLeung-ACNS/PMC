@@ -7,8 +7,8 @@
 #include "pmc_config.h"
 
 /*
- * Motor supply on PA3 (S1 and S2 share it as RX; Stepper 3 in S1 does not
- * use it, and nothing else on the board does). ADC1 polled: one conversion
+ * Motor supply on PA3 (S1 and S2 share it as RX, wired at the Adapter Click
+ * in S1; Stepper 3 in S2 does not use it, and nothing else on the board does). ADC1 polled: one conversion
  * of IN3 and one of VREFINT (IN17) every 5 ms, 480 cycles each (the module's
  * source is about 6 kohm). VDDA comes from VREFINT and its factory value, so
  * the 3.3 V regulator's tolerance does not count.

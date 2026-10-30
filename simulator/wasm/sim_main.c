@@ -178,7 +178,7 @@ bool baro_command(const char *line)
 {
     if (strcmp(line, "BARO STATUS?") != 0)
         return false;
-    link_printf("S2 Pressure 21: %s (simulator)\r\nOK\r\n", B.baro ? "BMP581 found" : "not fitted");
+    link_printf("S1 Pressure 21: %s (simulator)\r\nOK\r\n", B.baro ? "BMP581 found" : "not fitted");
     return true;
 }
 
@@ -198,8 +198,8 @@ static uint32_t tim_cnt, tim_arr_active;
 // Pin state from the last BSRR write on each of the four Stepper 3 outputs.
 static void coils_from_pins(void)
 {
-    static GPIO_TypeDef *const port[4] = { &sim_gpio[0], &sim_gpio[2], &sim_gpio[1], &sim_gpio[3] };
-    static const uint8_t pin[4] = { 4, 2, 12, 12 };
+    static GPIO_TypeDef *const port[4] = { &sim_gpio[1], &sim_gpio[2], &sim_gpio[0], &sim_gpio[3] };
+    static const uint8_t pin[4] = { 0, 3, 15, 13 };   // S2 (0.14.2)
     uint8_t out = 0;
     for (int i = 0; i < 4; i++) {
         uint32_t bsrr = port[i]->BSRR;
@@ -219,8 +219,8 @@ static void coils_from_pins(void)
 
 static void inputs_update(void)
 {
-    if (bench_limit_pin_high()) sim_gpio[3].IDR |= 1UL << 13;
-    else sim_gpio[3].IDR &= ~(1UL << 13);
+    if (bench_limit_pin_high()) sim_gpio[3].IDR |= 1UL << 12;   // PD12, S1 PWM (0.14.2)
+    else sim_gpio[3].IDR &= ~(1UL << 12);
 }
 
 // ADC1: IN3 is the motor supply, IN17 VREFINT; a conversion is done at once.

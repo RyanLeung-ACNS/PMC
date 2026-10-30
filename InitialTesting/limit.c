@@ -7,7 +7,7 @@
 #include "pmc_config.h"
 
 /*
- * Valve limit switch: one dry NC contact between PD13 (S2 PWM) and GND,
+ * Valve limit switch: one dry NC contact between PD12 (S1 PWM) and GND,
  * read with the MCU's internal pull-up. Contact closed pulls the pin low
  * (healthy, valve away from the limit); open (at the limit, or a broken
  * wire) lets it float high. PMC_LIMIT_OPEN_LEVEL flips this for an
@@ -26,8 +26,8 @@
  * this reports open; with 0 the same state is only displayed.
  */
 #define PMC_LIMIT_PORT      GPIOD
-#define PMC_LIMIT_PIN       13
-#define PMC_LIMIT_PIN_NAME  "PD13 (S2 PWM)"
+#define PMC_LIMIT_PIN       12
+#define PMC_LIMIT_PIN_NAME  "PD12 (S1 PWM)"
 
 #define SAMPLE_MS   5
 #define STABLE_N    4          // 20 ms of closed samples before a release counts
