@@ -23,12 +23,11 @@ function homed(s) {
 }
 function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '.png')); }
 
-{ // Boot: NOT HOMED, the supply seen, nothing moves.
+{ // Boot: NOT HOMED, nothing moves.
   const s = load(); s.boot(); s.set(5, 40000); s.run(3000);
   check('boot sends nothing unasked', s.out === '', s.out);
   const st = s.cmd('MODE?;VALV?;VALV MOVING?;ALRM?'), ev = events(s);
   check('boot NOT HOMED', st === 'MODE NOT HOMED;VALV NONE;VALV MOVING 0;ALRM NONE\r\n', st);
-  check('boot motor supply seen', /SUP,Motor supply on/.test(ev), ev);
   check('boot no motion', s.get(5) === 40000);
   shot(s, 'boot');
 }
@@ -53,14 +52,6 @@ function shot(s, name) { if (pngDir) s.png(require('path').join(pngDir, name + '
   const full = s.get(5) / 2;
   // The needle is the count plus the back-off when 0 % is above the switch (0.12.12).
   check('VALV SET 25 % moves the needle 25 % of 66048', Math.abs(s.get(30) - 16512) <= 1 && [0, 400].includes(full - s.get(30)), 'needle ' + full + ', count ' + s.get(30));
-}
-{ // Motor supply off: moves refused, said on the screen and the console.
-  const s = homed(load());
-  const n0 = s.get(5); s.set(12, 0); s.run(2000);
-  const out = s.cmd('VALV SET 10', 2000);
-  check('supply off seen', /^ERR 212 Motor supply off/m.test(out) && /Motor supply off/.test(events(s, 5)), out);
-  check('supply off: no move', s.get(5) === n0);
-  shot(s, 'supply-off');
 }
 { // F-1: Druck unplugged.
   const s = homed(load()); s.set(8, 0); s.run(5000);

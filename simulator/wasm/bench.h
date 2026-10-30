@@ -40,6 +40,5 @@ void bench_tick_10ms(void);
 void bench_coils(uint8_t coils);
 bool bench_limit_pin_high(void);
 void bench_read(int32_t *raw_shunt, int32_t *raw_bus, int16_t *raw_temp);
-int bench_supply_adc(void);
 
 #endif

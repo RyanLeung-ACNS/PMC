@@ -219,15 +219,16 @@ static void coils_from_pins(void)
 
 static void inputs_update(void)
 {
-    if (bench_limit_pin_high()) sim_gpio[3].IDR |= 1UL << 12;   // PD12, S1 PWM (0.14.2)
-    else sim_gpio[3].IDR &= ~(1UL << 12);
+    if (bench_limit_pin_high()) sim_gpio[0].IDR |= 1UL << 3;   // PA3, S1 RX (0.14.3)
+    else sim_gpio[0].IDR &= ~(1UL << 3);
 }
 
-// ADC1: IN3 is the motor supply, IN17 VREFINT; a conversion is done at once.
+// ADC1: only IN17 VREFINT (the motor supply on IN3 went in 0.14.3); a
+// conversion is done at once.
 ADC_TypeDef *sim_adc1_access(void)
 {
     sim_adc1.SR |= ADC_SR_EOC;
-    sim_adc1.DR = sim_adc1.SQR3 == 17 ? sim_vrefint_cal : (uint32_t)bench_supply_adc();
+    sim_adc1.DR = sim_adc1.SQR3 == 17 ? sim_vrefint_cal : 0;
     return &sim_adc1;
 }
 
@@ -382,7 +383,7 @@ EXPORT(sim_boot) void sim_boot(int reset, double now)
     sim_rcc.BDCR = RCC_BDCR_LSERDY | RCC_BDCR_LSEON | RCC_BDCR_RTCEN | (1UL << 8);
     sim_rtc.ISR = RTC_ISR_INITS | RTC_ISR_RSF | RTC_ISR_INITF;
     rtc_set((time_t)now);
-    sim_gpio[3].IDR = 0;
+    sim_gpio[0].IDR = 0;
     inputs_update();
     application_init();
     sense_ms = lv_tick_get();
@@ -409,7 +410,6 @@ EXPORT(sim_run) void sim_run(int ms)
         touch_poll();
         rtclock_poll();
         limit_poll();
-        supply_poll();
         stepper3_poll();
         valve_task();
         valvepos_task();

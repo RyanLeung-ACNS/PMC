@@ -7,7 +7,6 @@
 #include "stepper3.h"
 #include "valve.h"
 #include "valvepos.h"
-#include "supply.h"
 #include "link.h"
 #include "ui.h"
 #include "fixed.h"
@@ -23,7 +22,6 @@
 static const char *why_not_manual(void)
 {
     if (valve_motion_blocked()) return "Reset the fault first";
-    if (supply_off()) return "Motor supply off";   // greys the moves (H2)
     if (valve_mode() == VALVE_CALIBRATING) return "Homing: STOP to cancel";
     if (valve_auto()) return "Switch to MANUAL first";
     if (valve_mode() != VALVE_MANUAL) return "Home the valve or set its position first";
@@ -757,7 +755,7 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9], *sup;   // v[5] the board temperature from 0.13.4; v[7] unused
+    lv_obj_t *v[9];   // v[5] the board temperature from 0.13.4; v[7] unused
 } dp;
 
 // Valve motor row: position and limit switch, at 50 Hz so the switch
@@ -777,12 +775,12 @@ static void diag_build(lv_obj_t *scr)
     // The board temperature in the bottom row from 0.13.4, as the strip
     // shows the Home status line (Ryan, 28 Oct); Moved, steps went.
     static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Controller" };
-    // The valve motor row: supply, steps, limit switch ("Past limit" went
-    // in 0.12.9, Ryan 26 Oct).
+    // The valve motor row: steps, limit switch ("Past limit" went in
+    // 0.12.9, Ryan 26 Oct; the motor supply in 0.14.3, Ryan 30 Oct).
     static const char *const caps[9] = { "Signal, mV", "Supply, V", "Before cal, mB",
-                                         "Supply, V", "Steps", "Limit switch",
+                                         "Steps", "Limit switch", NULL,
                                          "Temperature, \xC2\xB0" "C", "Last move", "Move took, s" };
-    lv_obj_t **const to[9] = { &dp.v[0], &dp.v[1], &dp.v[2], &dp.sup, &dp.v[3], &dp.v[4],
+    lv_obj_t **const to[9] = { &dp.v[0], &dp.v[1], &dp.v[2], &dp.v[3], &dp.v[4], NULL,
                                &dp.v[5], &dp.v[6], &dp.v[8] };
     static const int32_t x[3] = { 98, 225, 351 };
     for (int r = 0; r < 3; r++) {
@@ -792,7 +790,8 @@ static void diag_build(lv_obj_t *scr)
         lv_obj_update_layout(l);
         lv_obj_set_y(l, 48 + r * 56 + (48 - lv_obj_get_height(l)) / 2);
         for (int c = 0; c < 3; c++)
-            *to[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
+            if (to[r * 3 + c])
+                *to[r * 3 + c] = ui_info(scr, x[c], 48 + r * 56, 119, 48, caps[r * 3 + c]);
     }
     lv_timer_t *t = lv_timer_create(diag_motor, 20, NULL);
     lv_obj_add_event_cb(scr, timer_deleted, LV_EVENT_DELETE, t);
@@ -826,14 +825,6 @@ static void diag_refresh(void)
     }
     ui_set_text(dp.v[6], res);
     ui_set_text(dp.v[8], any ? ui_fmt1(buf, sizeof buf, ms) : "--");
-    // Motor supply (supply.h): coloured only when abnormal.
-    supply_state_t sup = supply_state();
-    if (!supply_fitted())
-        lv_strlcpy(buf, "Not fitted", sizeof buf);
-    else
-        ui_fmt1(buf, sizeof buf, supply_mv() < 0 ? 0 : supply_mv());
-    ui_set_text(dp.sup, buf);
-    ui_set_color(dp.sup, sup == SUPPLY_OFF ? UI_FAULT : sup != SUPPLY_OK ? UI_WARN : UI_TEXT);
 
     // Raw readings only (0.13.2, Ryan 28 Oct); the firmware, address, MAC
     // and Restart are on Settings > System setup. The strip is Home's

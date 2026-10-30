@@ -8,7 +8,6 @@
 #include "link.h"
 #include "pmc_config.h"
 #include "limit.h"
-#include "supply.h"
 #include "stepper3.h"
 
 /* --------------------------------------------------------------------------
@@ -390,11 +389,6 @@ from_rest:
     if (dist < 0 && stepper3_limit_open()) {
         last_stop = STEPPER3_STOP_LIMIT;
         refusal = "limit open, closing move refused";
-        return false;
-    }
-    // No motor supply: the count would run on with the valve still.
-    if (supply_off()) {
-        refusal = "Motor supply off";
         return false;
     }
     // The saved position is withdrawn before anything moves; if it cannot

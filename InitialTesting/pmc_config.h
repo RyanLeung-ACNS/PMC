@@ -43,9 +43,10 @@
 #endif
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.14.2"
+#define PMC_FW_VERSION    "0.14.3"
 
-// Valve limit switch: one NC dry contact to GND on S1 PWM, PD12 (S2 PWM, PD13 to 0.14.1).
+// Valve limit switch: one NC dry contact to GND on S1 RX, PA3 (Adapter Click
+// IDC10 pad 8; 0.14.3). S1 PWM PD12 in 0.14.2, S2 PWM PD13 before.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
 // 1 for the bare contact with the pull-up; 0 for an inverting interface.
 #define PMC_LIMIT_OPEN_LEVEL 1
@@ -55,15 +56,6 @@
 // stopped mid-move, while it reads open. 0: its state is only displayed.
 #define PMC_LIMIT_STOP    1
 
-// Motor 12 V sense (0.11.35): a 0-25 V divider module (30k / 7.5k, x5) from
-// the motor supply to S1 RX, PA3 (Adapter Click IDC10 pad 8). 1: read, and
-// moves are refused while it reads off (supply.h); 0: not fitted. 0 until
-// the module is wired (0.11.48): an unconnected PA3 floats at about 1 V,
-// which reads as a 5 V supply and refuses every move.
-// The simulator build sets it to 1 (it simulates the supply).
-#ifndef PMC_MOTOR_SENSE
-#define PMC_MOTOR_SENSE   0
-#endif
 
 // Room pressure (0.11.47): a Pressure 21 Click (BMP581, I2C2 0x46) on the
 // Adapter Click in S1. 1: probed at start-up and read once a second

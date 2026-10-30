@@ -10,7 +10,7 @@ From 0.11.38 the simulator runs the mm4 firmware itself. `pmc-wasm.js` is the fi
 | Stepper 3 outputs, TIM7 step interrupt | `stepper3.c` unchanged, its timer run per simulated microsecond count; the four outputs turn a simulated motor, so MOT MODE, DIR and ORDER act as on the bench |
 | Needle valve, limit switch | flow-line needle, 16512 steps a turn, seats 30 steps past the switch; switch faults: broken wire, stuck, trips early |
 | Druck through the INA228 | the cryostat flow line (the v63 model, as `tools/ctrl-test/model.c`) read through the 5 % input loading; open to room air for calibration |
-| Boost 10, motor 12 V sense on PA3, INA228 die temperature | bench controls (excitation, supply volts, controller temperature) |
+| Boost 10, motor 12 V supply (the motor stalls without it; the firmware does not sense it from 0.14.3), INA228 die temperature | bench controls (excitation, supply volts, controller temperature) |
 | Serial flash (settings, saved position) | 8 MB in memory, kept in the browser between visits |
 | USB COM port / port 8888 | the console under the screen (the page shows each line sent; the board does not echo) |
 | RTC | the computer's clock at power-up |
