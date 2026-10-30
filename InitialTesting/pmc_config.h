@@ -43,7 +43,7 @@
 #endif
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.14.3"
+#define PMC_FW_VERSION    "0.14.4"
 
 // Valve limit switch: one NC dry contact to GND on S1 RX, PA3 (Adapter Click
 // IDC10 pad 8; 0.14.3). S1 PWM PD12 in 0.14.2, S2 PWM PD13 before.

@@ -8,8 +8,8 @@
 # (no engineering commands) into out/pmc-op.wasm for tests/remote-only.js,
 # and leaves pmc-wasm.js alone.
 #
-# Only stepper3.c and supply.c are changed on the way in, and only where they
-# write fixed hardware addresses (NVIC, PRIMASK, the VREFINT factory value).
+# Only stepper3.c is changed on the way in, and only where it writes fixed
+# hardware addresses (NVIC, PRIMASK). supply.c went in 0.14.3.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 PROJ="$HERE/../../InitialTesting"
@@ -37,10 +37,8 @@ sed -e 's|^#define NVIC_ISER(n).*|#define NVIC_ISER(n) sim_nvic_dummy|' \
     -e 's|__asm volatile ("msr primask, %0" :: "r" (pm) : "memory");|(void)pm;|' \
     -e '1i #include <stdint.h>\nextern volatile uint32_t sim_nvic_dummy;' \
     "$PROJ/stepper3.c" > "$OUT/patched/stepper3.c"
-sed -e 's|^#define VREFINT_CAL .*|extern const uint16_t sim_vrefint_cal;\n#define VREFINT_CAL sim_vrefint_cal|' \
-    "$PROJ/supply.c" > "$OUT/patched/supply.c"
-if grep -q "0xE000E\|primask" "$OUT/patched/stepper3.c" || grep -q "0x1FFF7A2A" "$OUT/patched/supply.c"; then
-  echo "stepper3.c or supply.c changed: update the sed lines in build.sh" >&2
+if grep -q "0xE000E\|primask" "$OUT/patched/stepper3.c"; then
+  echo "stepper3.c changed: update the sed lines in build.sh" >&2
   exit 1
 fi
 
@@ -58,7 +56,7 @@ WASM="$OUT/pmc.wasm"
 [ "$ENG" = 0 ] && WASM="$OUT/pmc-op.wasm"
 $ZIG cc $CFLAGS -DPMC_ENG_COMMANDS=$ENG -mexec-model=reactor -o "$WASM" \
   "$HERE/sim_main.c" "$HERE/sim_clicks.c" "$HERE/bench.c" \
-  "$OUT/patched/stepper3.c" "$OUT/patched/supply.c" $SRC "$OUT/liblvgl.a" \
+  "$OUT/patched/stepper3.c" $SRC "$OUT/liblvgl.a" \
   -Wl,--export=malloc -Wl,--strip-all -lm
 if [ "$ENG" = 0 ]; then ls -l "$WASM"; exit 0; fi
 # The page loads it from a script, so it also opens from a file:// path.

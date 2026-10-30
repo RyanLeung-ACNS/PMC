@@ -115,7 +115,7 @@ Every screen has the same frame: a header with Back and Home buttons, the title,
 | Faults and log | Menu > Records > Faults and log | Latched faults, with Reset fault. Tap a fault for its detail and help. The event log (last 100 events) |
 | Valve position | Menu > Calibrate > Valve position | Home valve, and the three ways to set the position without homing: Set as 0 %, Set as other %, Use last saved. Help |
 | Calibrate sensor | Menu > Calibrate > Transducer | The two-point calibration: Capture vacuum, Capture air, and the saved and captured readings side by side |
-| Diagnostics | Menu > System > Diagnostics | Live readings and hardware state: firmware version, Druck signal and excitation, board temperature, motor and limit switch, link and IP address |
+| Diagnostics | Menu > System > Diagnostics | Live readings: Druck signal, pressure before calibration and the pressure, motor steps, limit switch and last move, board temperature, excitation and how long the last move took |
 | Settings | Menu > System > Settings | System, Choose sensor, Valve setup, Control tuning, Review and save (with Load settings), Motor override (section 10) |
 
 Display formats: pressure to 1 decimal in mbar, valve position and keypad entries to 2 decimals in %, dates DD/MM/YY.
