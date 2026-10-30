@@ -755,7 +755,7 @@ const ui_screen_t ui_scr_faults = { "Faults and log", faults_build, faults_refre
  * Diagnostics
  * ------------------------------------------------------------------------ */
 static struct {
-    lv_obj_t *v[9];   // v[5] the board temperature from 0.13.4; v[7] the pressure from 0.14.4
+    lv_obj_t *v[9];   // v[5] the board temperature from 0.13.4; v[7] the room sensor from 0.14.5
 } dp;
 
 // Valve motor row: position and limit switch, at 50 Hz so the switch
@@ -777,9 +777,9 @@ static void diag_build(lv_obj_t *scr)
     static const char *const rows[3] = { "Pressure sensor", "Valve motor", "Controller" };
     // The valve motor row: steps, limit switch, last move ("Past limit"
     // went in 0.12.9, Ryan 26 Oct; the motor supply in 0.14.3). The
-    // pressure as Home shows it from 0.14.4 (Ryan 30 Oct), with the
+    // Pressure 21 room reading from 0.14.5 (Ryan 30 Oct), with the
     // excitation moved to the controller row.
-    static const char *const caps[9] = { "Signal, mV", "Before cal, mB", "Pressure, mB",
+    static const char *const caps[9] = { "Signal, mV", "Before cal, mB", "Room, mB",
                                          "Steps", "Limit switch", "Last move",
                                          "Temperature, \xC2\xB0" "C", "Excitation, V", "Move took, s" };
     lv_obj_t **const to[9] = { &dp.v[0], &dp.v[2], &dp.v[7], &dp.v[3], &dp.v[4], &dp.v[6],
@@ -811,8 +811,7 @@ static void diag_refresh(void)
     lv_snprintf(buf, sizeof buf, "%ld.%02ld", (long)(s->bus_mv / 1000), (long)(s->bus_mv % 1000 / 10));
     ui_set_text(dp.v[1], sig ? buf : "----");
     ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
-    bool p_ok = sig && s->reading_ok && !s->boost_tripped;   // as Home
-    ui_set_text(dp.v[7], p_ok ? ui_fmt1(buf, sizeof buf, s->p_mmbar) : "----");
+    ui_set_text(dp.v[7], s->baro_ok ? ui_fmt1(buf, sizeof buf, s->baro_mmbar) : "----");   // Pressure 21
 
     int32_t from;
     uint32_t ms;
