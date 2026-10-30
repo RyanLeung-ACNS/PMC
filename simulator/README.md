@@ -19,7 +19,7 @@ The bench panel switches the helium supply and the rotary pump, unplugs the Druc
 
 ## Building
 
-`wasm/build.sh` rebuilds `pmc-wasm.js` from `InitialTesting/` after a firmware change. It needs zig 0.13 for its WebAssembly C library (`pip install ziglang==0.13.0`; any OS) and a shell. The firmware sources are used as they are, except two sed lines for fixed hardware addresses in `stepper3.c` (NVIC, PRIMASK) and `supply.c` (the VREFINT factory value); the script stops if those lines change. `main.c` is compiled in whole and `sim_run()` repeats its loop body (`wasm/sim_main.c`).
+`wasm/build.sh` rebuilds `pmc-wasm.js` from `InitialTesting/` after a firmware change. It needs zig 0.13 for its WebAssembly C library (`pip install ziglang==0.13.0`; any OS) and a shell. The firmware sources are used as they are, except sed lines for fixed hardware addresses in `stepper3.c` (NVIC, PRIMASK); the script stops if those lines change. `main.c` is compiled in whole and `sim_run()` repeats its loop body (`wasm/sim_main.c`).
 
 The stand-ins are in `wasm/`: `include/` (register structs for GPIO, RCC, TIM7, ADC1, RTC; LVGL configuration = the firmware's heavy `lv_conf.h` without the CCM section), `sim_main.c` (registers, timer, flash, USB serial, display, touch, the page's calls), `sim_clicks.c` (`clicks.c` with readings from the bench), `bench.c` (flow line, motor, switch, Druck, supply).
 
