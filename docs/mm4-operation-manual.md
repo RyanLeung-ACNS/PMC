@@ -70,7 +70,7 @@ Operating limits:
 | --- | --- | --- |
 | Mikromedia 4 for STM32F4 | Controller and 4.3 inch 480 x 272 touchscreen. Runs the control loop, the screens, the Ethernet link and the Modbus server | 12 V terminal (2.54 mm pitch), USB-C for flashing or the USB text link, RJ45 Ethernet |
 | Stepper 3 Click, socket S2 | Drives the unipolar six-lead valve stepper (PK22, 344:1 gearbox) at 12 V. No current limit | Motor cable to the Click's four coil outputs and the 12 V motor supply |
-| Limit switch, socket S1 | One normally closed dry contact to ground, opens at the closed end of travel | RX (PA3, Adapter Click 10-pin header pad 8, internal pull-up) and GND (pad 10) |
+| Limit switch, socket S1 | One normally closed dry contact to ground, opens at the closed end of travel | Socket RX (PA3, internal pull-up) and GND. On the Adapter Click's 10-pin header that is pad 7, printed TX, and pad 10. The Adapter prints its pad names from the Click's side, so its pad printed RX (pad 8) is the socket's TX and does not work |
 | Boost 10 Click, socket S3 | Makes about 10 V from the board's 5 V for the Druck excitation. Trips above 11.5 V. Never feed it 12 V | SPI1 |
 | Power Monitor Click (INA228), socket S4 | Reads the Druck output and the excitation, 128 averages over 600 ms, once a second | I2C2, address 0x4A |
 | Druck UNIK 5000 PDCR50G1 | 15 psia absolute pressure transducer, 10 mV/V, insulated from its case | M12: pin 1 +Supply to Boost 10 VOUT and INA228 VBUS; pin 2 +Out to IN+; pin 4 -Out to IN-; pin 3 -Supply to common GND |

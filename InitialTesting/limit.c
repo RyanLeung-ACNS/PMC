@@ -7,11 +7,13 @@
 #include "pmc_config.h"
 
 /*
- * Valve limit switch: one dry NC contact between PA3 (S1 RX, Adapter Click
- * IDC10 pad 8, next to GND on pad 10; 0.14.3, Ryan 30 Oct) and GND,
- * read with the MCU's internal pull-up. Contact closed pulls the pin low
- * (healthy, valve away from the limit); open (at the limit, or a broken
- * wire) lets it float high. PMC_LIMIT_OPEN_LEVEL flips this for an
+ * Valve limit switch: one dry NC contact between PA3 (S1 RX; 0.14.3, Ryan
+ * 30 Oct) and GND. On the Adapter Click that is IDC10 pad 7, printed TX:
+ * the Adapter names its pads from the Click's side, so its TX pad is the
+ * socket's RX (PA3) and its RX pad (pad 8) is the socket's TX (PD5).
+ * GND is pad 10. Read with the MCU's internal pull-up. Contact closed
+ * pulls the pin low (healthy, valve away from the limit); open (at the
+ * limit, or a broken wire) lets it float high. PMC_LIMIT_OPEN_LEVEL flips this for an
  * inverting interface such as an Opto 2 Click.
  *
  * Treated as the closing stop (fail-safe):
