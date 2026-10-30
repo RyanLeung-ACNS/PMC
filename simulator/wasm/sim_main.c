@@ -219,8 +219,8 @@ static void coils_from_pins(void)
 
 static void inputs_update(void)
 {
-    if (bench_limit_pin_high()) sim_gpio[0].IDR |= 1UL << 3;   // PA3, S1 RX (0.14.3)
-    else sim_gpio[0].IDR &= ~(1UL << 3);
+    if (bench_limit_pin_high()) sim_gpio[3].IDR |= 1UL << 5;   // PD5, S1 TX (0.14.6)
+    else sim_gpio[3].IDR &= ~(1UL << 5);
 }
 
 // ADC1: only IN17 VREFINT (the motor supply on IN3 went in 0.14.3); a
@@ -383,7 +383,7 @@ EXPORT(sim_boot) void sim_boot(int reset, double now)
     sim_rcc.BDCR = RCC_BDCR_LSERDY | RCC_BDCR_LSEON | RCC_BDCR_RTCEN | (1UL << 8);
     sim_rtc.ISR = RTC_ISR_INITS | RTC_ISR_RSF | RTC_ISR_INITF;
     rtc_set((time_t)now);
-    sim_gpio[0].IDR = 0;
+    sim_gpio[3].IDR = 0;
     inputs_update();
     application_init();
     sense_ms = lv_tick_get();

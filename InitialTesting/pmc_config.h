@@ -43,10 +43,11 @@
 #endif
 
 // Shown on screen and returned by VER?, with the build date and time.
-#define PMC_FW_VERSION    "0.14.5"
+#define PMC_FW_VERSION    "0.14.6"
 
-// Valve limit switch: one NC dry contact to GND on S1 RX, PA3 (Adapter Click
-// IDC10 pad 7, printed TX: the Adapter labels from the Click's side; 0.14.3). S1 PWM PD12 in 0.14.2, S2 PWM PD13 before.
+// Valve limit switch: one NC dry contact to GND on S1 TX, PD5 (Adapter Click
+// IDC10 pad 8, printed RX: the Adapter labels from the Click's side; 0.14.6).
+// S1 RX PA3 in 0.14.3-0.14.5, S1 PWM PD12 in 0.14.2, S2 PWM PD13 before.
 // Pin level that means the contact is OPEN (at the limit or a broken wire).
 // 1 for the bare contact with the pull-up; 0 for an inverting interface.
 #define PMC_LIMIT_OPEN_LEVEL 1

@@ -17,7 +17,7 @@
  *
  * Direction convention: positive steps open the valve, negative close it.
  * MOT DIR flips the sequence if the wiring turns the other way. Before every
- * closing step the limit input is read (NC contact on PA3, open = stop):
+ * closing step the limit input is read (NC contact on PD5, open = stop):
  * it is the closing stop (limit.c, PMC_LIMIT_STOP).
  *
  * Commands over the link, one per line, replies end with OK or ERR:

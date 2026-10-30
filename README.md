@@ -48,7 +48,7 @@ The simulator is being ported to the firmware in stages, one version and one pul
 | Part | What it does | Connection |
 | --- | --- | --- |
 | Mikromedia 4 for STM32F4 (STM32F407ZG, 168 MHz, 1 MB flash, 192 KB RAM) | Controller, 4.3 in 480x272 capacitive touchscreen (SSD1963 display controller, touch over I2C) | 12 V terminal, USB-C |
-| Socket S1: limit switch (Adapter Click and Pressure 21 Click on order) | One NC dry contact to GND, opens at the closed end of travel | Socket RX, PA3 (internal pull-up): Adapter IDC10 pad 7, printed TX, because the Adapter labels its pads from the Click's side. GND on pad 10 |
+| Socket S1: limit switch (Adapter Click and Pressure 21 Click on order) | One NC dry contact to GND, opens at the closed end of travel | Socket TX, PD5 (internal pull-up): Adapter IDC10 pad 8, printed RX, because the Adapter labels its UART pads from the Click's side (pad 7, printed TX, is the socket's RX, PA3). GND on pad 10 |
 | mikroBUS shield, socket S2: Stepper 3 Click (ULN2003) | Drives the unipolar six-lead valve stepper (PK22, 344:1 gearbox), 12 V | AN PB0, RST PC3, CS PA15, PWM PD13 |
 | Socket S3: Boost 10 Click (LT8337, TPL0501 digipot) | Raises 5 V to about 10 V excitation for the Druck. Never feed it 12 V | SPI1 PA5/PA6/PB5, CS PF8, PG PG2 |
 | Socket S4: Power Monitor Click (INA228) | Reads the Druck output (shunt input) and the excitation (VBUS), ±163.84 mV range | I2C2 PF1/PF0, address 0x4A |

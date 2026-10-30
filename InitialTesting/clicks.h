@@ -10,8 +10,8 @@
  *
  * Socket layout (Ryan, 7 Oct 2026; S1 and S2 swapped 30 Oct, 0.14.2):
  *   S1 Pressure 21   (BMP581, on an Adapter Click)  I2C2 at 0x46 (baro.c);
- *                    the Adapter also carries the limit switch (socket RX,
- *                    PA3 = IDC10 pad 7 printed TX, with GND on pad 10)
+ *                    the Adapter also carries the limit switch (socket TX,
+ *                    PD5 = IDC10 pad 8 printed RX, with GND on pad 10)
  *   S2 Stepper 3     (ULN2003)  AN PB0, RST PC3, CS PA15, PWM PD13
  *   S3 Boost 10      (LT8337 + TPL0501)  SPI1 PA5/PA6/PB5, CS PF8, PG PG2
  *   S4 Power Monitor (INA228)   SCL PF1 / SDA PF0 (I2C2, mikroSDK driver)
