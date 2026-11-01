@@ -295,8 +295,6 @@ static bool cal_start(const char **err)
     if (any_latched())             { *err = "Reset the fault first"; return false; }
     stepper3_stop();
     stepper3_override_cancel();
-    question = false;
-    warn[0] = 0;
     cal_settling = false;
     cal_was = calibrated;
     calibrated = false;
@@ -311,9 +309,15 @@ static bool cal_start(const char **err)
     } else {
         ok = cal_fast(true);
     }
-    if (!ok)
-        *err = stepper3_refusal();   // the homing has ended (cal_go)
-    return ok;
+    if (!ok) {
+        *err = stepper3_refusal();   // the homing has ended (cal_go), nothing moved
+        return false;
+    }
+    // Homing answers the switch question and the warning, once it is under
+    // way: a refused start leaves them for the operator.
+    question = false;
+    warn[0] = 0;
+    return true;
 }
 
 // A calibration move has ended.
@@ -803,18 +807,19 @@ bool valve_start_auto(const char **why)
 
 bool valve_start_auto_at(int32_t mmbar, const char **why)
 {
-    if (mode != VALVE_AUTO) {
-        // Checked with the new target in place, then put back: it is only
-        // set (and logged) if AUTO will start.
-        int32_t fs = valve_range_mmbar();
-        if (mmbar < 0 || mmbar > fs) { *why = "Setpoint outside the sensor range"; return false; }
-        ctrl_t was = ctl;
-        ctrl_set_sp(&ctl, (float)fixed_round(mmbar, 2) / 10.0f, range_mbar(), lv_tick_get());
-        *why = auto_why();
-        ctl = was;
-        if (*why)
-            return false;
-    }
+    // In AUTO a new target goes through the setpoint keypad, which asks
+    // before a large change (CTRL_SP_CONFIRM).
+    if (mode == VALVE_AUTO) { *why = "Already in AUTO: change the setpoint"; return false; }
+    // Checked with the new target in place, then put back: it is only set
+    // (and logged) if AUTO will start.
+    int32_t fs = valve_range_mmbar();
+    if (mmbar < 0 || mmbar > fs) { *why = "Setpoint outside the sensor range"; return false; }
+    ctrl_t was = ctl;
+    ctrl_set_sp(&ctl, (float)fixed_round(mmbar, 2) / 10.0f, range_mbar(), lv_tick_get());
+    *why = auto_why();
+    ctl = was;
+    if (*why)
+        return false;
     return valve_set_target(mmbar, why) && valve_start_auto(why);
 }
 

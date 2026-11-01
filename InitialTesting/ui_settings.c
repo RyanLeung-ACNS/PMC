@@ -474,7 +474,6 @@ static void discard_ask(void)
                     plural(c, sizeof c, n, "unsaved change"));
         ui_confirm(t, "Discard changes", discard_drafts);
     } else if (cfg_unsaved() && cfg_rev(CFG_FROM_SAVED, &rev, &at)) {
-        char w[24];
         lv_snprintf(t, sizeof t, "Put the last save back? %s %s lost.", plural(c, sizeof c, cfg_unsaved(), "change"),
                     cfg_unsaved() == 1 ? "is" : "are");
         ui_confirm(t, "Put back", discard_live);
@@ -1336,13 +1335,13 @@ static void load_do(void)
         before = cfg_unsaved();
         for (int k = 0; k < CFG_N; k++)
             before += draft_set[k];
-        drafts_clear();
         if (!cfg_load_live(from, &why)) {
             char t[64];
             lv_snprintf(t, sizeof t, "Not loaded: %s", why);
-            ui_msg(t);
+            ui_msg(t);   // the drafts are kept
             return;
         }
+        drafts_clear();
         n = cfg_unsaved();
     } else {
         for (int k = 0; k < CFG_N; k++) {

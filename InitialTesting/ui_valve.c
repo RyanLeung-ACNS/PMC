@@ -83,8 +83,8 @@ static bool vp_goto(int32_t pct10)
     const char *why = why_not_manual();
     if (!why && pct10 < valve_pct10() && limit_open_now())
         why = "Limit switch pressed, cannot close";
-    if (!why && !valve_goto_pct10(pct10 < 0 ? 0 : pct10 > 1000 ? 1000 : pct10, &why))
-        why = "Limit switch pressed, cannot close";
+    if (!why && !valve_goto_pct10(pct10 < 0 ? 0 : pct10 > 1000 ? 1000 : pct10, &why) && !why)
+        why = "Refused";   // valve_goto_pct10 gives the reason (supply, limit, flash)
     if (why)
         ui_msg(why);
     return why == NULL;
@@ -117,13 +117,9 @@ static void step_cb(lv_event_t *e)
 static bool goto_set(int32_t v100, const char **why)
 {
     vp.jog = false;   // a new move has its own target
-    if (!valve_goto_pct100(v100, why)) {
-        *why = why_not_manual();
-        if (!*why)
-            *why = "Limit switch pressed, cannot close";
-        return false;
-    }
-    return true;
+    // The reason as valve.c and stepper3.c give it (fault, mode, supply,
+    // the limit switch, a flash write).
+    return valve_goto_pct100(v100, why);
 }
 
 static void goto_cb(lv_event_t *e)

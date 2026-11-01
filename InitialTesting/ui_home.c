@@ -242,9 +242,15 @@ static void to_manual(void)
         ui_msg(why);
 }
 
+static bool sp_set(int32_t v10, const char **why);
+
 // Typed target, then AUTO at it with no second question (simulator keypadStart).
+// If AUTO started meanwhile (the network), a setpoint change, with its
+// confirm for a large one.
 static bool start_set(int32_t v10, const char **why)
 {
+    if (valve_auto())
+        return sp_set(v10, why);
     return valve_start_auto_at(v10 * 100, why);   // the target changes only if AUTO starts
 }
 
@@ -330,11 +336,7 @@ static void target_event(lv_event_t *e)
 
 static bool goto_set(int32_t v100, const char **why)
 {
-    if (!valve_goto_pct100(v100, why)) {
-        *why = valve_motion_blocked() ? "Reset the fault first" : "Limit switch pressed, cannot close";
-        return false;
-    }
-    return true;
+    return valve_goto_pct100(v100, why);   // its reason as valve.c gives it
 }
 
 static void goto_event(lv_event_t *e)
@@ -596,7 +598,6 @@ static void home_refresh(void)
 // (with Reset fault, on every screen from 0.13.19) and messages over it.
 void ui_status_line(void)
 {
-    char buf[32];
     valve_mode_t m = valve_mode();
     int step = valve_cal_step();
     int nf = valve_fault_count();

@@ -390,7 +390,7 @@ from_rest:
     }
     if (dist < 0 && stepper3_limit_open()) {
         last_stop = STEPPER3_STOP_LIMIT;
-        refusal = "limit open, closing move refused";
+        refusal = "Limit switch pressed, cannot close";
         return false;
     }
     // No motor supply: the count would run on with the valve still.

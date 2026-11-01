@@ -230,9 +230,22 @@ static void adjust_event(lv_event_t *e)
     motor_fast();
 }
 
+// Coil order and Direction clear the homing: refused while the valve layer
+// locks the motor (AUTO, homing, a latched fault), as MOT ORDER and MOT DIR
+// are on the link. Checked again here: the question may have waited.
+static bool ref_locked(void)
+{
+    const char *why = stepper3_locked();
+    if (why)
+        ui_msg(why);
+    return why != NULL;
+}
+
 static void do_order(void)
 {
     int i = (order_index() + 1) % 3;
+    if (ref_locked())
+        return;
     if (!stepper3_busy() && stepper3_set_order(orders[i]))
         link_printf("MOT screen: order %d%d%d%d\r\n",
                     orders[i][0], orders[i][1], orders[i][2], orders[i][3]);
@@ -248,6 +261,8 @@ static void order_event(lv_event_t *e)
 
 static void do_dir(void)
 {
+    if (ref_locked())
+        return;
     if (!stepper3_busy() && stepper3_set_reverse(!stepper3_reverse()))
         link_printf("MOT screen: dir %d\r\n", stepper3_reverse() ? 1 : 0);
     motor_fast();
@@ -682,8 +697,8 @@ static void motor_fast(void)
     ui_btn_text(m.order, "Coil order", t);
     ui_btn_text(m.dir, "Direction", stepper3_reverse() ? "Reversed" : "Normal");
     ui_btn_text(m.hold, "Hold torque", stepper3_hold() ? "On" : "Off");
-    ui_btn_enable(m.order, !busy);
-    ui_btn_enable(m.dir, !busy);
+    ui_btn_enable(m.order, !busy && !stepper3_locked());
+    ui_btn_enable(m.dir, !busy && !stepper3_locked());
     ui_btn_enable(m.hold, !busy);
 }
 
