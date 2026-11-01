@@ -151,6 +151,9 @@ void usb_serial_printf(const char *fmt, ...)
 // line: it is being typed key by key (a terminal such as PuTTY), not sent
 // as one text.
 #define TYPED_GAP_MS 50
+// A key-by-key line left this long without CR or LF is dropped (not run),
+// so a terminal that sends no line ending (NECTO) is not stuck behind it.
+#define TYPED_FORGET_MS 10000
 
 static uint32_t rx_bytes;
 
@@ -190,8 +193,14 @@ bool usb_serial_getline(char *buf, size_t n)
     // for 50), so it waits for CR or LF.
     if (line.len > 0)
         quiet_ms = lv_tick_elaps(line.last_ms);   // the FIFO is empty here
-    if (typed)
+    if (typed) {
+        if (quiet_ms > TYPED_FORGET_MS) {
+            line.len = 0;
+            line.over = false;
+            typed = false;
+        }
         return false;
+    }
     return link_line_idle(&line, LINE_IDLE_MS, buf, n);
 }
 

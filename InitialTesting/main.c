@@ -36,6 +36,9 @@
 #include "trend.h"
 #include "baro.h"
 #include "remote.h"
+#if PMC_LINK_ETHERNET
+#include "ethlink.h"
+#endif
 
 /*
  * PERF?: how responsive the main loop is, since the last PERF?. Touch is
@@ -212,6 +215,7 @@ int main(void)
     ////////////////////////// LVGL timing routine (DO NOT REMOVE) //////////////////////////
     char line[LINK_LINE_MAX + 1];
     uint32_t sense_ms = lv_tick_get();
+    uint32_t held_from = 0;   // when the dump being waited for began holding the next line
     while (1)
     {
         link_task();
@@ -229,11 +233,21 @@ int main(void)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-        // The remote command set (remote.c): no echo, one reply line. Not
-        // while an EVNT? or TREND DUMP is still going out a few lines a pass:
-        // the next reply would land among its lines (each gives up after 2 s
-        // with no room, so a command waits no longer than that).
-        if (!valve_events_sending() && !trend_dumping() && link_getline(line, sizeof line))
+#if PMC_LINK_ETHERNET
+        // A new client does not get the last one's dump.
+        if (ethlink_take_new_client()) {
+            valve_events_stop();
+            trend_dump_stop();
+        }
+#endif
+        // The remote command set (remote.c): no echo, one reply line. While
+        // an EVNT? or TREND DUMP is going out a few lines a pass, the next
+        // line waits, so its reply does not land among the dump's lines; for
+        // 0.5 s at most, so a STOP is not held longer than that.
+        bool dumping = valve_events_sending() || trend_dumping();
+        if (!dumping)
+            held_from = lv_tick_get();
+        if ((!dumping || lv_tick_elaps(held_from) >= 500) && link_getline(line, sizeof line))
             remote_line(line);
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();

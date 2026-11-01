@@ -723,6 +723,21 @@ static void test_valvepos(void)
     tick(100);
     valvepos_init();
     CHECK(!valvepos_offer(&c));
+
+    // Saved under another motor direction (Direction changed on Motor
+    // override and not saved, then a restart): not offered; under the
+    // direction it was saved, it is.
+    m_busy = false;
+    v_cal = true; v_mode = VALVE_MANUAL; m_pos = 25000; m_rev = true;
+    tick(2500);
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0; m_rev = false;
+    valvepos_init();
+    CHECK(!valvepos_offer(&c));
+    m_rev = true;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 25000);
+    m_rev = false;   // the direction changes while the offer waits: withdrawn
+    CHECK(!valvepos_offer(&c) && !valvepos_use(&why));
 }
 
 // Trend slots are fixed one-second boundaries: a late poll fills its own

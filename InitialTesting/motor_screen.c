@@ -143,6 +143,7 @@ static void move_event(lv_event_t *e)
     if (!why && stepper3_move(steps)) {
         if (hold) {
             m.held = lv_event_get_target_obj(e);
+            valve_hold(true);
             link_printf("MOT screen: hold move %s\r\n", steps > 0 ? "open" : "close");
         } else {
             link_printf("MOT screen: move %ld\r\n", (long)steps);
@@ -162,6 +163,7 @@ static void hold_end(void)
     if (!m.held)
         return;
     m.held = NULL;
+    valve_hold(false);
     if (stepper3_busy()) {
         stepper3_stop_ramped();
         link_printf("MOT screen: hold move released\r\n");
@@ -351,6 +353,7 @@ static void two_end(void)
     if (!b)
         return;
     m.held2 = NULL;
+    valve_hold(false);
     lv_obj_remove_state(b, LV_STATE_PRESSED);
     if (stepper3_override()) {
         bool stopped = stepper3_override_cancel();
@@ -375,6 +378,7 @@ static bool two_start(lv_obj_t *b)
             stepper3_override_arm();
         if (stepper3_move(steps)) {
             m.held2 = b;
+            valve_hold(true);
             lv_obj_add_state(b, LV_STATE_PRESSED);
             valve_event("LIM", close ? "Limit override (screen): closing past the switch"
                                      : "Limit override (screen): opening");

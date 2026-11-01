@@ -139,6 +139,7 @@ static struct {
 #define DUMP_GIVEUP 2000   // ms with no room: the reader has gone
 
 bool trend_dumping(void) { return dump.active; }
+void trend_dump_stop(void) { dump.active = false; }
 
 void trend_task(void)
 {

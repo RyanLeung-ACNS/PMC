@@ -171,6 +171,12 @@ void ethlink_init(void)
     up = true;
 }
 
+// Everything written to s has been sent and acknowledged.
+static bool tx_drained(const Socket *s)
+{
+    return s->sndUser == 0 && s->sndNxt == s->sndUna;
+}
+
 static void mb_drop(mb_client_t *c)
 {
     if (c->s) {
@@ -219,8 +225,8 @@ static void mb_task(void)
         }
         size_t got = 0;
         if (socketReceive(c->s, c->buf + c->len, sizeof c->buf - c->len, &got, 0) != NO_ERROR || got == 0) {
-            if (st == TCP_STATE_CLOSE_WAIT)
-                mb_drop(c);   // closed and all read
+            if (st == TCP_STATE_CLOSE_WAIT && tx_drained(c->s))
+                mb_drop(c);   // closed, all read and the replies acknowledged
             continue;
         }
         c->len += got;
@@ -349,13 +355,12 @@ bool ethlink_getline(char *buf, size_t n)
             size_t got = 0;
             rx_pos = rx_len = 0;
             if (socketReceive(client, rx, sizeof rx, &got, 0) != NO_ERROR || got == 0) {
-                // Closed by the client and all read: its last line, if it
-                // had no line ending, ends here; then the socket goes.
-                if (tcpGetState(client) == TCP_STATE_CLOSE_WAIT) {
-                    if (link_line_feed(&line, '\n', buf, n))
-                        return true;
+                // Closed by the client and all read. A last line with no
+                // line ending is not run (it may be cut short: VALV SET 5 of
+                // 50). The socket goes once the replies have been sent and
+                // acknowledged, so a reply is not lost to the close.
+                if (tcpGetState(client) == TCP_STATE_CLOSE_WAIT && tx_drained(client))
                     drop_client();
-                }
                 return false;
             }
             rx_len = got;

@@ -145,6 +145,8 @@ static uint32_t cal_t0;
 static uint32_t seq_seen;         // stepper3_move_seq() last handled
 
 static bool question;             // switch-pressed question waiting
+static bool hold_on;              // a screen button drives the valve while pressed (valve_hold)
+static const char *auto_said;     // the AUTO move refusal last logged (once per reason, per AUTO run)
 static int32_t question_at;       // where the switch was pressed, full steps (a mode change rescales the count)
 static int32_t q_count(void) { return question_at * stepper3_scale(); }   // in motor counts now
 
@@ -465,6 +467,8 @@ void valve_task(void)
 {
     evt_dump_task();
     seq_check();
+    if (hold_on && !stepper3_busy())
+        hold_on = false;   // the held move has ended (released, the switch, its end)
     if (mode == VALVE_CALIBRATING && cal_settling && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
     supply_check();
@@ -481,10 +485,11 @@ static ctrl_tune_t tune_now(void)
     k.kp = (float)cfg_tune(CFG_KP) / 100.0f;
     k.ti = (float)cfg_tune(CFG_TI) / 100.0f;
     k.outmin = (float)cfg_tune(CFG_OUTMIN) / 10.0f;
-    k.db = cfg_tune(CFG_DB);
+    k.db = sc(cfg_tune(CFG_DB));   // full steps, in motor counts (HALF doubles)
     k.kdir = (int)cfg_tune(CFG_KDIR);
     k.band = (float)cfg_tune(CFG_BAND) / 100.0f;
     k.pos_max = pm();
+    k.steps = stepper3_scale();
     return k;
 }
 
@@ -757,14 +762,13 @@ static void auto_step(void)
         // The closed switch blocks closing from rest (stepper3 refuses it);
         // ctrl.c holds the integral meanwhile.
         if (ctl.move) {
-            static const char *said;   // the refusal last logged
             if (stepper3_goto(ctl.move_to)) {
                 ctrl_sent(&ctl);
-                said = NULL;
+                auto_said = NULL;
             } else if (!(ctl.move_to < stepper3_position() && stepper3_limit_open()) &&
-                       stepper3_refusal() != said) {
-                said = stepper3_refusal();
-                ev("MODE", "AUTO move refused: %s", said);
+                       stepper3_refusal() != auto_said) {
+                auto_said = stepper3_refusal();
+                ev("MODE", "AUTO move refused: %s", auto_said);
             }
         }
         break;
@@ -788,6 +792,12 @@ bool valve_auto(void) { return is_auto(); }
 const char *valve_warning(void) { return warn[0] ? warn : NULL; }
 void valve_warning_clear(void) { warn[0] = 0; }
 
+// A screen button is driving the valve while pressed (Close or Open held
+// on the Valve page or Motor override): its move has no real end, so AUTO
+// and remote moves wait for the release. Only while that move runs.
+void valve_hold(bool on) { hold_on = on; }
+static bool holding(void) { return hold_on && stepper3_busy(); }
+
 // Why AUTO cannot start now (with the target as set), or NULL.
 static const char *auto_why(void)
 {
@@ -801,6 +811,11 @@ static const char *auto_why(void)
     // A bench cal point being taken would change the reading AUTO uses.
     if (!why && cal_capturing())
         why = "Sensor calibration point being taken";
+    // The switch question puts the count in doubt; the screen asks it first.
+    if (!why && question)
+        why = "Limit switch question waiting at the screen";
+    if (!why && holding())
+        why = "Valve being moved on the screen";
     return why;
 }
 
@@ -812,6 +827,7 @@ bool valve_start_auto(const char **why)
     ctrl_tune_t k = tune_now();
     // A step test ends here: tune_tick() does not run in AUTO.
     tune_end("AUTO started", false);
+    auto_said = NULL;
     // Bumpless from where the valve is going (a manual move still running
     // carries on to its end under AUTO).
     int32_t now = stepper3_target();
@@ -1120,6 +1136,7 @@ static void faults_command(void)
 // valve_task() as the link has room, so a slow reader does not hold up the
 // main loop (as TREND DUMP).
 bool valve_events_sending(void) { return edump.active; }
+void valve_events_stop(void) { edump.active = false; }
 
 void valve_events_send(int n)
 {
@@ -1255,6 +1272,7 @@ bool valve_goto_pct100(int32_t pct100, const char **why)
     if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (!calibrated)                { *why = "Home the valve first"; return false; }
+    if (holding())                  { *why = "Valve being moved on the screen"; return false; }
     int32_t to = (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (to < 0) to = 0;
     if (to > pm()) to = pm();
@@ -1267,6 +1285,7 @@ bool valve_move_steps(int32_t steps, const char **why)
     if (mode == VALVE_CALIBRATING)  { *why = "Homing: STOP to cancel"; return false; }
     if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
+    if (holding())                  { *why = "Valve being moved on the screen"; return false; }
     int32_t from = stepper3_busy() ? stepper3_target() : stepper3_position();
     if (!stepper3_goto(from + steps)) { *why = stepper3_refusal(); return false; }
     return true;

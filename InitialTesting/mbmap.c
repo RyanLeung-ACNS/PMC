@@ -88,7 +88,7 @@ void mbmap_begin(void)
     if (valve_reference() == VALVE_REF_HOMED)  st |= 1u << ST_HOMED;
     if (stepper3_busy())                       st |= 1u << ST_MOVING;
     if (stepper3_limit_open())                 st |= 1u << ST_SWITCH;
-    if (valve_fault_latched())                 st |= 1u << ST_FAULT;
+    if (valve_fault_count() > 0)               st |= 1u << ST_FAULT;   // F-1 and F-2 too
     if (w || hot || valve_question(NULL))      st |= 1u << ST_WARNING;
     if (sp_set)                                st |= 1u << ST_TARGET_SET;
     if (mbmap_writes_allowed())                st |= 1u << ST_WRITES;
@@ -146,7 +146,7 @@ bool mbmap_read_coil(uint16_t addr, bool *v)
             return false;
         switch (addr) {
         case CO_AUTO:  *v = valve_auto(); break;
-        case CO_RESET: *v = valve_fault_latched(); break;
+        case CO_RESET: *v = valve_fault_count() > 0; break;
         case CO_ACK:   *v = valve_warning() != NULL; break;
         default:       *v = false; break;
         }

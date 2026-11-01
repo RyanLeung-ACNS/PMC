@@ -23,7 +23,7 @@
 typedef struct {
     uint32_t seq;        // +1 each entry, never 0xFFFFFFFF
     int32_t count;
-    uint32_t state;      // VP_SAFE, VP_MOVING or VP_UNSAFE
+    uint32_t state;      // VP_SAFE, VP_MOVING or VP_UNSAFE, XOR the drive's reference (ref_sig)
     uint32_t crc;
 } vp_entry_t;
 _Static_assert(sizeof(vp_entry_t) == 16, "16-byte entries");
@@ -41,6 +41,26 @@ static uint32_t writes;
 static bool warned;            // withdraw failure logged
 static bool failed;            // the last put() did not take
 static uint32_t failed_at;     // tick of that put()
+
+/* The direction and coil order the count was saved under (0 for the
+ * factory ones, so entries from before this check read as theirs). A count
+ * saved under another direction or order is no position now (a Direction
+ * change on Motor override not saved, then a restart): its state does not
+ * read as SAFE or MOVING, so it is not offered. */
+static uint32_t ref_sig(void)
+{
+    uint8_t o[4];
+    stepper3_order(o);
+    uint32_t sig = (stepper3_reverse() ? 0x100u : 0u) | (uint32_t)(o[0] << 6 | o[1] << 4 | o[2] << 2 | o[3]);
+    return sig ^ (0u << 6 | 2u << 4 | 1u << 2 | 3u);   // factory: forward, order 0213
+}
+static uint32_t state_of(const vp_entry_t *e) { return e->state ^ ref_sig(); }
+// SAFE or MOVING under whatever direction and order it was saved: it could
+// be offered at a restart under those, so a withdrawal must cover it.
+static bool live(const vp_entry_t *e)
+{
+    return e->seq && (((e->state ^ VP_SAFE) & ~0x1FFu) == 0 || ((e->state ^ VP_MOVING) & ~0x1FFu) == 0);
+}
 
 static bool good(const vp_entry_t *e)
 {
@@ -64,7 +84,7 @@ static bool put(int32_t count, uint32_t state)
     failed_at = lv_tick_get();
     if (at == 0 && !extflash_erase_4k(addr(sector, 0)))
         return false;
-    vp_entry_t e = { last.seq + 1, count, state, 0 }, back;
+    vp_entry_t e = { last.seq + 1, count, state ^ ref_sig(), 0 }, back;
     if (e.seq == 0xFFFFFFFFUL)
         e.seq = 1;
     e.crc = crc32_ieee(&e, offsetof(vp_entry_t, crc));
@@ -83,12 +103,12 @@ static bool put(int32_t count, uint32_t state)
 
 static bool safe_on_flash(void)
 {
-    return last.seq && last.state == VP_SAFE;
+    return last.seq && state_of(&last) == VP_SAFE;
 }
 
 static bool offerable(const vp_entry_t *e)
 {
-    return e->seq && (e->state == VP_SAFE || e->state == VP_MOVING);
+    return e->seq && (state_of(e) == VP_SAFE || state_of(e) == VP_MOVING);
 }
 
 // Writes state at pos, two tries. False if both failed.
@@ -101,7 +121,7 @@ static bool put2(int32_t pos, uint32_t state)
 // both failed: the flash may still hold it.
 static bool withdraw(int32_t pos)
 {
-    if (!offerable(&last))
+    if (!live(&last))
         return true;
     if (put2(pos, VP_UNSAFE)) {
         warned = false;
@@ -188,12 +208,15 @@ void valvepos_init(void)
     if (offerable(&last)) {
         offer = true;
         boot_count = last.count;
-        boot_moving = last.state == VP_MOVING;
+        boot_moving = state_of(&last) == VP_MOVING;
         char p[16];
         valve_event("REF", "Saved position on offer: count %ld (%s %%)%s, use it or calibrate",
                     (long)boot_count, fixed_fmt(p, sizeof p,
                     fixed_round((int64_t)boot_count * stepper3_scale() * 10000 / valve_pos_max(), 1), 1),
                     boot_moving ? ", saved while moving" : "");
+    } else if (live(&last)) {
+        // Saved as SAFE or MOVING under another direction or coil order.
+        valve_event("REF", "Saved position not offered: saved under another motor direction or coil order");
     }
 }
 
@@ -234,14 +257,20 @@ void valvepos_task(void)
     }
 }
 
+// The offer still stands: moot once the position is set another way (Set
+// position, homing; valvepos_task withdraws it too, but only on its next
+// pass, and the screen asks again before that), or once the direction or
+// coil order changed (Motor override) while it waited.
+static bool offer_stands(void)
+{
+    if (offer && (valve_calibrated() || !offerable(&last)))
+        offer = false;
+    return offer;
+}
+
 bool valvepos_offer(int32_t *count)
 {
-    // Moot once the position is set another way (Set position, homing);
-    // valvepos_task withdraws it too, but only on its next pass, and the
-    // screen asks again before that.
-    if (offer && valve_calibrated())
-        offer = false;
-    if (offer)
+    if (offer_stands())
         *count = boot_count * stepper3_scale();
     return offer;
 }
@@ -249,12 +278,12 @@ bool valvepos_offer(int32_t *count)
 bool valvepos_offer_moving(int32_t *steps)
 {
     *steps = (int32_t)((uint64_t)stepper3_rate() * MOVE_MS / 1000);
-    return offer && boot_moving;
+    return offer_stands() && boot_moving;
 }
 
 bool valvepos_use(const char **why)
 {
-    if (!offer) { *why = "No saved position to use"; return false; }
+    if (!offer_stands()) { *why = "No saved position to use"; return false; }
     if (!valve_restore(boot_count * stepper3_scale(), why))
         return false;
     offer = false;
@@ -277,8 +306,9 @@ bool valvepos_command(const char *line)
             link_printf("VALVE SAVED none\r\n");
         else
             link_printf("VALVE SAVED count %ld, %s, entry %lu of sector %lu, %lu writes since boot%s\r\n",
-                        (long)last.count, last.state == VP_SAFE ? "safe (at standstill)" :
-                        last.state == VP_MOVING ? "saved while moving" : "unsafe (not calibrated)",
+                        (long)last.count, state_of(&last) == VP_SAFE ? "safe (at standstill)" :
+                        state_of(&last) == VP_MOVING ? "saved while moving" :
+                        state_of(&last) == VP_UNSAFE ? "unsafe (not calibrated)" : "saved under another direction or coil order",
                         (unsigned long)at, (unsigned long)sector, (unsigned long)writes,
                         offer ? ", on offer: VALVE RESTORE to use" : "");
         link_printf("OK\r\n");

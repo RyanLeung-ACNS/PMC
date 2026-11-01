@@ -70,6 +70,7 @@ bool valve_start_auto(const char **why)
 bool valve_to_manual(const char **why) { (void)why; v_mode = VALVE_MANUAL; return true; }
 bool valve_set_target(int32_t m, const char **why) { (void)why; v_sp = m / 100 * 100; v_sp_set = true; return true; }
 bool valve_target(int32_t *m) { if (m) *m = v_sp; return v_sp_set; }
+void valve_hold(bool on) { (void)on; }
 // As valve.c: the target changes only if AUTO starts.
 bool valve_start_auto_at(int32_t m, const char **why)
 {

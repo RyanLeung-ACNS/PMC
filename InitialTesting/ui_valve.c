@@ -85,7 +85,7 @@ static bool vp_goto(int32_t pct10, int dir)
     const char *why = why_not_manual();
     // Seated below 0 % (Set as 0 % gives the seat, about -0.6 %): 0 % is
     // above it, so a close would open.
-    if (!why && dir < 0 && pct10 <= 0 && valve_pct10() <= 0)
+    if (!why && dir < 0 && pct10 <= 0 && (stepper3_busy() ? valve_target_pct10() : valve_pct10()) <= 0)
         why = "Valve at 0 %, nothing to close";
     if (!why && pct10 < valve_pct10() && limit_open_now())
         why = "Limit switch pressed, cannot close";
@@ -100,6 +100,7 @@ static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
     vp.jog = vp_goto(open ? 1000 : 0, open ? 1 : -1);
+    valve_hold(vp.jog);
 }
 
 // The hold stays marked until the ramp-down ends (valve_refresh clears it):
@@ -109,6 +110,7 @@ static void jog_release(lv_event_t *e)
     (void)e;
     if (vp.jog)
         stepper3_stop_ramped();
+    valve_hold(false);
 }
 
 static void step_cb(lv_event_t *e)
@@ -250,8 +252,10 @@ static void valve_fast(void)
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch
     // away from the button without a release: stop the hold.
-    if (vp.jog && ui_overlay_open())
+    if (vp.jog && ui_overlay_open()) {
         stepper3_stop_ramped();
+        valve_hold(false);
+    }
     // Where the valve is going (or last went); "--" during a hold, which
     // has no target, and before homing. In AUTO the position AUTO is
     // sending it to, greyed (Ryan, 22 Oct; was "AUTO").
@@ -469,7 +473,7 @@ static const fault_help_t fault_help[] = {
       "The switch is not stuck (ice) and its wire is not broken.",
       "Any time. Then home again." },
     { "F-5", "A move took longer than its distance at the set rate, plus 2 s.",
-      "Stopped the valve and holds it. Homing kept.",
+      "Stopped the valve and holds it. Homing kept, unless it was homing.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
     { "F-6", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
