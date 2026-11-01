@@ -289,9 +289,11 @@ bool valvepos_offer(int32_t *count)
 bool valvepos_offer_moving(int32_t *steps)
 {
     // The most the valve can have gone since the entry: MOVE_MS between
-    // entries plus the step interrupt's 1 s stall stop, at the fastest
-    // rate (a move may have run at a rate that was not saved).
-    *steps = (int32_t)((uint64_t)STEPPER3_RATE_MAX * (MOVE_MS + 1000) / 1000);
+    // entries, the step interrupt's 1 s stall stop and a loop pass (1 s
+    // allowed), at the fastest rate (a move may have run at a rate that was
+    // not saved) and in HALF's counts if it is HALF now (it may have run in
+    // FULL).
+    *steps = (int32_t)((uint64_t)STEPPER3_RATE_MAX * stepper3_scale() * (MOVE_MS + 2000) / 1000);
     return offer_stands() && boot_moving;
 }
 

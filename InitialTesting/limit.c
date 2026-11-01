@@ -89,6 +89,8 @@ bool limit_open_now(void)
     return state != LIMIT_CLOSED || read_open();
 }
 
+bool limit_pin_open(void) { return read_open(); }
+
 const char *limit_text(void)
 {
     switch (state) {

@@ -147,6 +147,8 @@ static uint32_t seq_seen;         // stepper3_move_seq() last handled
 static bool question;             // switch-pressed question waiting
 static bool hold_on;              // a screen button drives the valve while pressed (valve_hold)
 static const char *auto_said;     // the AUTO move refusal last logged (once per reason, per AUTO run)
+static bool ref_unproven;         // Direction or coil order changed since the last homing
+static bool running;              // the main loop has started (not the settings load at start-up)
 static int32_t question_at;       // where the switch was pressed, full steps (a mode change rescales the count)
 static int32_t q_count(void) { return question_at * stepper3_scale(); }   // in motor counts now
 
@@ -256,6 +258,7 @@ static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
     if (uncalibrate) {
         calibrated = false;
         mode = VALVE_NOT_CAL;
+        question = false;   // its count belongs to the homing just lost
     }
     update_lock();
 }
@@ -373,6 +376,7 @@ static void cal_move_ended(stepper3_stop_t why)
 static void cal_homed(void)
 {
     calibrated = true;
+    ref_unproven = false;
     ref_how = VALVE_REF_HOMED;
     cal_done_ms = lv_tick_get();
     cal_done = true;
@@ -408,14 +412,7 @@ static void limit_hit(void)
     char p[16];
     ev("W-1", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)q_count(), pct_text(p, sizeof p, q_count()));
-    // AUTO does not run on a count the switch has put in doubt (it may not
-    // start while the question waits either).
-    if (is_auto()) {
-        stepper3_stop();
-        mode = VALVE_MANUAL;
-        update_lock();
-        ev("MODE", "Manual after W-1, valve idle at %s %%", pct_text(p, sizeof p, q_count()));
-    }
+
 }
 
 /* --------------------------------------------------------------------------
@@ -458,17 +455,21 @@ static void supply_check(void)
 // A move has ended since the last look: why (F-5, homing, the limit).
 static void seq_check(void)
 {
+    if (stepper3_take_reversed())
+        raise(F04, true, "Switch pressed during an opening move at count %ld: Direction, coil order or switch",
+              (long)stepper3_position());
+    if (stepper3_take_stall()) {
+        ev("SYS", "Move stopped at count %ld: the main loop stalled for over 1 s", (long)stepper3_position());
+        cal_abort("main loop stalled");   // a homing move cut short: no settle follows
+    }
     uint32_t seq = stepper3_move_seq();
     if (seq != seq_seen) {
         seq_seen = seq;
         stepper3_stop_t why = stepper3_last_stop();
         if (why == STEPPER3_STOP_TIMEOUT)
             raise(F05, false, "Motion timeout at count %ld", (long)stepper3_position());
-        else if (why == STEPPER3_STOP_REVERSED)
-            raise(F04, true, "Switch pressed during an opening move at count %ld: Direction, coil order or switch",
-                  (long)stepper3_position());
-        else if (why == STEPPER3_STOP_STALL)
-            ev("SYS", "Move stopped at count %ld: the main loop stalled for over 1 s", (long)stepper3_position());
+        else if (why == STEPPER3_STOP_REVERSED || why == STEPPER3_STOP_STALL)
+            ;   // handled above, from the latches
         else if (mode == VALVE_CALIBRATING && cal_moving)
             cal_move_ended(why);
         else if (why == STEPPER3_STOP_LIMIT)
@@ -478,6 +479,7 @@ static void seq_check(void)
 
 void valve_task(void)
 {
+    running = true;
     evt_dump_task();
     seq_check();
     if (hold_on && !stepper3_busy())
@@ -949,6 +951,11 @@ void valve_sense(const clicks_state_t *s)
 
 void valve_uncalibrate(const char *why)
 {
+    // After a Direction or coil-order change the valve may turn the other
+    // way: only homing (which finds the switch) proves it, not a typed or
+    // saved position (opening would then drive into the seat).
+    if (running && (!strcmp(why, "motor direction changed") || !strcmp(why, "coil order changed")))
+        ref_unproven = true;   // not the saved settings applied at start-up
     if (mode == VALVE_CALIBRATING) {
         cal_abort(why);
         cal_was = false;
@@ -969,6 +976,7 @@ bool valve_restore(int32_t count, const char **why)
     if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (calibrated)                 { *why = "Position already set"; return false; }
+    if (ref_unproven)               { *why = "Direction or coil order changed: home the valve first"; return false; }
     if (any_latched())              { *why = "Reset the fault first"; return false; }
     if (stepper3_busy() || !stepper3_set_position(count)) { *why = "Wait for the valve to stop"; return false; }
     calibrated = true;
@@ -988,6 +996,7 @@ static bool set_by_hand(bool seated, int32_t pct100, const char **why)
     if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
     if (is_auto())                  { *why = "Switch to MANUAL first"; return false; }
     if (any_latched())              { *why = "Reset the fault first"; return false; }
+    if (ref_unproven)               { *why = "Direction or coil order changed: home the valve first"; return false; }
     int32_t c = seated ? seat_count() : (int32_t)(((int64_t)pct100 * pm() + 5000) / 10000);
     if (stepper3_busy() || !stepper3_set_position(c)) { *why = "Wait for the valve to stop"; return false; }
     calibrated = true;

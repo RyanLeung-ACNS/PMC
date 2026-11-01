@@ -94,8 +94,11 @@ static void (*ref_cb)(const char *why);   // stepper3_on_reference_change
 static bool (*move_cb)(const char **why);  // stepper3_on_move_start
 static const char *refusal = "";
 static const char *lock_why;            // MOT and screen moves refused while set
-static uint16_t free_steps;             // opening steps in a row with the switch released
+static uint16_t free_steps;             // opening steps in a row with the switch pin released
 #define FREE_ARM       32               // ... before a press again stops the move
+static uint8_t pressed_steps;           // then steps in a row with it pressed
+#define PRESSED_N      4                // ... that make a press, not a glitch
+static volatile bool reversed_hit, stall_hit;   // latched for valve.c (stepper3_take_*)
 static volatile uint32_t alive_ms;      // the main loop's last pass (stepper3_poll)
 #define STALL_MS       1000             // no pass for this long: the step interrupt stops the move
 
@@ -267,20 +270,25 @@ void TIM7_IRQHandler(void)
     // or coil order wrong, a count saved under another one) or the switch is
     // failing. Stopped at once, and valve.c latches F-4; otherwise it would
     // drive the needle into the seat with nothing to stop it.
+    // The pin itself, in steps: PRESSED_N in a row once armed (one glitch on
+    // a long pulled-up line is not a press).
     if (dir > 0 && LIMIT_FITTED) {
-        if (!limit_open_now()) {
+        if (!limit_pin_open()) {
+            pressed_steps = 0;
             if (free_steps < FREE_ARM)
                 free_steps++;
-        } else if (free_steps >= FREE_ARM) {
+        } else if (free_steps < FREE_ARM) {
+            free_steps = 0;
+        } else if (++pressed_steps >= PRESSED_N) {
+            reversed_hit = true;
             finish(STEPPER3_STOP_REVERSED);
             return;
-        } else {
-            free_steps = 0;
         }
     }
     // The main loop has stopped (a hang until the watchdog, 3 to 7 s): no
     // STOP can arrive and the saved position is not kept, so stop here.
     if (lv_tick_get() - alive_ms > STALL_MS) {
+        stall_hit = true;
         finish(STEPPER3_STOP_STALL);
         return;
     }
@@ -313,6 +321,7 @@ void TIM7_IRQHandler(void)
             dir = (int8_t)-dir;
             ahead = -ahead;
             free_steps = 0;   // the opening check counts from the turn
+            pressed_steps = 0;
         }
     }
 
@@ -466,6 +475,7 @@ from_rest:
     n_acc = 0;
     stop_ramp = false;
     free_steps = 0;
+    pressed_steps = 0;
     alive_ms = lv_tick_get();
     set_deadline();
     run_state = ST_MOVING;
@@ -515,6 +525,19 @@ int32_t stepper3_target(void)
     return t;
 }
 uint32_t stepper3_move_seq(void) { return moves_ended; }
+
+// Latched by the step interrupt, so a later move cannot hide them (the
+// move-end reason only says why the last move ended). Read and cleared.
+static bool take(volatile bool *flag)
+{
+    uint32_t pm = step_irq_hold();
+    bool v = *flag;
+    *flag = false;
+    step_irq_release(pm);
+    return v;
+}
+bool stepper3_take_reversed(void) { return take(&reversed_hit); }
+bool stepper3_take_stall(void)    { return take(&stall_hit); }
 
 // Allowed while the coils settle after a move: calibration sets 0 % the
 // moment the switch stops the creep, inside that 20 ms.

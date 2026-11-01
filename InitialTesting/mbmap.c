@@ -173,21 +173,6 @@ static uint8_t refused(const char *what, const char *why)
     return MODBUS_EX_REFUSED;
 }
 
-/* A master that writes every scan would undo the operator: STOP, then the
- * next scan's "valve to 50 %" or "AUTO on" starts it again. A write that
- * repeats the last one accepted acts only if it still matches what the
- * valve is doing; otherwise it is refused, and the master writes another
- * value (or 0 then 1 for AUTO) to command again. */
-static int32_t last_valve = -1;   // the last valve % accepted, 0.01 %
-static int last_auto = -1;        // the last AUTO coil write accepted
-
-// A new connection (a master, or one reconnecting) starts afresh.
-void mbmap_new_client(void)
-{
-    last_valve = -1;
-    last_auto = -1;
-}
-
 uint8_t mbmap_write_regs(uint16_t addr, uint16_t n, const uint16_t *v)
 {
     // Only the two writable floats, each written whole.
@@ -220,16 +205,8 @@ uint8_t mbmap_write_regs(uint16_t addr, uint16_t n, const uint16_t *v)
                 return MODBUS_EX_VALUE;
             int32_t p = (int32_t)lroundf(f * 100.0f);
             fixed_fmt(t, sizeof t, p, 2);
-            // A repeat in MANUAL with nothing latched (otherwise the valve
-            // layer refuses it for its own reason below).
-            if (p == last_valve && valve_mode() == VALVE_MANUAL && !valve_fault_latched()) {
-                if ((valve_target_pct_milli() + 5) / 10 == p)
-                    continue;   // already going there
-                return refused("valve %", "repeat of the last write (write another value to move again)");
-            }
             if (!valve_goto_pct100(p, &why))
                 return refused("valve %", why);
-            last_valve = p;
             valve_event("NET", "Modbus %s: valve to %s %%", peer, t);
         }
     }
@@ -243,15 +220,10 @@ uint8_t mbmap_write_coil(uint16_t addr, bool on)
 
     switch (addr) {
     case CO_AUTO:
-        if (on == valve_auto()) {
-            last_auto = on;   // so 0 then 1 starts AUTO again after it ended
+        if (on == valve_auto())
             return 0;
-        }
-        if (on == last_auto)   // AUTO was ended (STOP, a warning) since this master set it
-            return refused(on ? "AUTO" : "MANUAL", "repeat of the last write (write 0 then 1)");
         if (on ? !valve_start_auto(&why) : !valve_to_manual(&why))
             return refused(on ? "AUTO" : "MANUAL", why);
-        last_auto = on;
         valve_event("NET", "Modbus %s: %s", peer, on ? "AUTO" : "MANUAL");
         return 0;
     case CO_STOP:

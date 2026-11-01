@@ -846,6 +846,8 @@ static void diag_refresh(void)
         case STEPPER3_STOP_LIMIT:   res = "At limit"; break;
         case STEPPER3_STOP_CMD:     res = "Stopped"; break;
         case STEPPER3_STOP_TIMEOUT: res = "Timed out"; break;
+        case STEPPER3_STOP_REVERSED: res = "Switch while opening"; break;
+        case STEPPER3_STOP_STALL:   res = "Loop stalled"; break;
         default: break;
     }
     ui_set_text(dp.v[6], res);

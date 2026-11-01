@@ -15,7 +15,7 @@ Map version 1, firmware 0.12.0 (writes on from 0.12.6). Ethernet build only (`PM
 
 With writes on, the writable registers and command coils go through the same calls as the screen buttons, so the same checks and refusals apply. A write the controller refuses answers exception 4 and logs a NET event with the reason ("Switch to MANUAL first", "No target set", ...). Each accepted write is logged as a NET event with the client's IP address.
 
-Writing the same value every scan is safe (0.13.29): it does not undo the operator. Rewriting the target with the value it already has changes nothing (no event; the W-2 and Stable timers run on). Rewriting the valve % or the AUTO coil with the value this connection last had accepted acts only while the valve is still doing that; after a STOP, a warning or a Switch to MANUAL on the screen it answers exception 4 ("repeat of the last write"), so to command again write another valve %, or AUTO 0 then 1. A new connection starts afresh. A refused write is logged once a minute at most.
+Rewriting the target with the value it already has changes nothing (no event; the W-2 and Stable timers run on), and a refused write is logged once a minute at most. Note: a master that writes the valve % or the AUTO coil every scan will act again after an operator STOP on the screen; to keep the valve stopped, set Remote control Off (or stop the master).
 
 | Exception | Meaning |
 | --- | --- |

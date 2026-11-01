@@ -83,6 +83,10 @@ void stepper3_poll(void);
 // Goes up by one each time a move ends (done, stopped, limit, timeout);
 // stepper3_last_stop() then says why.
 uint32_t stepper3_move_seq(void);
+// Latched stops, read and cleared: the switch pressed during an opening
+// move (STEPPER3_STOP_REVERSED), a move stopped by a stalled main loop.
+bool stepper3_take_reversed(void);
+bool stepper3_take_stall(void);
 // Sets the position count (refused while moving; fine while settling).
 bool stepper3_set_position(int32_t p);
 // While set (non-NULL), MOT MOVE/GOTO/OVERRIDE/ZERO and the motor screen

@@ -82,6 +82,7 @@ static lv_coord_t touch2_x, touch2_y;
 // follows, landing in the box, is latched at once (a quick tap counts).
 static int32_t wbox[4];
 static bool wbox_set, wbox_in, wbox_hit;
+static uint8_t wbox_n;   // contacts at the last read
 
 static bool touch_follow(const tp_touch_item_t *t, uint8_t n, lv_coord_t *x, lv_coord_t *y, int32_t *idx)
 {
@@ -209,10 +210,13 @@ void touch_poll(void)
         touch_other(&t, n, idx);
     else
         touch2_now = false;
+    // A contact that has just landed there: the count went up this read (a
+    // finger sliding in, or the followed one lost by a fast move, is not).
     bool in = watch_check(&t, n, touch_now ? idx : -1);
-    if(in && !wbox_in)
-        wbox_hit = true;   // a new contact there: latched until taken
+    if(in && !wbox_in && n > wbox_n)
+        wbox_hit = true;   // latched until taken
     wbox_in = in;
+    wbox_n = n;
     if(touch_now)
         touch_latched = true;
     touch_was_pressed = touch_now;
