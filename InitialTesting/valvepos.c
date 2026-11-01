@@ -39,22 +39,12 @@ static uint32_t still_since;
 static bool still;             // standing since still_since
 static uint32_t writes;
 static bool warned;            // withdraw failure logged
-
-static uint32_t crc32(const void *data, size_t len)
-{
-    const uint8_t *p = data;
-    uint32_t c = 0xFFFFFFFFUL;
-    while (len--) {
-        c ^= *p++;
-        for (int k = 0; k < 8; k++)
-            c = (c >> 1) ^ (0xEDB88320UL & (0UL - (c & 1)));
-    }
-    return ~c;
-}
+static bool failed;            // the last put() did not take
+static uint32_t failed_at;     // tick of that put()
 
 static bool good(const vp_entry_t *e)
 {
-    return e->seq != 0xFFFFFFFFUL && e->seq != 0 && e->crc == crc32(e, offsetof(vp_entry_t, crc));
+    return e->seq != 0xFFFFFFFFUL && e->seq != 0 && e->crc == crc32_ieee(e, offsetof(vp_entry_t, crc));
 }
 
 static uint32_t addr(uint32_t s, uint32_t i)
@@ -70,12 +60,14 @@ static bool put(int32_t count, uint32_t state)
         sector = (sector + 1) % VP_SECTORS;
         at = 0;
     }
+    failed = true;              // until it is read back right
+    failed_at = lv_tick_get();
     if (at == 0 && !extflash_erase_4k(addr(sector, 0)))
         return false;
     vp_entry_t e = { last.seq + 1, count, state, 0 }, back;
     if (e.seq == 0xFFFFFFFFUL)
         e.seq = 1;
-    e.crc = crc32(&e, offsetof(vp_entry_t, crc));
+    e.crc = crc32_ieee(&e, offsetof(vp_entry_t, crc));
     uint32_t a = addr(sector, at);
     at++;                       // the slot is used whatever happens
     writes++;
@@ -85,6 +77,7 @@ static bool put(int32_t count, uint32_t state)
     if (memcmp(&e, &back, sizeof e) != 0)
         return false;
     last = e;
+    failed = false;
     return true;
 }
 
@@ -167,6 +160,7 @@ void valvepos_init(void)
     offer = false;
     still = false;
     warned = false;
+    failed = false;
     writes = 0;
     sector = 0;
     at = 0;
@@ -222,6 +216,10 @@ void valvepos_task(void)
             return;
         offer = false;
     }
+    // After a failed write, MOVE_MS before the next try from here: each try
+    // can take an erase (up to 100 ms) and uses up a slot.
+    if (failed && lv_tick_elaps(failed_at) < MOVE_MS)
+        return;
     if (!cal) {
         (void)withdraw(pos);
     } else if (moving) {

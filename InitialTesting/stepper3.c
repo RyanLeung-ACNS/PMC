@@ -378,6 +378,9 @@ from_rest:
         timer_stop();
         run_state = ST_IDLE;
     }
+    // Again: the move read as running above may have ended (and stepped)
+    // since dist was worked out.
+    dist = to - position;
 
     if (dist == 0) {
         last_stop = STEPPER3_STOP_DONE;

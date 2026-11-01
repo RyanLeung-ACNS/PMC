@@ -140,13 +140,15 @@ void trend_task(void)
             return;
         }
         dump.since = lv_tick_get();
+        // link_write: link_printf sends only inside an engineering command
+        // (link_eng_open), and this runs later from the main loop.
         if (dump.head) {
-            link_printf("TREND age_s,p_mbar,target_mbar,valve_pct\r\n");
+            link_write("TREND age_s,p_mbar,target_mbar,valve_pct\r\n");
             dump.head = false;
             continue;
         }
         if (dump.next >= dump.end) {
-            link_printf("OK\r\n");
+            link_write("OK\r\n");
             dump.active = false;
             return;
         }
@@ -155,11 +157,12 @@ void trend_task(void)
         // Its age now (the ring may have moved on since the command).
         if (!trend_fine(fine_n - 1 - idx, &q))
             continue;
-        char p[20], sp[20], v[20];
+        char p[20], sp[20], v[20], l[96];
         put_fixed(p, sizeof p, q.p, 3);
         put_fixed(sp, sizeof sp, q.sp, 3);
         put_fixed(v, sizeof v, q.v, 2);
-        link_printf("TREND -%lu,%s,%s,%s\r\n", (unsigned long)(dump.end - 1 - idx), p, sp, v);
+        lv_snprintf(l, sizeof l, "TREND -%lu,%s,%s,%s\r\n", (unsigned long)(dump.end - 1 - idx), p, sp, v);
+        link_write(l);
     }
 }
 

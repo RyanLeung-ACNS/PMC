@@ -294,7 +294,9 @@ static bool cal_start(const char **err)
     ev("REF", "Homing started at count %ld", (long)stepper3_position());
     if (limit_open_now()) {
         cal_stage = CAL_CLEAR;
-        cal_move(stepper3_position() + sc(n_clear), f_rate(f_home));
+        if (!cal_move(stepper3_position() + sc(n_clear), f_rate(f_home)))
+            raise(F03, true, "Homing: clearance move refused at count %ld (%s)", (long)stepper3_position(),
+                  stepper3_refusal());
     } else {
         cal_fast();
     }
@@ -319,7 +321,9 @@ static void cal_move_ended(stepper3_stop_t why)
     case CAL_FAST:
         if (why == STEPPER3_STOP_LIMIT) {
             cal_stage = CAL_BACK;
-            cal_move(stepper3_position() + sc(n_backoff), f_rate(f_home));
+            if (!cal_move(stepper3_position() + sc(n_backoff), f_rate(f_home)))
+                raise(F03, true, "Homing: back-off refused at count %ld (%s)", (long)stepper3_position(),
+                      stepper3_refusal());
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found within %ld steps",
                   (long)(((int64_t)pm() * 11 + 5) / 10));
@@ -761,6 +765,8 @@ bool valve_start_auto(const char **why)
         *why = "Limit switch pressed away from the seat";
     if (*why)
         return false;
+    // A step test ends here: tune_tick() does not run in AUTO.
+    tune_end("AUTO started", false);
     // Bumpless from where the valve is going (a manual move still running
     // carries on to its end under AUTO).
     int32_t now = stepper3_target();

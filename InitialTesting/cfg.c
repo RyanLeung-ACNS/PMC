@@ -197,21 +197,9 @@ static bool flash_ok;
 
 static const char *const EMPTY = "empty";
 
-static uint32_t crc32(const void *data, size_t len)
-{
-    const uint8_t *p = data;
-    uint32_t c = 0xFFFFFFFFUL;
-    while (len--) {
-        c ^= *p++;
-        for (int k = 0; k < 8; k++)
-            c = (c >> 1) ^ (0xEDB88320UL & (0UL - (c & 1)));
-    }
-    return ~c;
-}
-
 static uint32_t rec_crc(const cfg_rec_t *r)
 {
-    return crc32(r, offsetof(cfg_rec_t, crc));
+    return crc32_ieee(r, offsetof(cfg_rec_t, crc));
 }
 
 static char slot_letter(int i) { return i == 0 ? 'A' : 'B'; }
@@ -384,28 +372,28 @@ static const char *read_slot(int i)
         return EMPTY;
     if (r->magic == CFG_MAGIC && r->version == 1 && r->size == sizeof old.v1) {
         memcpy(&old.v1, r, sizeof old.v1);
-        if (old.v1.crc != crc32(&old.v1, offsetof(cfg_rec_v1_t, crc)))
+        if (old.v1.crc != crc32_ieee(&old.v1, offsetof(cfg_rec_v1_t, crc)))
             return "CRC mismatch";
         from_v1(&old.v1, r);
     } else if (r->magic == CFG_MAGIC && r->version == 2 && r->size == sizeof old.v2) {
         memcpy(&old.v2, r, sizeof old.v2);
-        if (old.v2.crc != crc32(&old.v2, offsetof(cfg_rec_v2_t, crc)))
+        if (old.v2.crc != crc32_ieee(&old.v2, offsetof(cfg_rec_v2_t, crc)))
             return "CRC mismatch";
         FROM_OLD(cfg_rec_v2_t, &old.v2, r);
         lv_strlcpy(r->name, FACTORY_NAME, sizeof r->name);   // no name before version 3
     } else if (r->magic == CFG_MAGIC && r->version == 3 && r->size == sizeof old.v3) {
         memcpy(&old.v3, r, sizeof old.v3);
-        if (old.v3.crc != crc32(&old.v3, offsetof(cfg_rec_v3_t, crc)))
+        if (old.v3.crc != crc32_ieee(&old.v3, offsetof(cfg_rec_v3_t, crc)))
             return "CRC mismatch";
         FROM_OLD(cfg_rec_v3_t, &old.v3, r);
     } else if (r->magic == CFG_MAGIC && r->version == 4 && r->size == sizeof old.v4) {
         memcpy(&old.v4, r, sizeof old.v4);
-        if (old.v4.crc != crc32(&old.v4, offsetof(cfg_rec_v4_t, crc)))
+        if (old.v4.crc != crc32_ieee(&old.v4, offsetof(cfg_rec_v4_t, crc)))
             return "CRC mismatch";
         FROM_OLD(cfg_rec_v4_t, &old.v4, r);
     } else if (r->magic == CFG_MAGIC && r->version == 5 && r->size == sizeof old.v5) {
         memcpy(&old.v5, r, sizeof old.v5);
-        if (old.v5.crc != crc32(&old.v5, offsetof(cfg_rec_v5_t, crc)))
+        if (old.v5.crc != crc32_ieee(&old.v5, offsetof(cfg_rec_v5_t, crc)))
             return "CRC mismatch";
         FROM_OLD(cfg_rec_v5_t, &old.v5, r);
     } else if (r->magic != CFG_MAGIC || r->version != CFG_VERSION || r->size != sizeof *r) {
@@ -580,13 +568,19 @@ static const char *busy_why(void)
 
 static bool busy(void) { return busy_why() != NULL; }
 
+// Why r's step mode cannot be put in use now, or NULL: stepper3_set_mode()
+// refuses while the valve layer locks the motor (a latched fault).
+static const char *mode_why(const cfg_rec_t *r)
+{
+    return r->mot[M_MODE] != (int32_t)stepper3_mode() ? stepper3_locked() : NULL;
+}
+
 // All or nothing: checked first, applied only when idle. False if not applied.
 static bool apply(const cfg_rec_t *r, bool with_sensors)
 {
     uint8_t o[4];
-    if (values_why(r) || busy())
+    if (values_why(r) || busy() || mode_why(r))
         return false;
-    bool rev_changed = (r->mot[M_DIR] != 0) != stepper3_reverse();
     stepper3_set_rate((uint32_t)r->mot[M_RATE]);
     stepper3_set_start((uint32_t)r->mot[M_START]);
     stepper3_set_accel((uint32_t)r->mot[M_ACCEL]);
@@ -615,8 +609,6 @@ static bool apply(const cfg_rec_t *r, bool with_sensors)
         else
             cal_set_default(false);
     }
-    if (rev_changed)
-        valve_uncalibrate("motor direction changed");
     sync_cal_saved();
     return true;
 }
@@ -865,6 +857,7 @@ bool cfg_save_with(const int32_t v[CFG_N], const bool set[CFG_N], const char **w
     }
     if (cand.mot[M_START] > cand.mot[M_RATE]) { *why = "Start speed must not exceed Run speed"; return false; }
     if (values_why(&cand)) { *why = "a value is out of range, nothing saved"; return false; }
+    if (!tune_only && (*why = mode_why(&cand)) != NULL) return false;
     // Written first, then put in use: a failed write changes nothing, so
     // "Not saved" also means "not in use" (review of 0.10.11). The active cal
     // was captured into cand; a switch of sensor applies the new one.
@@ -898,6 +891,7 @@ bool cfg_load_live(cfg_from_t from, const char **why)
         memcpy(d->tune, factory.tune, sizeof d->tune);
         r = d;
     }
+    if ((*why = mode_why(r)) != NULL) return false;
     if (!apply(r, true)) { *why = "record not applied"; return false; }
     return true;
 }

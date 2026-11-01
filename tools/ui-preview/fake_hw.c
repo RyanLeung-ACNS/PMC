@@ -116,6 +116,7 @@ void link_printf(const char *fmt, ...)
     vfprintf(stderr, fmt, ap);
     va_end(ap);
 }
+void link_write(const char *s) { fputs(s, stderr); }   // TREND DUMP (trend.c)
 bool rtclock_valid(void) { return !st.cal_nominal; }
 const char *rtclock_screen_text(void) { return st.cal_nominal ? "time not set" : "08 Oct  12:34"; }
 

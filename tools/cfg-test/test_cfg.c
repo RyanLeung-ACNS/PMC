@@ -58,6 +58,7 @@ void link_printf(const char *fmt, ...)
     vprintf(fmt, a);
     va_end(a);
 }
+void link_write(const char *s) { link_printf("%s", s); }   // TREND DUMP (trend.c)
 const char *rtclock_iso(void) { return "2026-10-16 08:15:00"; }
 
 /* Druck reading */
@@ -73,9 +74,19 @@ static uint8_t m_order[4] = { 0, 2, 1, 3 };
 bool stepper3_set_rate(uint32_t v) { m_rate = v; return true; }
 bool stepper3_set_start(uint32_t v) { m_start = v; return true; }
 bool stepper3_set_accel(uint32_t v) { m_accel = v; return true; }
-bool stepper3_set_mode(stepper3_mode_t m) { m_mode = m; return true; }
+static const char *m_lock;   // stepper3_lock(): set by the valve layer, e.g. a latched fault
+bool stepper3_set_mode(stepper3_mode_t m) { if (m_lock) return false; m_mode = m; return true; }
+const char *stepper3_locked(void) { return m_lock; }
 bool stepper3_set_hold(bool on) { m_hold = on; return true; }
-bool stepper3_set_reverse(bool on) { m_rev = on; return true; }
+// As stepper3.c: a change of direction clears the homing through the
+// valve layer's stepper3_on_reference_change callback.
+bool stepper3_set_reverse(bool on)
+{
+    if (on != m_rev)
+        valve_uncalibrate("motor direction changed");
+    m_rev = on;
+    return true;
+}
 bool stepper3_set_order(const uint8_t o[4]) { memcpy(m_order, o, 4); return true; }
 uint32_t stepper3_rate(void) { return m_rate; }
 uint32_t stepper3_start_rate(void) { return m_start; }
@@ -330,6 +341,17 @@ static void test_cfg(void)
     // Factory defaults keep the sensors.
     CHECK(cfg_load_live(CFG_FROM_DEFAULTS, &why));
     CHECK(m_rate == 400 && cfg_tune(CFG_KP) == 400 && cfg_sensor_count() == 1 && !cal_is_default());
+    CHECK(cfg_load_live(CFG_FROM_SAVED, &why));
+
+    // A latched fault locks the step mode: a load that would change it is
+    // refused whole, nothing applied; without the lock it loads.
+    m_mode = STEPPER3_HALF;
+    m_rate = 450;
+    m_lock = "Reset the fault first";
+    CHECK(!cfg_load_live(CFG_FROM_DEFAULTS, &why) && strstr(why, "fault") && m_rate == 450 &&
+          m_mode == STEPPER3_HALF);
+    m_lock = NULL;
+    CHECK(cfg_load_live(CFG_FROM_DEFAULTS, &why) && m_rate == 400 && m_mode == STEPPER3_FULL);
     CHECK(cfg_load_live(CFG_FROM_SAVED, &why));
 
     // Motor direction: saving it clears the calibration.
