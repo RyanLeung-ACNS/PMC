@@ -14,6 +14,7 @@
 #include "cfg.h"
 #include "ctrl.h"
 #include "tune.h"
+#include "cal.h"
 #include "valve.h"
 
 /* --------------------------------------------------------------------------
@@ -208,19 +209,22 @@ static void cal_end(valve_mode_t m)
     update_lock();
 }
 
-static void cal_abort(const char *why)
+// Ends the homing. kept: the step count still holds, so an earlier homing
+// stays: an operator STOP (the count kept counting through the cancelled
+// moves) or a first move refused (nothing moved).
+static void cal_stop(const char *why, bool kept)
 {
     if (mode != VALVE_CALIBRATING)
         return;
     stepper3_stop();
     seq_seen = stepper3_move_seq();
-    // An operator STOP keeps the earlier calibration: the step count kept
-    // counting through the cancelled moves, so the position is still known.
-    bool keep = cal_was && !strcmp(why, "STOP");
+    bool keep = cal_was && kept;
     ev("REF", "Homing aborted (%s)%s", why, keep ? ", earlier homing kept" : "");
     calibrated = keep;
     cal_end(keep ? VALVE_MANUAL : VALVE_NOT_CAL);
 }
+
+static void cal_abort(const char *why) { cal_stop(why, !strcmp(why, "STOP")); }
 
 static void raise(fault_t f, bool uncalibrate, const char *fmt, ...)
 {
@@ -260,20 +264,28 @@ static bool cal_move(int32_t to, int32_t rate)
     return cal_moving;
 }
 
-static void cal_fast(void)
+// A homing move refused (motor supply off, the saved position not
+// written): the homing ends with the reason in the log, as for STOP, and no
+// fault (F-3 is the switch not found). first: nothing has moved yet.
+static bool cal_go(int32_t to, int32_t rate, bool first)
+{
+    if (cal_move(to, rate))
+        return true;
+    cal_stop(stepper3_refusal(), first);
+    return false;
+}
+
+static bool cal_fast(bool first)
 {
     int32_t n = (int32_t)(((int64_t)pm() * 11 + 5) / 10);
     cal_stage = CAL_FAST;
-    if (!cal_move(stepper3_position() - n, f_rate(f_home)))
-        raise(F03, true, "Homing: closing move refused at count %ld (%s)", (long)stepper3_position(),
-              stepper3_refusal());
+    return cal_go(stepper3_position() - n, f_rate(f_home), first);
 }
 
 static void cal_creep(void)
 {
     cal_stage = CAL_CREEP;
-    if (!cal_move(stepper3_position() - sc(n_backoff + CREEP_EXTRA), f_rate(f_creep)))
-        raise(F03, true, "Homing: creep move refused at count %ld", (long)stepper3_position());
+    cal_go(stepper3_position() - sc(n_backoff + CREEP_EXTRA), f_rate(f_creep), false);
 }
 
 static bool cal_start(const char **err)
@@ -292,15 +304,16 @@ static bool cal_start(const char **err)
     cal_t0 = lv_tick_get();
     update_lock();
     ev("REF", "Homing started at count %ld", (long)stepper3_position());
+    bool ok;
     if (limit_open_now()) {
         cal_stage = CAL_CLEAR;
-        if (!cal_move(stepper3_position() + sc(n_clear), f_rate(f_home)))
-            raise(F03, true, "Homing: clearance move refused at count %ld (%s)", (long)stepper3_position(),
-                  stepper3_refusal());
+        ok = cal_go(stepper3_position() + sc(n_clear), f_rate(f_home), true);
     } else {
-        cal_fast();
+        ok = cal_fast(true);
     }
-    return true;
+    if (!ok)
+        *err = stepper3_refusal();   // the homing has ended (cal_go)
+    return ok;
 }
 
 // A calibration move has ended.
@@ -321,9 +334,7 @@ static void cal_move_ended(stepper3_stop_t why)
     case CAL_FAST:
         if (why == STEPPER3_STOP_LIMIT) {
             cal_stage = CAL_BACK;
-            if (!cal_move(stepper3_position() + sc(n_backoff), f_rate(f_home)))
-                raise(F03, true, "Homing: back-off refused at count %ld (%s)", (long)stepper3_position(),
-                      stepper3_refusal());
+            cal_go(stepper3_position() + sc(n_backoff), f_rate(f_home), false);
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found within %ld steps",
                   (long)(((int64_t)pm() * 11 + 5) / 10));
@@ -340,8 +351,7 @@ static void cal_move_ended(stepper3_stop_t why)
             // Then off the switch by the return, so it is not left
             // pressed against the seat; that point is 0 % (Ryan, 26 Oct).
             cal_stage = CAL_PARK;
-            if (!cal_move(sc(n_offset), f_rate(f_home)))
-                raise(F03, true, "Homing: return refused at count %ld", (long)stepper3_position());
+            cal_go(sc(n_offset), f_rate(f_home), false);
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
         } else {
@@ -374,7 +384,7 @@ static void cal_settled(void)
         raise(F04, true, "Switch still active after %ld-step %s", (long)moved,
               cal_stage == CAL_CLEAR ? "clearance move" : cal_stage == CAL_PARK ? "return" : "back-off");
     } else if (cal_stage == CAL_CLEAR) {
-        cal_fast();
+        cal_fast(false);
     } else if (cal_stage == CAL_BACK) {
         cal_creep();
     } else {
@@ -753,18 +763,28 @@ bool valve_auto(void) { return is_auto(); }
 const char *valve_warning(void) { return warn[0] ? warn : NULL; }
 void valve_warning_clear(void) { warn[0] = 0; }
 
+// Why AUTO cannot start now (with the target as set), or NULL.
+static const char *auto_why(void)
+{
+    if (mode == VALVE_CALIBRATING) return "Homing: STOP to cancel";
+    ctrl_tune_t k = tune_now();
+    const char *why = ctrl_check(&ctl, &k, calibrated, valve_fault_count() > 0, pv_ok, pv_mbar, range_mbar());
+    if (!why && supply_off())
+        why = "Motor supply off";
+    if (!why && switch_far())
+        why = "Limit switch pressed away from the seat";
+    // A bench cal point being taken would change the reading AUTO uses.
+    if (!why && cal_capturing())
+        why = "Sensor calibration point being taken";
+    return why;
+}
+
 bool valve_start_auto(const char **why)
 {
     if (mode == VALVE_AUTO) return true;
-    if (mode == VALVE_CALIBRATING) { *why = "Homing: STOP to cancel"; return false; }
-    ctrl_tune_t k = tune_now();
-    *why = ctrl_check(&ctl, &k, calibrated, valve_fault_count() > 0, pv_ok, pv_mbar, range_mbar());
-    if (!*why && supply_off())
-        *why = "Motor supply off";
-    if (!*why && switch_far())
-        *why = "Limit switch pressed away from the seat";
-    if (*why)
+    if ((*why = auto_why()) != NULL)
         return false;
+    ctrl_tune_t k = tune_now();
     // A step test ends here: tune_tick() does not run in AUTO.
     tune_end("AUTO started", false);
     // Bumpless from where the valve is going (a manual move still running
@@ -779,6 +799,23 @@ bool valve_start_auto(const char **why)
     ev("MODE", "%s at setpoint %s mbar, valve %s %%", "Auto",
        mbar_text(a, sizeof a, ctl.sp, 1), pct_text(p, sizeof p, now));
     return true;
+}
+
+bool valve_start_auto_at(int32_t mmbar, const char **why)
+{
+    if (mode != VALVE_AUTO) {
+        // Checked with the new target in place, then put back: it is only
+        // set (and logged) if AUTO will start.
+        int32_t fs = valve_range_mmbar();
+        if (mmbar < 0 || mmbar > fs) { *why = "Setpoint outside the sensor range"; return false; }
+        ctrl_t was = ctl;
+        ctrl_set_sp(&ctl, (float)fixed_round(mmbar, 2) / 10.0f, range_mbar(), lv_tick_get());
+        *why = auto_why();
+        ctl = was;
+        if (*why)
+            return false;
+    }
+    return valve_set_target(mmbar, why) && valve_start_auto(why);
 }
 
 bool valve_to_manual(const char **why)

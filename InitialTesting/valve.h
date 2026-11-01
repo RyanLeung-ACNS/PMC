@@ -82,6 +82,9 @@ bool valve_auto(void);
 const char *valve_warning(void);
 void valve_warning_clear(void);
 bool valve_start_auto(const char **why);         // MODE AUTO, Start / Resume AUTO
+// Start AUTO at a new target (mmbar, 0.001 mbar): the target changes only
+// if AUTO starts (Home's Start AUTO keypad).
+bool valve_start_auto_at(int32_t mmbar, const char **why);
 bool valve_to_manual(const char **why);          // MODE MANUAL, Switch to MANUAL
 // Target in 0.001 mbar, kept to 0.1 mbar; refused outside 0 to the range.
 bool valve_set_target(int32_t mmbar, const char **why);

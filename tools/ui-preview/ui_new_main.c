@@ -70,6 +70,12 @@ bool valve_start_auto(const char **why)
 bool valve_to_manual(const char **why) { (void)why; v_mode = VALVE_MANUAL; return true; }
 bool valve_set_target(int32_t m, const char **why) { (void)why; v_sp = m / 100 * 100; v_sp_set = true; return true; }
 bool valve_target(int32_t *m) { if (m) *m = v_sp; return v_sp_set; }
+// As valve.c: the target changes only if AUTO starts.
+bool valve_start_auto_at(int32_t m, const char **why)
+{
+    if (valve_fault_count()) { *why = "Reset the fault first"; return false; }
+    return valve_set_target(m, why) && valve_start_auto(why);
+}
 int32_t valve_range_mmbar(void) { return 1034214; }
 int32_t valve_band_mmbar(void) { return 100; }
 ctrl_reg_t valve_regulation(void) { return v_mode == VALVE_AUTO ? v_reg : CTRL_REG_NONE; }

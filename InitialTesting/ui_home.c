@@ -245,7 +245,7 @@ static void to_manual(void)
 // Typed target, then AUTO at it with no second question (simulator keypadStart).
 static bool start_set(int32_t v10, const char **why)
 {
-    return valve_set_target(v10 * 100, why) && valve_start_auto(why);
+    return valve_start_auto_at(v10 * 100, why);   // the target changes only if AUTO starts
 }
 
 static void keypad_start(void)

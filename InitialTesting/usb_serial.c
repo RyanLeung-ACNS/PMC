@@ -147,6 +147,9 @@ void usb_serial_printf(const char *fmt, ...)
 }
 
 #define LINE_IDLE_MS 200
+// A gap this long between two characters of a line means they are being
+// typed key by key (a terminal such as PuTTY), not sent as one text.
+#define TYPED_GAP_MS 50
 
 static uint32_t rx_bytes;
 
@@ -158,19 +161,29 @@ uint32_t usb_serial_rx_bytes(void)
 bool usb_serial_getline(char *buf, size_t n)
 {
     static link_line_t line;
+    static bool typed;   // the pending line came key by key
 
     while (tud_cdc_available()) {
         int32_t c = tud_cdc_read_char();
         if (c < 0)
             break;
         rx_bytes++;
-        if (link_line_feed(&line, (char)c, buf, n))
+        if (line.len > 0 && lv_tick_elaps(line.last_ms) > TYPED_GAP_MS)
+            typed = true;
+        if (link_line_feed(&line, (char)c, buf, n)) {
+            typed = false;
             return true;
+        }
+        if (line.len == 0)
+            typed = false;   // CR or LF on an empty line
     }
 
     // The NECTO UART Terminal sends the text with no line ending, so a line
-    // also ends after LINE_IDLE_MS with nothing more received. A terminal
-    // that sends each key as it is typed needs CR or LF instead.
+    // also ends after LINE_IDLE_MS with nothing more received. Not a line
+    // typed key by key: a pause there would run half a command (VALV SET 5
+    // for 50), so it waits for CR or LF.
+    if (typed)
+        return false;
     return link_line_idle(&line, LINE_IDLE_MS, buf, n);
 }
 

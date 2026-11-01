@@ -141,7 +141,7 @@ void touch_poll(void)
     // The points as the SDK gives them to LVGL (get_touch_coordinates).
     tp_touch_item_t t;
     memset(&t, 0, sizeof t);
-    uint8_t n = tp.touch.n_touches;
+    uint8_t n = touch_last_err == TP_OK ? tp.touch.n_touches : 0;
     if(n)
         tp_press_coordinates(&tp, &t);
     if(n > TP_N_TOUCHES_MAX)
@@ -150,7 +150,14 @@ void touch_poll(void)
         touch_multi++;
 
     int32_t idx = 0;
-    if(n == 0) {
+    if(touch_last_err != TP_OK) {
+        // A failed read says nothing about the finger: tp.touch may still
+        // hold the last good read. End any press, so a hold (Motor
+        // override, the Limit override close) cannot outlive the controller,
+        // and start the next one only after a good read with no finger down.
+        touch_wait_up = touch_wait_up || touch_now;
+        touch_now = false;
+    } else if(n == 0) {
         touch_now = false;
         touch_wait_up = false;
     } else if(touch_now) {
