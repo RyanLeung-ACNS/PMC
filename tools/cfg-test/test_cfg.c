@@ -738,6 +738,20 @@ static void test_valvepos(void)
     CHECK(valvepos_offer(&c) && c == 25000);
     m_rev = false;   // the direction changes while the offer waits: withdrawn
     CHECK(!valvepos_offer(&c) && !valvepos_use(&why));
+
+    // An entry written before 0.13.27 records no direction: after the
+    // upgrade it is offered under the direction in use, as before, even a
+    // reversed one. Written raw into sector 0, after the others.
+    struct { uint32_t seq; int32_t count; uint32_t state, crc; } old_e = { 0x7FFFFFF0u, 12345, 0x45464153u, 0 };
+    old_e.crc = crc32(&old_e, 12);
+    extflash_erase_4k(0x7EC000UL);
+    extflash_write(0x7EC000UL, &old_e, sizeof old_e);
+    m_rev = true;
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 12345);
+    valvepos_decline();
+    m_rev = false;
 }
 
 // Trend slots are fixed one-second boundaries: a late poll fills its own

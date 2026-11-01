@@ -64,6 +64,7 @@ static void right(lv_obj_t *l)
 static struct {
     lv_obj_t *p, *v, *go, *go_card, *go_chev, *fill, *pfill, *btn[8];
     bool jog;                 // a Close or Open hold is moving the valve
+    int32_t jog_to;           // the hold's move target (0 or 100 %, counts)
     int go_live;              // Go to card styled as live (1) or flat (0), -1 not yet
 } vp;
 
@@ -100,7 +101,15 @@ static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
     vp.jog = vp_goto(open ? 1000 : 0, open ? 1 : -1);
+    vp.jog_to = stepper3_target();
     valve_hold(vp.jog);
+}
+
+// The hold's own move is still running (not one a remote command or AUTO
+// started after it ended): only that one is stopped by a release.
+static bool jog_moving(void)
+{
+    return vp.jog && stepper3_busy() && stepper3_target() == vp.jog_to;
 }
 
 // The hold stays marked until the ramp-down ends (valve_refresh clears it):
@@ -108,7 +117,7 @@ static void jog_press(lv_event_t *e)
 static void jog_release(lv_event_t *e)
 {
     (void)e;
-    if (vp.jog)
+    if (jog_moving())
         stepper3_stop_ramped();
     valve_hold(false);
 }
@@ -252,7 +261,9 @@ static void valve_fast(void)
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch
     // away from the button without a release: stop the hold.
-    if (vp.jog && ui_overlay_open()) {
+    if (vp.jog && !stepper3_busy())
+        vp.jog = false;   // ended (its end, the switch, a ramped stop)
+    if (jog_moving() && ui_overlay_open()) {
         stepper3_stop_ramped();
         valve_hold(false);
     }

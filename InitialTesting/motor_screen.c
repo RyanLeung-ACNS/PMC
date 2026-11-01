@@ -48,6 +48,8 @@ static struct {
     lv_obj_t *rate, *start, *accel, *adj[6];
     lv_obj_t *close, *open, *zero, *over, *hold, *off, *order, *dir;
     lv_obj_t *held;   // the Close or Open button driving a hold move
+    int32_t held_to;  // that move's target, so a release stops only it
+    int32_t held2_to; // the same for held2
     lv_obj_t *held2;  // Close or Open under the second finger, Limit override held
     lv_timer_t *two;  // reads the second finger while the screen is open
 } m;
@@ -143,6 +145,7 @@ static void move_event(lv_event_t *e)
     if (!why && stepper3_move(steps)) {
         if (hold) {
             m.held = lv_event_get_target_obj(e);
+            m.held_to = stepper3_target();
             valve_hold(true);
             link_printf("MOT screen: hold move %s\r\n", steps > 0 ? "open" : "close");
         } else {
@@ -164,7 +167,7 @@ static void hold_end(void)
         return;
     m.held = NULL;
     valve_hold(false);
-    if (stepper3_busy()) {
+    if (stepper3_busy() && stepper3_target() == m.held_to) {   // its own move, not a later one
         stepper3_stop_ramped();
         link_printf("MOT screen: hold move released\r\n");
     }
@@ -358,7 +361,7 @@ static void two_end(void)
     if (stepper3_override()) {
         bool stopped = stepper3_override_cancel();
         valve_event("LIM", "Limit override move ended (screen)%s", stopped ? ", valve stopped" : "");
-    } else if (stepper3_busy()) {
+    } else if (stepper3_busy() && stepper3_target() == m.held2_to) {   // its own move, not a later one
         stepper3_stop_ramped();
         link_printf("MOT screen: override move released\r\n");
     }
@@ -378,6 +381,7 @@ static bool two_start(lv_obj_t *b)
             stepper3_override_arm();
         if (stepper3_move(steps)) {
             m.held2 = b;
+            m.held2_to = stepper3_target();
             valve_hold(true);
             lv_obj_add_state(b, LV_STATE_PRESSED);
             valve_event("LIM", close ? "Limit override (screen): closing past the switch"

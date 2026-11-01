@@ -183,7 +183,7 @@ Connect to TCP port 8888 in the Ethernet build (5000 up to 0.12.21; e.g. PuTTY i
 | `TIME?` | `TIME 2026-10-27 11:05:00` or `TIME NONE` |
 | `*IDN?` | `MercShore,iPC,<chip id>,<version>` |
 
-Error codes: 100 unknown command (every screen-only command), 101 expected form, 102 outside range, 103 line too long, 104 `EVNT?` not on its own line, 201 homing, STOP to cancel, 202 switch to MANUAL first, 203 reset the fault first, 204 home the valve first, 205 no valid pressure, 206 set a target first, 207 target outside the sensor range, 208 pressure above the sensor range, 209 control settings not set, 210 not reset, cause still present, 211 read only over the network (Remote control Off on the screen, or `PMC_LINK_WRITE 0`), 212 the valve cannot move now (motor supply off, the limit switch, a step test running) or the clock is not running.
+Error codes: 100 unknown command (every screen-only command), 101 expected form, 102 outside range, 103 line too long, 104 `EVNT?` not on its own line, 201 homing, STOP to cancel, 202 switch to MANUAL first, 203 reset the fault first, 204 home the valve first, 205 no valid pressure, 206 set a target first, 207 target outside the sensor range, 208 pressure above the sensor range, 209 control settings not set, 210 not reset, cause still present, 211 read only over the network (Remote control Off on the screen, or `PMC_LINK_WRITE 0`), 212 the valve cannot move now (motor supply off, the limit switch, a step test running, Close or Open held on the screen, the switch question waiting, a calibration point being taken) or the clock is not running.
 
 `tools/logger/log_druck.py` polls the set once a second, and `simulator/tests/tcp-board.js` serves the simulated board on port 8888 for trying a driver without hardware.
 

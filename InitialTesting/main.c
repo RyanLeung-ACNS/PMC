@@ -219,6 +219,14 @@ int main(void)
     while (1)
     {
         link_task();
+#if PMC_LINK_ETHERNET
+        // A new client does not get the last one's dump: stopped before
+        // valve_task and trend_task write their next lines this pass.
+        if (ethlink_take_new_client()) {
+            valve_events_stop();
+            trend_dump_stop();
+        }
+#endif
         touch_poll();
         rtclock_poll();
         limit_poll();
@@ -233,13 +241,6 @@ int main(void)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-#if PMC_LINK_ETHERNET
-        // A new client does not get the last one's dump.
-        if (ethlink_take_new_client()) {
-            valve_events_stop();
-            trend_dump_stop();
-        }
-#endif
         // The remote command set (remote.c): no echo, one reply line. While
         // an EVNT? or TREND DUMP is going out a few lines a pass, the next
         // line waits, so its reply does not land among the dump's lines; for

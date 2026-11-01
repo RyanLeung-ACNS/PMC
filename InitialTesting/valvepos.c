@@ -43,10 +43,13 @@ static bool failed;            // the last put() did not take
 static uint32_t failed_at;     // tick of that put()
 
 /* The direction and coil order the count was saved under (0 for the
- * factory ones, so entries from before this check read as theirs). A count
- * saved under another direction or order is no position now (a Direction
- * change on Motor override not saved, then a restart): its state does not
- * read as SAFE or MOVING, so it is not offered. */
+ * factory ones). A count saved under another direction or order is no
+ * position now (a Direction change on Motor override not saved, then a
+ * restart): its state does not read as SAFE or MOVING, so it is not
+ * offered. Entries from 0.13.27 on carry VP_REF (bit 31, clear in SAFE,
+ * MOVING and UNSAFE); older ones do not record a direction and are read as
+ * saved under the present one, as before, so an upgrade keeps them. */
+#define VP_REF 0x80000000UL
 static uint32_t ref_sig(void)
 {
     uint8_t o[4];
@@ -54,12 +57,16 @@ static uint32_t ref_sig(void)
     uint32_t sig = (stepper3_reverse() ? 0x100u : 0u) | (uint32_t)(o[0] << 6 | o[1] << 4 | o[2] << 2 | o[3]);
     return sig ^ (0u << 6 | 2u << 4 | 1u << 2 | 3u);   // factory: forward, order 0213
 }
-static uint32_t state_of(const vp_entry_t *e) { return e->state ^ ref_sig(); }
+static uint32_t state_of(const vp_entry_t *e)
+{
+    return e->state & VP_REF ? (e->state & ~VP_REF) ^ ref_sig() : e->state;
+}
 // SAFE or MOVING under whatever direction and order it was saved: it could
 // be offered at a restart under those, so a withdrawal must cover it.
 static bool live(const vp_entry_t *e)
 {
-    return e->seq && (((e->state ^ VP_SAFE) & ~0x1FFu) == 0 || ((e->state ^ VP_MOVING) & ~0x1FFu) == 0);
+    uint32_t s = e->state & ~VP_REF;   // the reference bits stay below 0x200
+    return e->seq && (((s ^ VP_SAFE) & ~0x1FFu) == 0 || ((s ^ VP_MOVING) & ~0x1FFu) == 0);
 }
 
 static bool good(const vp_entry_t *e)
@@ -84,7 +91,7 @@ static bool put(int32_t count, uint32_t state)
     failed_at = lv_tick_get();
     if (at == 0 && !extflash_erase_4k(addr(sector, 0)))
         return false;
-    vp_entry_t e = { last.seq + 1, count, state ^ ref_sig(), 0 }, back;
+    vp_entry_t e = { last.seq + 1, count, (state ^ ref_sig()) | VP_REF, 0 }, back;
     if (e.seq == 0xFFFFFFFFUL)
         e.seq = 1;
     e.crc = crc32_ieee(&e, offsetof(vp_entry_t, crc));

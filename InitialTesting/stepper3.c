@@ -471,7 +471,18 @@ void stepper3_poll(void)
     last_stop = STEPPER3_STOP_TIMEOUT;   // valve.c latches F-5 and logs it
 }
 
-int32_t stepper3_target(void) { return run_state == ST_MOVING ? target : position; }
+// During a ramped stop (MOT STOP RAMP, a hold released, Switch to MANUAL)
+// the move ends where the ramp-down does, about n_acc steps on, not at its
+// target: AUTO started then is bumpless from there, and Go to shows it.
+int32_t stepper3_target(void)
+{
+    uint32_t pm = step_irq_hold();
+    int32_t t = run_state != ST_MOVING ? position
+              : stop_ramp ? position + dir * (int32_t)n_acc
+              : target;
+    step_irq_release(pm);
+    return t;
+}
 uint32_t stepper3_move_seq(void) { return moves_ended; }
 
 // Allowed while the coils settle after a move: calibration sets 0 % the

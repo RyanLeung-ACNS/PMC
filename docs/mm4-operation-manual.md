@@ -143,7 +143,7 @@ AUTO needs the valve homed (or its position set), no fault latched, a valid pres
 
 - The first time after power-up it opens "Target for AUTO, mB" with the allowed range. Type the target and press Set. AUTO starts at once.
 - Later presses ask "Start AUTO at X mB?" with Cancel, New target and Start AUTO.
-- A refused start says why in the strip: Home the valve first, Reset the fault first, No valid pressure, Set a target first, Target outside the sensor range, Pressure above the sensor range, Pressure response not set, Tuning not set, Motor supply off, or Limit switch pressed away from the seat.
+- A refused start says why in the strip: Home the valve first, Reset the fault first, No valid pressure, Set a target first, Target outside the sensor range, Pressure above the sensor range, Pressure response not set, Tuning not set, Motor supply off, Limit switch pressed away from the seat, Limit switch question waiting at the screen, Valve being moved on the screen (Close or Open held), or Sensor calibration point being taken.
 
 The entry is bumpless: the loop starts from where the valve is, so the first move is small.
 
@@ -230,7 +230,7 @@ Faults latch until Reset fault (on the strip, on Faults and log, or in the fault
 | F-2 Excitation | The Druck excitation left 9.5 to 10.5 V, or the Boost 10 tripped | Pressure not trusted. The valve still moves. AUTO ends | The Boost 10 and the board's 5 V. A trip needs a power cycle | When the excitation is back in the window |
 | F-3 Limit not found | Homing closed 1.1 times the full travel without the limit switch | Stopped. The valve is not homed | The switch and its wire, and that the valve turns | Any time. Then home again |
 | F-4 Limit stuck | The limit switch stayed pressed after the valve moved off it | Stopped. The valve is not homed | The switch is not stuck (ice) and its wire is not broken | Any time. Then home again |
-| F-5 Motion timeout | A move took longer than its distance at the set rate plus the ramps plus 2 s | Stopped the valve and holds it. Homing kept | The valve turns freely, and the motor 12 V supply | Any time |
+| F-5 Motion timeout | A move took longer than its distance at the set rate plus the ramps plus 2 s | Stopped the valve and holds it. Homing kept, unless it came while homing | The valve turns freely, and the motor 12 V supply | Any time |
 | F-6 No response | The valve moved in AUTO but the pressure did not respond over 5 windows of 30 s | Stopped the valve and holds it. MANUAL | Drive slipping, motor unplugged, needle seized, helium supply lost | Any time. Check before starting AUTO again |
 
 Warnings do not latch. W-2, W-4, W-5 and W-6 show on the strip until OK is pressed or the next Start AUTO, and each ends AUTO. W-1 clears when its question is answered. W-3 clears on its own.
