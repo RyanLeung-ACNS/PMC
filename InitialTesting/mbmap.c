@@ -158,9 +158,18 @@ bool mbmap_read_coil(uint16_t addr, bool *v)
     return true;
 }
 
+// A master that writes every scan would fill the event log with the same
+// refusal: the same one is logged again only after 60 s.
 static uint8_t refused(const char *what, const char *why)
 {
-    valve_event("NET", "Modbus %s: %s refused, %s", peer, what, why ? why : "refused");
+    static const char *last_what, *last_why;
+    static uint32_t last_ms;
+    if (what != last_what || why != last_why || lv_tick_get() - last_ms >= 60000) {
+        valve_event("NET", "Modbus %s: %s refused, %s", peer, what, why ? why : "refused");
+        last_what = what;
+        last_why = why;
+        last_ms = lv_tick_get();
+    }
     return MODBUS_EX_REFUSED;
 }
 
@@ -182,7 +191,11 @@ uint8_t mbmap_write_regs(uint16_t addr, uint16_t n, const uint16_t *v)
         if (a == HR_TARGET) {
             if (f < 0.0f || f > valve_range_mmbar() / 1000.0f)
                 return MODBUS_EX_VALUE;
-            int32_t mm = (int32_t)lroundf(f * 1000.0f);
+            int32_t mm = (int32_t)lroundf(f * 1000.0f), now;
+            // The same target again (a master writing every scan) changes
+            // nothing: no event, and the W-2 and Stable timers run on.
+            if (valve_target(&now) && now == (int32_t)fixed_round(mm, 2) * 100)
+                continue;
             fixed_fmt(t, sizeof t, fixed_round(mm, 2), 1);
             if (!valve_set_target(mm, &why))
                 return refused("target", why);

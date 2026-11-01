@@ -206,8 +206,9 @@ static void mb_task(void)
         mb_client_t *c = &mb[i];
         if (!c->s)
             continue;
+        // CLOSE_WAIT: closed by the client, its last requests still answered.
         TcpState st = tcpGetState(c->s);
-        if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED) {
+        if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED && st != TCP_STATE_CLOSE_WAIT) {
             mb_drop(c);
             continue;
         }
@@ -217,8 +218,11 @@ static void mb_task(void)
             continue;
         }
         size_t got = 0;
-        if (socketReceive(c->s, c->buf + c->len, sizeof c->buf - c->len, &got, 0) != NO_ERROR || got == 0)
+        if (socketReceive(c->s, c->buf + c->len, sizeof c->buf - c->len, &got, 0) != NO_ERROR || got == 0) {
+            if (st == TCP_STATE_CLOSE_WAIT)
+                mb_drop(c);   // closed and all read
             continue;
+        }
         c->len += got;
         c->last_ms = lv_tick_get();
         // Every whole request in the buffer, in order.
@@ -281,11 +285,15 @@ void ethlink_task(void)
         client = s;
         socketSetTimeout(client, 0);
         line.len = rx_len = rx_pos = 0;
+        line.over = false;   // an over-long line from the last client is not this one's
         new_client = true;
     }
     if (client) {
+        // CLOSE_WAIT: the client has closed its side, but what it sent
+        // before (STOP and close, `nc -N`) may still be unread; the socket
+        // goes once ethlink_getline has read it all.
         TcpState st = tcpGetState(client);
-        if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED)
+        if (st != TCP_STATE_ESTABLISHED && st != TCP_STATE_SYN_RECEIVED && st != TCP_STATE_CLOSE_WAIT)
             drop_client();
     }
 
@@ -340,8 +348,16 @@ bool ethlink_getline(char *buf, size_t n)
         if (rx_pos >= rx_len) {
             size_t got = 0;
             rx_pos = rx_len = 0;
-            if (socketReceive(client, rx, sizeof rx, &got, 0) != NO_ERROR || got == 0)
+            if (socketReceive(client, rx, sizeof rx, &got, 0) != NO_ERROR || got == 0) {
+                // Closed by the client and all read: its last line, if it
+                // had no line ending, ends here; then the socket goes.
+                if (tcpGetState(client) == TCP_STATE_CLOSE_WAIT) {
+                    if (link_line_feed(&line, '\n', buf, n))
+                        return true;
+                    drop_client();
+                }
                 return false;
+            }
             rx_len = got;
         }
         // Bytes after a newline stay in rx for the next call.

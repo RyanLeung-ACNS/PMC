@@ -229,8 +229,11 @@ int main(void)
                 sense_ms = lv_tick_get();
             sense_second();
         }
-        // The remote command set (remote.c): no echo, one reply line.
-        if (link_getline(line, sizeof line))
+        // The remote command set (remote.c): no echo, one reply line. Not
+        // while an EVNT? or TREND DUMP is still going out a few lines a pass:
+        // the next reply would land among its lines (each gives up after 2 s
+        // with no room, so a command waits no longer than that).
+        if (!valve_events_sending() && !trend_dumping() && link_getline(line, sizeof line))
             remote_line(line);
         uint32_t t0 = lv_tick_get();
         lv_timer_handler();

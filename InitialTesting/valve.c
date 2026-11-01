@@ -145,7 +145,8 @@ static uint32_t cal_t0;
 static uint32_t seq_seen;         // stepper3_move_seq() last handled
 
 static bool question;             // switch-pressed question waiting
-static int32_t question_at;       // count where the switch was pressed
+static int32_t question_at;       // where the switch was pressed, full steps (a mode change rescales the count)
+static int32_t q_count(void) { return question_at * stepper3_scale(); }   // in motor counts now
 
 static uint32_t cal_done_ms, cal_took_s;   // last good calibration
 static bool cal_done;
@@ -400,11 +401,11 @@ static void limit_hit(void)
 {
     if (!calibrated || question)
         return;
-    question_at = stepper3_position();
+    question_at = stepper3_position() / stepper3_scale();
     question = true;
     char p[16];
     ev("W-1", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
-       (long)question_at, pct_text(p, sizeof p, question_at));
+       (long)q_count(), pct_text(p, sizeof p, q_count()));
 }
 
 /* --------------------------------------------------------------------------
@@ -444,9 +445,9 @@ static void supply_check(void)
     was_off = off;
 }
 
-void valve_task(void)
+// A move has ended since the last look: why (F-5, homing, the limit).
+static void seq_check(void)
 {
-    evt_dump_task();
     uint32_t seq = stepper3_move_seq();
     if (seq != seq_seen) {
         seq_seen = seq;
@@ -458,6 +459,12 @@ void valve_task(void)
         else if (why == STEPPER3_STOP_LIMIT)
             limit_hit();
     }
+}
+
+void valve_task(void)
+{
+    evt_dump_task();
+    seq_check();
     if (mode == VALVE_CALIBRATING && cal_settling && lv_tick_elaps(cal_settle_from) >= SETTLE_MS)
         cal_settled();
     supply_check();
@@ -582,10 +589,17 @@ static void tune_send(void)
         return;
     tun.move = false;
     if (!stepper3_goto(tun.move_to)) {
-        tune_end(stepper3_refusal(), false);
+        if (tune_running(&tun))
+            tune_end(stepper3_refusal(), false);
+        else   // the return after a result or a failure
+            ev("TUNE", "Valve not moved back: %s", stepper3_refusal());
         return;
     }
     tun_target = tun.move_to;
+    if (!tune_running(&tun)) {
+        ev("TUNE", "Valve back to %s %%", pct_text(b, sizeof b, tun.move_to));
+        return;
+    }
     if (tun.phase == TUNE_WAIT)
         ev("TUNE", "Taking up the slack: to %s %%", pct_text(b, sizeof b, tun.move_to));
     else if (tune_running(&tun))
@@ -630,9 +644,7 @@ static void tune_tick(void)
     tune_step(&tun, pv_mbar, stepper3_position(), stepper3_busy());
     char p[16];
     if (tun.phase == TUNE_FAILED) {
-        ev("TUNE", "Stopped: %s", tun.why);
-        if (tun.move)
-            ev("TUNE", "Valve back to %s %%", pct_text(p, sizeof p, tun.pos0));
+        ev("TUNE", "Stopped: %s", tun.why);   // the move back is logged by tune_send
     } else if (tun.phase == TUNE_DONE)
         tune_result_event();
     else if (was == TUNE_WAIT && tun.phase == TUNE_OUT)
@@ -744,8 +756,17 @@ static void auto_step(void)
     case CTRL_RUN:
         // The closed switch blocks closing from rest (stepper3 refuses it);
         // ctrl.c holds the integral meanwhile.
-        if (ctl.move && stepper3_goto(ctl.move_to))
-            ctrl_sent(&ctl);
+        if (ctl.move) {
+            static const char *said;   // the refusal last logged
+            if (stepper3_goto(ctl.move_to)) {
+                ctrl_sent(&ctl);
+                said = NULL;
+            } else if (!(ctl.move_to < stepper3_position() && stepper3_limit_open()) &&
+                       stepper3_refusal() != said) {
+                said = stepper3_refusal();
+                ev("MODE", "AUTO move refused: %s", said);
+            }
+        }
         break;
     case CTRL_W02:
         auto_end("W-2 Not settling: switched to MANUAL, valve idle");
@@ -794,6 +815,7 @@ bool valve_start_auto(const char **why)
     // Bumpless from where the valve is going (a manual move still running
     // carries on to its end under AUTO).
     int32_t now = stepper3_target();
+    ctrl_track(&ctl, stepper3_position(), false);
     ctrl_start(&ctl, &k, lv_tick_get(), pv_mbar, now);
     mode = VALVE_AUTO;
     warn[0] = 0;
@@ -849,6 +871,11 @@ bool valve_set_target(int32_t mmbar, const char **why)
         return false;
     }
     int32_t v = (int32_t)fixed_round(mmbar, 2);   // 0.1 mbar
+    // The same target again (a master writing it every scan, PRES SP
+    // repeated) changes nothing: no event, and the W-2 and Stable timers
+    // are not restarted.
+    if (ctl.sp_set && lroundf(ctl.sp * 10.0f) == v)
+        return true;
     ctrl_set_sp(&ctl, (float)v / 10.0f, range_mbar(), lv_tick_get());
     ev("SP", "Setpoint %s mbar", fixed_fmt(a, sizeof a, v, 1));
     return true;
@@ -1037,6 +1064,7 @@ void valve_stop(void)
     // drops to MANUAL (no fault since 0.11.20, Ryan 22 Oct).
     bool was_auto = is_auto();
     tune_end("STOP", false);
+    seq_check();   // a move that ended just before (at the switch: W-1) is not this stop's
     stepper3_stop();
     seq_seen = stepper3_move_seq();
     cal_abort("STOP");
@@ -1091,6 +1119,8 @@ static void faults_command(void)
 // newest first, as "<age s>,<tag>,<text>", a line at a time from
 // valve_task() as the link has room, so a slow reader does not hold up the
 // main loop (as TREND DUMP).
+bool valve_events_sending(void) { return edump.active; }
+
 void valve_events_send(int n)
 {
     uint32_t have = evt_count < EVT_N ? evt_count : EVT_N;
@@ -1153,7 +1183,7 @@ static void show(void)
     }
     if (question)
         link_printf("VALVE question: limit switch pressed at count %ld (%s %%), answer on the screen\r\n",
-                    (long)question_at, pct_text(p, sizeof p, question_at));
+                    (long)q_count(), pct_text(p, sizeof p, q_count()));
     link_printf("OK\r\n");
 }
 
@@ -1304,7 +1334,7 @@ bool valve_fault_is(const char *tag)
 bool valve_question(int32_t *pct10)
 {
     if (question && pct10)
-        *pct10 = pct10_of(question_at);
+        *pct10 = pct10_of(q_count());
     return question;
 }
 
@@ -1315,13 +1345,13 @@ bool valve_answer(bool set_zero, const char **why)
     if (set_zero && stepper3_busy()) { *why = "Wait for the valve to stop"; return false; }
     question = false;
     if (set_zero) {
-        int32_t d = stepper3_position() - question_at;
+        int32_t d = stepper3_position() - q_count();
         stepper3_set_position(seat_count() + d);
         ev("W-1", "Point set as the seat, count %ld (0 %% is the return above it)", (long)seat_count());
         if (!strncmp(warn, "W-4", 3))
             warn[0] = 0;   // the switch was right, the count was not
     } else {
-        ev("W-1", "Zero skipped, count kept at %ld", (long)question_at);
+        ev("W-1", "Zero skipped, count kept at %ld", (long)q_count());
     }
     return true;
 }

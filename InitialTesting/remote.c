@@ -338,7 +338,6 @@ static bool eng(const char *c)
  * ------------------------------------------------------------------------ */
 static void part(const char *c, bool chained)
 {
-    bool is_query = c[strlen(c) - 1] == '?';
     if (strcmp(c, "EVNT?") == 0 || strncmp(c, "EVNT? ", 6) == 0) {
         int64_t n = 1;
         if (chained)
@@ -353,9 +352,11 @@ static void part(const char *c, bool chained)
     }
     if (query(c))
         return;
-    // Over the network, set commands (STOP included) need PMC_LINK_WRITE 1
-    // and the Remote control switch On (0.13.4); a USB link is local.
-    if (PMC_REMOTE_SWITCH && !is_query && (!PMC_LINK_WRITE || !cfg_remote())) {
+    // Over the network, set commands (STOP included) and the engineering
+    // commands need PMC_LINK_WRITE 1 and the Remote control switch On
+    // (0.13.4); a USB link is local. Only the queries above are free: a line
+    // that merely ends in '?' (CFG NAME X?) is not one.
+    if (PMC_REMOTE_SWITCH && (!PMC_LINK_WRITE || !cfg_remote())) {
         refuse(211, "Read only over the network");
         return;
     }

@@ -744,6 +744,15 @@ static void test_trend(void)
     CHECK(trend_fine(0, &o) && o.p == 5000);
     CHECK(trend_fine(1, &o) && o.p == TREND_NONE);
     CHECK(trend_fine(4, &o) && o.p == 5000);
+    // main.c calls on its own 1 s grid: a call a few ms earlier in its second
+    // than the one before is a new second, not a repeat (to 0.13.25 about
+    // every other reading was dropped after a late first call).
+    uint32_t n1 = trend_seconds();
+    lv_tick_inc(810);  trend_second(&q);   // 10 ms after a slot edge
+    lv_tick_inc(985);  trend_second(&q);   // 5 ms before the next edge
+    lv_tick_inc(1000); trend_second(&q);
+    lv_tick_inc(995);  trend_second(&q);
+    CHECK(trend_seconds() - n1 == 4);
 }
 
 // Stage 8: in AUTO only the tuning changes (screens and PID); the trend

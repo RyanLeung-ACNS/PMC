@@ -29,5 +29,7 @@ bool trend_fine(uint32_t age_s, trend_pt_t *o);
 bool trend_coarse(uint32_t age_s, trend_pt_t *o);
 bool trend_command(const char *line);             // TREND?, TREND DUMP <s>
 void trend_task(void);                            // main loop: sends a TREND DUMP
+// A TREND DUMP is still going out (main.c holds the next command line).
+bool trend_dumping(void);
 
 #endif // _TREND_H_

@@ -382,19 +382,23 @@ from_rest:
     // since dist was worked out.
     dist = to - position;
 
+    // last_stop stays why the last move ended (valve.c reads it once the
+    // move count changes), whatever happens here.
     if (dist == 0) {
-        last_stop = STEPPER3_STOP_DONE;
         if (!hold && energised)
             coils_off();
         return true;
     }
     if (dist < 0 && stepper3_limit_open()) {
-        last_stop = STEPPER3_STOP_LIMIT;
+        if (!hold && energised)
+            coils_off();   // on from a move that just ended (the settle was cut short)
         refusal = "Limit switch pressed, cannot close";
         return false;
     }
     // No motor supply: the count would run on with the valve still.
     if (supply_off()) {
+        if (!hold && energised)
+            coils_off();
         refusal = "Motor supply off";
         return false;
     }
@@ -433,7 +437,6 @@ from_rest:
     v_fp = v_start_fp;
     n_acc = 0;
     stop_ramp = false;
-    last_stop = STEPPER3_STOP_NONE;
     set_deadline();
     run_state = ST_MOVING;
     // First step one start-rate period after the coils are energised.

@@ -157,5 +157,8 @@ void valve_event(const char *tag, const char *fmt, ...);
 // EVNT? <n>: "EVNT <n>" now, then n lines "<age s>,<tag>,<text>", newest
 // first, sent from valve_task as the link has room.
 void valve_events_send(int n);
+// An EVNT? dump is still going out: main.c reads no new command line
+// meanwhile, so no reply lands among its lines.
+bool valve_events_sending(void);
 
 #endif // _VALVE_H_
