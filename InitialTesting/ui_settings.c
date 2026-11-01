@@ -325,9 +325,11 @@ static void ed_turns_keypad(void)
     ui_keypad_ex(&k);
 }
 
+static int32_t ed_present;   // full steps, the position "Use the present position" showed
+
 static void ed_turns_present(void)
 {
-    set_draft(CFG_POSMAX, stepper3_position() / stepper3_scale());   // full steps
+    set_draft(CFG_POSMAX, ed_present);
 }
 
 static void ed_toggle_ok(void)
@@ -349,6 +351,7 @@ static void edit(cfg_key_t k)
             ed_turns_keypad();
             return;
         }
+        ed_present = pos;
         lv_snprintf(t, sizeof t, "Use the present position (%s turns) as 100 %%, or type turns?",
                     value_text(b, sizeof b, k, pos));
         ui_ask(t, "Present", ed_turns_present, "Type turns", ed_turns_keypad);
@@ -561,7 +564,14 @@ static void motor_cb(lv_event_t *e)
 // offered at start-up.
 static void restart_now(lv_timer_t *t)
 {
-    (void)t;
+    // Something moved the valve meanwhile (the network, a tap): stop it and
+    // wait again, so the position is saved at standstill.
+    if (stepper3_busy() || valve_auto() || valve_mode() == VALVE_CALIBRATING) {
+        valve_stop();
+        lv_timer_reset(t);
+        lv_timer_set_repeat_count(t, 1);
+        return;
+    }
     sysinfo_restart();
 }
 

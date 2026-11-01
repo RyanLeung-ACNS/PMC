@@ -303,6 +303,10 @@ static void zero_event(lv_event_t *e)
 static void off_event(lv_event_t *e)
 {
     (void)e;
+    // In AUTO the loop would move (and energise) the valve again at its
+    // next step: end AUTO first, as MOT OFF does on the link.
+    if (valve_auto())
+        valve_stop();
     stepper3_off();
     link_printf("MOT screen: coils off at %ld\r\n", (long)stepper3_position());
     motor_fast();

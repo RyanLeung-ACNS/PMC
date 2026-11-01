@@ -228,9 +228,17 @@ static const char *range_info(void)
     return info;
 }
 
+static int32_t ask_sp;   // the setpoint "Start AUTO at X mB?" showed
+
 static void start_auto(void)
 {
     const char *why;
+    int32_t sp;
+    // The target may have changed (the network) while the question was up.
+    if (!valve_target(&sp) || sp != ask_sp) {
+        ui_msg("Setpoint changed meanwhile: tap Start AUTO again");
+        return;
+    }
     if (!valve_start_auto(&why))
         ui_msg(why);
 }
@@ -454,6 +462,8 @@ void ui_position_ask(void)
     ui_ask3(home_q, "Cancel", NULL, "Set\nposition", ui_set_position_ask, "Home\nvalve", calibrate);
 }
 
+static valve_mode_t btn_mode = VALVE_NOT_CAL;   // the mode the button's label was set for
+
 static void mode_event(lv_event_t *e)
 {
     (void)e;
@@ -462,6 +472,13 @@ static void mode_event(lv_event_t *e)
     int32_t sp;
     bool have = valve_target(&sp);
     valve_mode_t m = valve_mode();
+    if (m != btn_mode) {
+        // Changed (the network) since the label was drawn: a tap on Start
+        // AUTO must not switch to MANUAL, nor the reverse.
+        ui_msg("The mode changed: check the button and tap again");
+        ui_refresh_soon();
+        return;
+    }
     if (m == VALVE_CALIBRATING)
         ui_msg("Homing: STOP to cancel");
     else if (m == VALVE_AUTO)
@@ -471,6 +488,7 @@ static void mode_event(lv_event_t *e)
     else if (m == VALVE_MANUAL && !have)
         keypad_start();   // no default target (Ryan, 10 Oct): the first Start AUTO asks for one
     else if (m == VALVE_MANUAL) {
+        ask_sp = sp;
         lv_snprintf(q, sizeof q, "Start AUTO at %s mB?", ui_fmt1(a, sizeof a, sp));
         ui_ask3(q, "Cancel", NULL, "New\nsetpoint", keypad_start, "Start\nAUTO", start_auto);
     } else if (valve_motion_blocked())
@@ -564,6 +582,7 @@ static void home_refresh(void)
     box_set(&vt, manual, have ? ui_fmt2(buf, sizeof buf, valve_target_pct_milli()) : "----");
 
     // Mode button.
+    btn_mode = m;
     int step = valve_cal_step();
         if (m == VALVE_CALIBRATING) {
         lv_snprintf(buf, sizeof buf, "%d of 4", step < 1 ? 1 : step);

@@ -236,6 +236,11 @@ void valvepos_task(void)
 
 bool valvepos_offer(int32_t *count)
 {
+    // Moot once the position is set another way (Set position, homing);
+    // valvepos_task withdraws it too, but only on its next pass, and the
+    // screen asks again before that.
+    if (offer && valve_calibrated())
+        offer = false;
     if (offer)
         *count = boot_count * stepper3_scale();
     return offer;
