@@ -34,7 +34,7 @@ static int32_t f_creep  = 25;      // steps/s, slow final close
 static int32_t n_backoff = 400;    // steps off the switch after the fast close, before the creep
 static int32_t n_return = 400;     // steps off the switch after the creep: 0 % (0.13.6, Ryan 28 Oct)
 static int32_t n_clear  = 800;     // steps off the switch if pressed at the start
-static int32_t n_offset = 0;       // count given to 0 %, the back-off above the switch (0.12.12)
+static int32_t n_unused;           // settings slot 5, the zero offset until 0.13.31: always 0
 static valve_ref_t ref_how;        // how the position was last set (valve_reference)
 
 static const setting_t settings[] = {
@@ -43,7 +43,7 @@ static const setting_t settings[] = {
     { "FCREEP",  &f_creep,   16,   1000 },
     { "BACKOFF", &n_backoff, 10,   5000 },
     { "CLEAR",   &n_clear,   10,   10000 },
-    { "OFFSET",  &n_offset,  0,    5000 },
+    { "",        &n_unused,  0,    0 },      // was OFFSET (removed in 0.13.31): 0 % is always count 0
     { "RETURN",  &n_return,  10,   5000 },
 };
 #define N_SETTINGS (sizeof settings / sizeof settings[0])
@@ -58,7 +58,7 @@ static int32_t pm(void) { return sc(pos_max); }
 // The count of the seat (the switch point): 0 % is the return above it
 // (Ryan, 26 Oct; the back-off until 0.13.6), so a seated valve reads about
 // -0.6 % with the defaults.
-static int32_t seat_count(void) { return sc(n_offset - n_return); }
+static int32_t seat_count(void) { return sc(-n_return); }
 static int32_t f_rate(int32_t full)
 {
     int32_t r = sc(full);
@@ -149,6 +149,7 @@ static bool hold_on;              // a screen button drives the valve while pres
 static const char *auto_said;     // the AUTO move refusal last logged (once per reason, per AUTO run)
 static bool ref_unproven;         // Direction or coil order changed since the last homing
 static bool running;              // the main loop has started (not the settings load at start-up)
+static bool remote_hold;          // STOP pressed on the screen: remote moves wait for Allow there
 static int32_t question_at;       // where the switch was pressed, full steps (a mode change rescales the count)
 static int32_t q_count(void) { return question_at * stepper3_scale(); }   // in motor counts now
 
@@ -361,7 +362,7 @@ static void cal_move_ended(stepper3_stop_t why)
             // Then off the switch by the return, so it is not left
             // pressed against the seat; that point is 0 % (Ryan, 26 Oct).
             cal_stage = CAL_PARK;
-            cal_go(sc(n_offset), f_rate(f_home), false);
+            cal_go(0, f_rate(f_home), false);
         } else if (why == STEPPER3_STOP_DONE) {
             raise(F03, true, "Homing: switch not found on the creep close");
         } else {
@@ -538,7 +539,7 @@ static void auto_end(const char *strip)
 static bool switch_far(void)
 {
     return calibrated && mode != VALVE_CALIBRATING && limit_open_now() &&
-           stepper3_position() > sc(n_offset + n_clear + (n_backoff > n_return ? n_backoff : n_return));
+           stepper3_position() > sc(n_clear + (n_backoff > n_return ? n_backoff : n_return));
 }
 
 // W-4 and W-5, once a second; two reads in a row, so one glitch does not
@@ -1085,6 +1086,32 @@ static bool can_reset(fault_t f)
     return true;
 }
 
+/* A STOP on the screen holds the network's moves (port 8888 VALV SET and
+ * MODE AUTO, Modbus valve % and the AUTO coil) until the operator taps
+ * Allow on the screen: a master that writes every scan would otherwise
+ * start the valve again at its next scan. Network STOP, targets, resets
+ * and queries are not held. Only where the network is remote (the Ethernet
+ * build) and while Remote control is On (Off holds everything anyway). */
+void valve_stop_local(void)
+{
+    valve_stop();
+#if PMC_REMOTE_SWITCH
+    if (!remote_hold)
+        ev("NET", "Remote moves held after STOP on the screen (Allow there to release)");
+    remote_hold = true;
+#endif
+}
+
+bool valve_remote_held(void) { return remote_hold && cfg_remote(); }
+
+void valve_remote_allow(void)
+{
+    if (!remote_hold)
+        return;
+    remote_hold = false;
+    ev("NET", "Remote moves allowed (screen)");
+}
+
 bool valve_stop_latches(void)
 {
     return is_auto();   // STOP ends AUTO (nothing latched since 0.11.20); outside, a plain stop
@@ -1208,9 +1235,8 @@ static void show(void)
     link_printf("VALVE mode %s%s%s, position %s, count %ld (%s %%)%s\r\n",
                 valve_mode_name(), cal_stage ? ", " : "", cal_stage_name(), calibrated ? "set" : "not set",
                 (long)stepper3_position(), pct_text(p, sizeof p, stepper3_position()), to);
-    link_printf("VALVE POSMAX %ld, FHOME %ld, FCREEP %ld, BACKOFF %ld, RETURN %ld, CLEAR %ld, OFFSET %ld\r\n",
-                (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_return, (long)n_clear,
-                (long)n_offset);
+    link_printf("VALVE POSMAX %ld, FHOME %ld, FCREEP %ld, BACKOFF %ld, RETURN %ld, CLEAR %ld\r\n",
+                (long)pos_max, (long)f_home, (long)f_creep, (long)n_backoff, (long)n_return, (long)n_clear);
     link_printf("VALVE faults %s, switch %s\r\n", f[0] ? f : "none", limit_text());
     if (ctl.sp_set) {
         static const char *const reg[] = { "", ", regulating", ", in band", ", stable" };
@@ -1230,8 +1256,8 @@ static void setting_command(const char *a)
 {
     for (size_t i = 0; i < N_SETTINGS; i++) {
         size_t len = strlen(settings[i].name);
-        if (strncmp(a, settings[i].name, len) != 0 || (a[len] != ' ' && a[len] != '\0'))
-            continue;
+        if (!len || strncmp(a, settings[i].name, len) != 0 || (a[len] != ' ' && a[len] != '\0'))
+            continue;   // (the empty name is the removed zero offset's slot)
         char *end;
         long v = strtol(a + len, &end, 10);
         while (*end == ' ')

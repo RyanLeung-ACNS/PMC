@@ -18,6 +18,11 @@
  * the crc field. One per 4 KB sector, two sectors used in turn, the higher
  * rev is the newest. Below the old cal record at 0x7FF000.
  *
+ * valve[5] was the zero offset (OFFSET, "count at 0 %"); removed in
+ * 0.13.31, as % was always worked out from count 0 (a non-zero offset put
+ * 0 % below the seat). The slot stays so records keep their layout; it is
+ * written 0, and a saved value is dropped when read (an event says so).
+ *
  * Version 6 (0.13.6) adds the homing return (valve[6], RETURN: steps off
  * the switch after the slow close); older records load it as their
  * back-off, which homing used for that step until then.
@@ -189,6 +194,7 @@ static cfg_rec_t slot[2];        // as read from each sector (version 1 converte
 static const char *slot_why[2];  // NULL if valid, else why not
 static uint32_t slot_ver[2];     // version found in each sector
 static int newest = -1;          // slot with the newest valid record, -1 none
+static int32_t slot_offset[2];   // the removed zero offset each record held (dropped on read)
 static int loaded = -1;          // slot loaded at start-up, -1 none
 static uint32_t loaded_rev;
 static cfg_rec_t factory;        // start-up values before any record is loaded
@@ -401,6 +407,8 @@ static const char *read_slot(int i)
     } else if (r->crc != rec_crc(r)) {
         return "CRC mismatch";
     }
+    slot_offset[i] = r->valve[5];   // the zero offset, removed in 0.13.31
+    r->valve[5] = 0;
     if (values_why(r))
         return "value out of range";
     return NULL;
@@ -665,6 +673,9 @@ void cfg_init(void)
     loaded_rev = slot[newest].rev;
     valve_event("CFG", "Settings saved %s loaded from %c%s", when(&slot[newest]),
                 slot_letter(newest), slot_ver[newest] == 1 ? " (version 1 record)" : "");
+    if (slot_offset[newest])
+        valve_event("CFG", "Zero offset %ld dropped (removed in 0.13.31): 0 %% is the return above the switch",
+                    (long)slot_offset[newest]);
 }
 
 // Saves the live settings as the next rev. why is for the screens.
@@ -736,7 +747,6 @@ static int32_t *key_ref(cfg_rec_t *r, cfg_key_t k)
     case CFG_FHOME:   return &r->valve[1];
     case CFG_FCREEP:  return &r->valve[2];
     case CFG_BACKOFF: return &r->valve[3];
-    case CFG_OFFSET:  return &r->valve[5];
     case CFG_RETURN:  return &r->valve[6];
     case CFG_REVERSE: return &r->mot[M_DIR];
     case CFG_RATE:    return &r->mot[M_RATE];
@@ -791,7 +801,8 @@ bool cfg_rev(cfg_from_t from, uint32_t *rev, const char **saved_at)
 
 void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
 {
-    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0, 10 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 5000, 5000 };
+    // [5] was the zero offset (removed): 0 only.
+    static const int32_t vlo[] = { 1000, 16, 16, 10, 10, 0, 10 }, vhi[] = { 300000, 1000, 1000, 5000, 10000, 0, 5000 };
     _Static_assert(sizeof vlo / sizeof vlo[0] == VALVE_N_SETTINGS, "valve ranges");
     *lo = 0; *hi = 0;
     if (k >= CFG_KP && k <= CFG_BAND) {
@@ -803,8 +814,7 @@ void cfg_range(cfg_key_t k, int32_t *lo, int32_t *hi)
     } else if (k == CFG_REVERSE) {
         *hi = 1;
     } else if (k != CFG_SENSOR) {
-        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 :
-                k == CFG_RETURN ? 6 : 5;
+        int i = k == CFG_POSMAX ? 0 : k == CFG_FHOME ? 1 : k == CFG_FCREEP ? 2 : k == CFG_BACKOFF ? 3 : 6;
         *lo = vlo[i]; *hi = vhi[i];   // the indices key_ref() uses
     }
 }

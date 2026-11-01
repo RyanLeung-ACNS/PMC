@@ -169,7 +169,7 @@ Connect to TCP port 8888 in the Ethernet build (5000 up to 0.12.21; e.g. PuTTY i
 | `PRES SP <mbar>` | Target, 0 to the sensor range, kept to 0.1 mbar. Does not start AUTO |
 | `MODE AUTO` / `MODE MANUAL` | Start regulating after the entry checks / stop regulating, the valve stays where it is |
 | `VALV SET <%>` | Move the valve, 0 to 100 % in 0.1 steps; MANUAL only, valve homed |
-| `STOP` | Stop the valve now; in AUTO it also ends AUTO. Cancels homing. The only stop |
+| `STOP` | Stop the valve now; in AUTO it also ends AUTO. Cancels homing. The only stop. (A STOP on the screen holds `VALV SET` and `MODE AUTO` from the network, ERR 212 "Stopped on the screen: Allow remote moves there", until Allow is tapped on the screen's strip, 0.13.31; Modbus writes the same) |
 | `ALRM RESET` / `ALRM OK` | Clear the latched faults whose cause has gone (ERR 210 if one is still present) / acknowledge the warning, as the screen's OK |
 | `TIME SET <YYYY-MM-DD> <HH:MM:SS>` | Set the clock |
 | `PRES?` | `PRES 4.625 mbar` or `PRES NONE` |
@@ -183,7 +183,7 @@ Connect to TCP port 8888 in the Ethernet build (5000 up to 0.12.21; e.g. PuTTY i
 | `TIME?` | `TIME 2026-10-27 11:05:00` or `TIME NONE` |
 | `*IDN?` | `MercShore,iPC,<chip id>,<version>` |
 
-Error codes: 100 unknown command (every screen-only command), 101 expected form, 102 outside range, 103 line too long, 104 `EVNT?` not on its own line, 201 homing, STOP to cancel, 202 switch to MANUAL first, 203 reset the fault first, 204 home the valve first, 205 no valid pressure, 206 set a target first, 207 target outside the sensor range, 208 pressure above the sensor range, 209 control settings not set, 210 not reset, cause still present, 211 read only over the network (Remote control Off on the screen, or `PMC_LINK_WRITE 0`), 212 the valve cannot move now (motor supply off, the limit switch, a step test running, Close or Open held on the screen, the switch question waiting, a calibration point being taken) or the clock is not running.
+Error codes: 100 unknown command (every screen-only command), 101 expected form, 102 outside range, 103 line too long, 104 `EVNT?` not on its own line, 201 homing, STOP to cancel, 202 switch to MANUAL first, 203 reset the fault first, 204 home the valve first, 205 no valid pressure, 206 set a target first, 207 target outside the sensor range, 208 pressure above the sensor range, 209 control settings not set, 210 not reset, cause still present, 211 read only over the network (Remote control Off on the screen, or `PMC_LINK_WRITE 0`), 212 the valve cannot move now (motor supply off, the limit switch, a step test running, Close or Open held on the screen, the switch question waiting, a calibration point being taken, remote moves held after a STOP on the screen) or the clock is not running.
 
 `tools/logger/log_druck.py` polls the set once a second, and `simulator/tests/tcp-board.js` serves the simulated board on port 8888 for trying a driver without hardware.
 
@@ -241,7 +241,7 @@ Valve, control and step test (engineering; the screen does all of this on the cr
 | `VALVE SETZERO` / `VALVE SKIP` | After "closed switch pressed" (W-1) during a move: call this point 0 %, or keep the count |
 | `VALVE SAVED?` | The last saved valve position, whether it was saved at standstill or while moving, and whether it is on offer |
 | `VALVE RESTORE` | Take the saved position as the count (at start-up only, before anything moves). The screen asks the same: "Home / Set position / Use X %". It is never used without the operator |
-| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|RETURN\|CLEAR\|OFFSET <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400, before the slow close), return (400, after it, 0.13.6), clearance (800), count at 0 % (0). `CFG SAVE` keeps them |
+| `VALVE POSMAX\|FHOME\|FCREEP\|BACKOFF\|RETURN\|CLEAR <n>` | Settings: POS_MAX (66048, 4 turns), homing speeds (400, 25 steps/s), back-off (400, before the slow close), return (400, after it, 0.13.6), clearance (800). 0 % is always count 0, the return above the switch (the zero offset setting, OFFSET, was removed in 0.13.31; a saved one is dropped). `CFG SAVE` keeps them |
 | `CTRL?` | Latched faults, highest priority first |
 | `PID?` | The control parameters (KP, TI, OUTMIN, DB, KDIR and BAND can be set; the rest are fixed in `ctrl.h`) |
 | `PID KP\|TI\|OUTMIN\|DB\|BAND <v>` | Gain (%/mbar, 4.00), integral time (min, 0.25; 0 off), AUTO min (%, 0.0), deadband (steps, 8), target band (mbar, 0.10). Live, AUTO included; `CFG SAVE` keeps them |
