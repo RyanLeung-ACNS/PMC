@@ -121,7 +121,7 @@ typedef enum { F01, F02, F03, F04, F05, F06, F_N } fault_t;   // priority order 
 static const char *const fault_tag[F_N]   = { "F-1", "F-2", "F-3", "F-4", "F-5", "F-6" };
 static const char *const fault_short[F_N] = {
     "No pressure signal", "Excitation out of window", "Limit not found while calibrating",
-    "Limit still active after clearance", "Motion timeout", "No pressure response" };
+    "Limit pressed when it should be free", "Motion timeout", "No pressure response" };
 
 static bool latched[F_N];
 static uint32_t latched_ms[F_N];    // when each latched
@@ -408,6 +408,14 @@ static void limit_hit(void)
     char p[16];
     ev("W-1", "Limit switch pressed at count %ld (%s %%): Set as 0 %% or Skip",
        (long)q_count(), pct_text(p, sizeof p, q_count()));
+    // AUTO does not run on a count the switch has put in doubt (it may not
+    // start while the question waits either).
+    if (is_auto()) {
+        stepper3_stop();
+        mode = VALVE_MANUAL;
+        update_lock();
+        ev("MODE", "Manual after W-1, valve idle at %s %%", pct_text(p, sizeof p, q_count()));
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -456,6 +464,11 @@ static void seq_check(void)
         stepper3_stop_t why = stepper3_last_stop();
         if (why == STEPPER3_STOP_TIMEOUT)
             raise(F05, false, "Motion timeout at count %ld", (long)stepper3_position());
+        else if (why == STEPPER3_STOP_REVERSED)
+            raise(F04, true, "Switch pressed during an opening move at count %ld: Direction, coil order or switch",
+                  (long)stepper3_position());
+        else if (why == STEPPER3_STOP_STALL)
+            ev("SYS", "Move stopped at count %ld: the main loop stalled for over 1 s", (long)stepper3_position());
         else if (mode == VALVE_CALIBRATING && cal_moving)
             cal_move_ended(why);
         else if (why == STEPPER3_STOP_LIMIT)

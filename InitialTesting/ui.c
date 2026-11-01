@@ -14,6 +14,7 @@
 #include "cfg.h"
 #include "trend.h"
 #include "ui.h"
+#include "lv_port_indev.h"   // touch_watch: STOP for any finger
 
 /* --------------------------------------------------------------------------
  * Fonts: tabular digits. Every digit takes the width of the widest, so a
@@ -673,7 +674,9 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
         lv_obj_set_style_pad_all(strip, -bw, 0);    // children keep their place
         lv_obj_set_style_border_color(strip, bc, 0);
     }
-    bool is_mode = icon == UI_ICON_MODE;
+    // By content: a literal from a file built at -O0 (motor_screen.c) is
+    // not merged with this file's, so == on the pointers can miss.
+    bool is_mode = icon && strcmp(icon, UI_ICON_MODE) == 0;
     // The status line's icon (Ryan, 22 Oct), grey as the text: the loop
     // while AUTO regulates, a target once Stable, an arrow while the valve
     // moves, the valve symbol when it is idle in MANUAL.
@@ -689,7 +692,8 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
         else
             icon = UI_ICON_VALVE;
     }
-    int sh = icon == UI_ICON_VALVE ? SHAPE_VALVE : icon == UI_ICON_TARGET ? SHAPE_TARGET : -1;
+    int sh = !icon ? -1 : strcmp(icon, UI_ICON_VALVE) == 0 ? SHAPE_VALVE
+           : strcmp(icon, UI_ICON_TARGET) == 0 ? SHAPE_TARGET : -1;
     const char *glyph = icon && sh < 0 ? icon : LV_SYMBOL_WARNING;
     lv_color_t ic = dim ? dis_tx : kind == UI_STRIP_FAULT ? UI_FAULT
                   : kind >= UI_STRIP_WARN ? lv_color_white() : UI_MUTED;
@@ -704,7 +708,7 @@ static void strip_draw(ui_strip_kind_t kind, const char *icon, const char *text,
     ui_set_color(strip_icon, ic);
     // The font's symbols sit 1 px above the text's middle; the triangle
     // (beside two lines) and the drawn icons do not (Ryan, 22 Oct).
-    int32_t dy = glyph != LV_SYMBOL_WARNING ? 1 : 0;
+    int32_t dy = strcmp(glyph, LV_SYMBOL_WARNING) != 0 ? 1 : 0;
     static int32_t dy_set;
     if (dy != dy_set) {
         dy_set = dy;
@@ -964,6 +968,16 @@ void ui_refresh_soon(void) { frame_due = true; }
 static void fast_timer(lv_timer_t *t)
 {
     (void)t;
+    // STOP for any finger: a tap on STOP that LVGL does not follow (another
+    // contact on the glass) stops the valve as the button does.
+    lv_area_t sa;
+    lv_obj_get_coords(stop_btn, &sa);
+    touch_watch(sa.x1, sa.y1, sa.x2, sa.y2);
+    if (touch_watch_take() && !lv_obj_has_state(stop_btn, LV_STATE_PRESSED)) {
+        ui_overlay_close();
+        valve_stop();
+        frame_refresh();
+    }
     if (frame_due && !overlay) {
         frame_due = false;
         frame_refresh();

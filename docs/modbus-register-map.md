@@ -15,6 +15,8 @@ Map version 1, firmware 0.12.0 (writes on from 0.12.6). Ethernet build only (`PM
 
 With writes on, the writable registers and command coils go through the same calls as the screen buttons, so the same checks and refusals apply. A write the controller refuses answers exception 4 and logs a NET event with the reason ("Switch to MANUAL first", "No target set", ...). Each accepted write is logged as a NET event with the client's IP address.
 
+Writing the same value every scan is safe (0.13.29): it does not undo the operator. Rewriting the target with the value it already has changes nothing (no event; the W-2 and Stable timers run on). Rewriting the valve % or the AUTO coil with the value this connection last had accepted acts only while the valve is still doing that; after a STOP, a warning or a Switch to MANUAL on the screen it answers exception 4 ("repeat of the last write"), so to command again write another valve %, or AUTO 0 then 1. A new connection starts afresh. A refused write is logged once a minute at most.
+
 | Exception | Meaning |
 | --- | --- |
 | 1 | Function code not supported, or writes are off |
@@ -69,7 +71,7 @@ Reading past address 25 answers exception 2, so read 0 to 25 (26 registers) in o
 | 0 | F-1 No pressure signal | W-1 Switch hit early (Set as 0 % or Skip waiting) |
 | 1 | F-2 Excitation | W-2 Not settling |
 | 2 | F-3 Limit not found | W-3 Controller hot |
-| 3 | F-4 Limit stuck | W-4 Switch pressed off the seat |
+| 3 | F-4 Limit pressed when it should be free (stuck, or pressed during an opening move) | W-4 Switch pressed off the seat |
 | 4 | F-5 Motion timeout | W-5 Over range in AUTO |
 | 5 | F-6 No response | W-6 Driven the wrong way |
 

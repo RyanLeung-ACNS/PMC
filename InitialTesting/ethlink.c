@@ -204,6 +204,7 @@ static void mb_task(void)
         mb_drop(c);
         c->s = s;
         c->last_ms = lv_tick_get();
+        mbmap_new_client();
         socketSetTimeout(s, 0);
         ipAddrToString(&from, c->ip);
     }

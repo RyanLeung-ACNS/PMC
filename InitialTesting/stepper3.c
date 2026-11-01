@@ -94,6 +94,10 @@ static void (*ref_cb)(const char *why);   // stepper3_on_reference_change
 static bool (*move_cb)(const char **why);  // stepper3_on_move_start
 static const char *refusal = "";
 static const char *lock_why;            // MOT and screen moves refused while set
+static uint16_t free_steps;             // opening steps in a row with the switch released
+#define FREE_ARM       32               // ... before a press again stops the move
+static volatile uint32_t alive_ms;      // the main loop's last pass (stepper3_poll)
+#define STALL_MS       1000             // no pass for this long: the step interrupt stops the move
 
 static char status_text[160];
 
@@ -257,6 +261,29 @@ void TIM7_IRQHandler(void)
         finish(STEPPER3_STOP_LIMIT);
         return;
     }
+    // Opening never needs the closing switch, but it is the only stop the
+    // valve has: once it has read released for FREE_ARM steps, pressed again
+    // during an opening move means the valve is in fact closing (Direction
+    // or coil order wrong, a count saved under another one) or the switch is
+    // failing. Stopped at once, and valve.c latches F-4; otherwise it would
+    // drive the needle into the seat with nothing to stop it.
+    if (dir > 0 && LIMIT_FITTED) {
+        if (!limit_open_now()) {
+            if (free_steps < FREE_ARM)
+                free_steps++;
+        } else if (free_steps >= FREE_ARM) {
+            finish(STEPPER3_STOP_REVERSED);
+            return;
+        } else {
+            free_steps = 0;
+        }
+    }
+    // The main loop has stopped (a hang until the watchdog, 3 to 7 s): no
+    // STOP can arrive and the saved position is not kept, so stop here.
+    if (lv_tick_get() - alive_ms > STALL_MS) {
+        finish(STEPPER3_STOP_STALL);
+        return;
+    }
 
     int8_t inc = (mode == STEPPER3_HALF) ? 1 : 2;
     if (reverse == (dir < 0))
@@ -285,6 +312,7 @@ void TIM7_IRQHandler(void)
         if (ahead < 0) {
             dir = (int8_t)-dir;
             ahead = -ahead;
+            free_steps = 0;   // the opening check counts from the turn
         }
     }
 
@@ -437,6 +465,8 @@ from_rest:
     v_fp = v_start_fp;
     n_acc = 0;
     stop_ramp = false;
+    free_steps = 0;
+    alive_ms = lv_tick_get();
     set_deadline();
     run_state = ST_MOVING;
     // First step one start-rate period after the coils are energised.
@@ -465,6 +495,7 @@ void stepper3_stop_ramped(void)
 
 void stepper3_poll(void)
 {
+    alive_ms = lv_tick_get();   // the step interrupt stops a move if this stops
     if (run_state != ST_MOVING || (int32_t)(lv_tick_get() - deadline_ms) <= 0)
         return;
     stepper3_stop();
@@ -689,6 +720,8 @@ const char *stepper3_stop_name(stepper3_stop_t s)
     case STEPPER3_STOP_CMD:   return "stopped";
     case STEPPER3_STOP_LIMIT: return "LIMIT";
     case STEPPER3_STOP_TIMEOUT: return "F-5 timeout";
+    case STEPPER3_STOP_REVERSED: return "switch while opening";
+    case STEPPER3_STOP_STALL: return "main loop stalled";
     default:                  return "none";
     }
 }

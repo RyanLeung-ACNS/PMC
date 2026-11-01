@@ -215,3 +215,5 @@ bool sense_hot(int32_t *die_mc) { *die_mc = 57300; return fake_hot; }
 
 // No second finger in the previews.
 bool touch_second(int32_t *x, int32_t *y) { (void)x; (void)y; return false; }
+void touch_watch(int32_t x1, int32_t y1, int32_t x2, int32_t y2) { (void)x1; (void)y1; (void)x2; (void)y2; }
+bool touch_watch_take(void) { return false; }

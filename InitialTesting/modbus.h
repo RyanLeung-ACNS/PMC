@@ -38,6 +38,9 @@ uint8_t mbmap_write_coil(uint16_t addr, bool v);
 bool mbmap_writes_allowed(void);
 // The client address for the NET events of its writes.
 void mbmap_set_peer(const char *ip);
+// A new client connected: a repeat of an earlier client's write is not
+// a repeat for it (mbmap.c keeps cyclic writes from undoing a STOP).
+void mbmap_new_client(void);
 
 /*
  * One complete ADU in (MBAP + PDU), the reply ADU out. Returns the reply

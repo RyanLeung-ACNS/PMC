@@ -51,7 +51,9 @@ typedef enum {
     STEPPER3_STOP_DONE,     // reached the target
     STEPPER3_STOP_CMD,      // MOT STOP / MOT OFF / stepper3_stop()
     STEPPER3_STOP_LIMIT,    // limit input open during a closing move
-    STEPPER3_STOP_TIMEOUT   // F-5: still moving after |distance| / rate + 2 s
+    STEPPER3_STOP_TIMEOUT,  // F-5: still moving after |distance| / rate + 2 s
+    STEPPER3_STOP_REVERSED, // the switch pressed again during an opening move (F-4)
+    STEPPER3_STOP_STALL     // the main loop stopped for over 1 s (a hang; the watchdog follows)
 } stepper3_stop_t;
 
 // Pins low (coils off). Does not move the motor.

@@ -255,8 +255,12 @@ void valvepos_task(void)
     } else if (moving) {
         // The count every MOVE_MS while it moves (a write each time, so
         // no more often: a 4 KB sector takes 256, each erase 100,000 times).
-        if (pos != last.count && lv_tick_elaps(put_at) >= MOVE_MS)
-            (void)put(pos, VP_MOVING);
+        if (pos != last.count && lv_tick_elaps(put_at) >= MOVE_MS && !put(pos, VP_MOVING)) {
+            // The flash no longer keeps up: stop, so the entry on it stays
+            // within MOVE_MS of travel, as the start-up question says.
+            stepper3_stop();
+            valve_event("REF", "Saved position could not be written during the move (flash): valve stopped");
+        }
     } else if (offerable(&last) && pos != last.count) {
         (void)put(pos, VP_MOVING);   // set without a move (VALVE CLOSED, restore): a new count
     } else if (!safe_on_flash() && still && lv_tick_elaps(still_since) >= STILL_MS) {
@@ -284,7 +288,10 @@ bool valvepos_offer(int32_t *count)
 
 bool valvepos_offer_moving(int32_t *steps)
 {
-    *steps = (int32_t)((uint64_t)stepper3_rate() * MOVE_MS / 1000);
+    // The most the valve can have gone since the entry: MOVE_MS between
+    // entries plus the step interrupt's 1 s stall stop, at the fastest
+    // rate (a move may have run at a rate that was not saved).
+    *steps = (int32_t)((uint64_t)STEPPER3_RATE_MAX * (MOVE_MS + 1000) / 1000);
     return offer_stands() && boot_moving;
 }
 

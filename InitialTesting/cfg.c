@@ -883,6 +883,16 @@ bool cfg_load_live(cfg_from_t from, const char **why)
     const cfg_rec_t *r = source(from);
     if (!r || from == CFG_FROM_LIVE) { *why = "no such save"; return false; }
     if ((*why = busy_why()) != NULL) return false;
+    // Records before version 4 (saved by 0.12.12 or earlier) span two unit
+    // changes, 0.11.19 (the Direction bit's meaning flipped) and 0.11.33
+    // (HALF settings in full steps), and cannot tell which side they are
+    // from. The one the board started on is how it has been running; any
+    // other is not loaded, so the motor cannot turn the other way.
+    int i = r == &slot[0] ? 0 : r == &slot[1] ? 1 : -1;
+    if (i >= 0 && slot_ver[i] < 4 && !(i == loaded && slot[i].rev == loaded_rev)) {
+        *why = "saved before 0.12.13, its Direction cannot be read";
+        return false;
+    }
     if (from == CFG_FROM_DEFAULTS) {
         cfg_rec_t *d = &cand;   // shared, saves a record's worth of RAM
         capture(d);   // keep the sensors and their cals

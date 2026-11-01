@@ -218,6 +218,16 @@ static void tests(void)
     // STOP drops to MANUAL; STOP 0 does nothing.
     REQ(0x05, 0, 1, 0, 0);   CHECK(rlen == 12 && stops == 0);
     REQ(0x05, 0, 1, 0xFF, 0); CHECK(stops == 1 && mode == VALVE_MANUAL);
+    // A master writing every scan does not undo that STOP: the valve % it
+    // last set, again, is refused once the valve has stopped short of it;
+    // AUTO 1 again too, until 0 then 1 (or another value).
+    goto_milli = 15000;      // stopped at 15 %
+    req(sizeof v, v);        CHECK(is_ex(0x10, MODBUS_EX_REFUSED) && goto_milli == 15000);
+    REQ(0x05, 0, 0, 0xFF, 0); CHECK(is_ex(0x05, MODBUS_EX_REFUSED) && mode == VALVE_MANUAL);
+    REQ(0x05, 0, 0, 0, 0);   CHECK(rlen == 12 && mode == VALVE_MANUAL);
+    REQ(0x05, 0, 0, 0xFF, 0); CHECK(rlen == 12 && mode == VALVE_AUTO);
+    REQ(0x05, 0, 1, 0xFF, 0); CHECK(mode == VALVE_MANUAL);
+    stops = 1;
     // RESET, and a target refused while a fault is latched.
     fault_f5 = true;
     REQ(0x03, 0, 5, 0, 1);   CHECK(r16(0) == 1u << 4);
@@ -265,6 +275,7 @@ static void serve(int port)
         uint8_t buf[MODBUS_ADU_MAX], out[MODBUS_ADU_MAX];
         size_t len = 0;
         mbmap_set_peer("127.0.0.1");
+        mbmap_new_client();
         for (;;) {
             ssize_t got = recv(c, buf + len, sizeof buf - len, 0);
             if (got <= 0) break;

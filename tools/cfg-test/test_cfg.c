@@ -97,6 +97,8 @@ bool stepper3_hold(void) { return m_hold; }
 bool stepper3_reverse(void) { return m_rev; }
 void stepper3_order(uint8_t o[4]) { memcpy(o, m_order, 4); }
 bool stepper3_busy(void) { return m_busy; }
+static int stops;
+void stepper3_stop(void) { m_busy = false; stops++; }
 int32_t stepper3_position(void) { return m_pos; }
 static bool (*move_hook)(const char **why);
 void stepper3_on_move_start(bool (*cb)(const char **why)) { move_hook = cb; }
@@ -283,9 +285,11 @@ static void test_cfg(void)
     CHECK(cfg_rev(CFG_FROM_SAVED, &rev, &at) && rev == 6);
     CHECK(!cal_is_default());
 
-    // Load settings > Previous save: in use, unsaved.
-    CHECK(cfg_load_live(CFG_FROM_PREVIOUS, &why));
-    CHECK(m_rate == 350 && cfg_tune(CFG_KP) == 400 && cfg_unsaved() == 2);
+    // Load settings > Previous save: the version 1 record in A is from
+    // before 0.12.13 (its Direction bit is from either side of 0.11.19), so
+    // it is not loaded and nothing changes (to 0.13.28 it loaded).
+    CHECK(!cfg_load_live(CFG_FROM_PREVIOUS, &why) && strstr(why, "0.12.13"));
+    CHECK(m_rate == 500 && cfg_tune(CFG_KP) == 250 && cfg_unsaved() == 0);
     CHECK(cfg_load_live(CFG_FROM_SAVED, &why));
     CHECK(cfg_unsaved() == 0);
 
@@ -620,7 +624,8 @@ static void test_valvepos(void)
     start_move(34000);
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false;
     valvepos_init();
-    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == (int32_t)m_rate * 2);
+    // Up to 3 s (2 s between entries, 1 s stall stop) at the fastest rate.
+    CHECK(valvepos_offer(&c) && c == 33880 && valvepos_offer_moving(&off) && off == STEPPER3_RATE_MAX * 3);
     valvepos_decline();
 
     // While it moves: the count every 2 s, no more often (Ryan, 22 Oct).
@@ -639,6 +644,24 @@ static void test_valvepos(void)
     v_cal = false; v_mode = VALVE_NOT_CAL; m_busy = false; m_pos = 0;
     valvepos_init();
     CHECK(valvepos_offer(&c) && c == 10300 && valvepos_offer_moving(&off));
+    valvepos_decline();
+
+    // The flash stops keeping up during a move: the move is stopped, so the
+    // last entry stays within 2 s of travel.
+    v_cal = true; v_mode = VALVE_MANUAL; m_busy = false; m_pos = 10300;
+    tick(2500);
+    CHECK(start_move(12000));
+    m_pos = 10600;
+    int s0 = stops;
+    write_fails = 1000;
+    tick(2100);
+    write_fails = 0;
+    CHECK(stops > s0 && !m_busy);
+    m_busy = false;
+    tick(2500);   // the flash good again: past the retry wait, safe at the stop
+    v_cal = false; v_mode = VALVE_NOT_CAL; m_pos = 0;
+    valvepos_init();
+    CHECK(valvepos_offer(&c) && c == 10600);
     valvepos_decline();
 
     // Calibrated at a new count without a move (VALVE CLOSED): the old
