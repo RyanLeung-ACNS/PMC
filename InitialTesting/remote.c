@@ -253,7 +253,9 @@ static bool set(const char *c)
         else if (!valve_set_target((int32_t)v, &why))
             refuse_why(why);
     } else if (strcmp(c, "MODE AUTO") == 0) {
-        if (!valve_start_auto(&why))
+        if (PMC_REMOTE_SWITCH && valve_remote_held() && !valve_auto())
+            refuse(212, VALVE_REMOTE_HELD_WHY);
+        else if (!valve_start_auto(&why))
             refuse_why(why);
     } else if (strcmp(c, "MODE MANUAL") == 0) {
         // Outside AUTO there is nothing to end; the valve stays where it is.
@@ -266,6 +268,8 @@ static bool set(const char *c)
             refuse(101, "Expected: VALV SET <%%>");
         else if (v < 0 || v > 1000)
             refuse(102, "Outside 0 to 100 %%");
+        else if (PMC_REMOTE_SWITCH && valve_remote_held())
+            refuse(212, VALVE_REMOTE_HELD_WHY);
         else if (!valve_goto_pct10((int32_t)v, &why))
             refuse_why(why);
     } else if (strcmp(c, "STOP") == 0) {
@@ -302,7 +306,7 @@ static bool remote_help(const char *c)
     static const char *const lines[] = {
         "Engineering commands (bench build only; old names, replies end in OK or ERR):",
         "  VALVE? | VALVE CAL | VALVE CLOSED | VALVE SETZERO | VALVE SKIP | VALVE SAVED? | VALVE RESTORE",
-        "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|CLEAR|OFFSET <n> | CTRL? | TUNE STEP [<+-%>] | TUNE? | TUNE STOP",
+        "  VALVE POSMAX|FHOME|FCREEP|BACKOFF|RETURN|CLEAR <n> | CTRL? | TUNE STEP [<+-%>] | TUNE? | TUNE STOP",
         "  PID? | PID KP|TI|OUTMIN|DB|BAND <v> | PID KDIR +1|-1 | CAL? | CAL VAC [mbar] | CAL AIR [mbar]",
         "  CAL SAVE | CAL ERASE | CAL NEW [id] | CAL PT <mV/V> <mbar> | CAL APPLY",
         "  CFG? | CFG DIFF? | CFG SAVE | CFG LOAD LAST|PREVIOUS|DEFAULTS | CFG NAME? | CFG NAME <text>",
@@ -337,7 +341,6 @@ static bool eng(const char *c)
  * ------------------------------------------------------------------------ */
 static void part(const char *c, bool chained)
 {
-    bool is_query = c[strlen(c) - 1] == '?';
     if (strcmp(c, "EVNT?") == 0 || strncmp(c, "EVNT? ", 6) == 0) {
         int64_t n = 1;
         if (chained)
@@ -352,9 +355,11 @@ static void part(const char *c, bool chained)
     }
     if (query(c))
         return;
-    // Over the network, set commands (STOP included) need PMC_LINK_WRITE 1
-    // and the Remote control switch On (0.13.4); a USB link is local.
-    if (PMC_REMOTE_SWITCH && !is_query && (!PMC_LINK_WRITE || !cfg_remote())) {
+    // Over the network, set commands (STOP included) and the engineering
+    // commands need PMC_LINK_WRITE 1 and the Remote control switch On
+    // (0.13.4); a USB link is local. Only the queries above are free: a line
+    // that merely ends in '?' (CFG NAME X?) is not one.
+    if (PMC_REMOTE_SWITCH && (!PMC_LINK_WRITE || !cfg_remote())) {
         refuse(211, "Read only over the network");
         return;
     }

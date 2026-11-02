@@ -157,6 +157,11 @@ void lv_port_indev_init(void)
 
 void touch_poll(void) {}
 
+// STOP for any finger (lv_port_indev.c on the board): the simulator has
+// one pointer, so nothing to watch.
+void touch_watch(int32_t x1, int32_t y1, int32_t x2, int32_t y2) { (void)x1; (void)y1; (void)x2; (void)y2; }
+bool touch_watch_take(void) { return false; }
+
 // A second finger (sim_touch2), seen only while the first is down, as on
 // the board.
 static int touch2_x, touch2_y, touch2_down;

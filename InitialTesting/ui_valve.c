@@ -62,6 +62,7 @@ static void right(lv_obj_t *l)
 static struct {
     lv_obj_t *p, *v, *go, *go_card, *go_chev, *fill, *pfill, *btn[8];
     bool jog;                 // a Close or Open hold is moving the valve
+    int32_t jog_to;           // the hold's move target (0 or 100 %, counts)
     int go_live;              // Go to card styled as live (1) or flat (0), -1 not yet
 } vp;
 
@@ -75,14 +76,20 @@ static const char *const valve_help =
     "The limit switch stops any closing move.\n"
     "STOP holds the valve where it is.";
 
-static bool vp_goto(int32_t pct10)
+// dir: -1 a closing action (Close, -5 %, Fully close), which never opens
+// the valve; +1 an opening one; 0 a typed position.
+static bool vp_goto(int32_t pct10, int dir)
 {
     vp.jog = false;   // a new move has its own target (jog_press sets it again)
     const char *why = why_not_manual();
+    // Seated below 0 % (Set as 0 % gives the seat, about -0.6 %): 0 % is
+    // above it, so a close would open.
+    if (!why && dir < 0 && pct10 <= 0 && (stepper3_busy() ? valve_target_pct10() : valve_pct10()) <= 0)
+        why = "Valve at 0 %, nothing to close";
     if (!why && pct10 < valve_pct10() && limit_open_now())
         why = "Limit switch pressed, cannot close";
-    if (!why && !valve_goto_pct10(pct10 < 0 ? 0 : pct10 > 1000 ? 1000 : pct10, &why))
-        why = "Limit switch pressed, cannot close";
+    if (!why && !valve_goto_pct10(pct10 < 0 ? 0 : pct10 > 1000 ? 1000 : pct10, &why) && !why)
+        why = "Refused";   // valve_goto_pct10 gives the reason (supply, limit, flash)
     if (why)
         ui_msg(why);
     return why == NULL;
@@ -91,7 +98,16 @@ static bool vp_goto(int32_t pct10)
 static void jog_press(lv_event_t *e)
 {
     bool open = lv_event_get_user_data(e) != NULL;
-    vp.jog = vp_goto(open ? 1000 : 0);
+    vp.jog = vp_goto(open ? 1000 : 0, open ? 1 : -1);
+    vp.jog_to = stepper3_target();
+    valve_hold(vp.jog);
+}
+
+// The hold's own move is still running (not one a remote command or AUTO
+// started after it ended): only that one is stopped by a release.
+static bool jog_moving(void)
+{
+    return vp.jog && stepper3_busy() && stepper3_target() == vp.jog_to;
 }
 
 // The hold stays marked until the ramp-down ends (valve_refresh clears it):
@@ -99,8 +115,9 @@ static void jog_press(lv_event_t *e)
 static void jog_release(lv_event_t *e)
 {
     (void)e;
-    if (vp.jog)
+    if (jog_moving())
         stepper3_stop_ramped();
+    valve_hold(false);
 }
 
 static void step_cb(lv_event_t *e)
@@ -109,19 +126,15 @@ static void step_cb(lv_event_t *e)
     bool jog = vp.jog;
     vp.jog = false;   // a new move has its own target
     // From where a move will end; a hold's end (0 or 100 %) is not one.
-    vp_goto((stepper3_busy() && !jog ? valve_target_pct10() : valve_pct10()) + d);
+    vp_goto((stepper3_busy() && !jog ? valve_target_pct10() : valve_pct10()) + d, d < 0 ? -1 : 1);
 }
 
 static bool goto_set(int32_t v100, const char **why)
 {
     vp.jog = false;   // a new move has its own target
-    if (!valve_goto_pct100(v100, why)) {
-        *why = why_not_manual();
-        if (!*why)
-            *why = "Limit switch pressed, cannot close";
-        return false;
-    }
-    return true;
+    // The reason as valve.c and stepper3.c give it (fault, mode, supply,
+    // the limit switch, a flash write).
+    return valve_goto_pct100(v100, why);
 }
 
 static void goto_cb(lv_event_t *e)
@@ -148,7 +161,7 @@ static void full_cb(lv_event_t *e)
     if (why)
         ui_msg(why);
     else
-        vp_goto(open ? 1000 : 0);
+        vp_goto(open ? 1000 : 0, open ? 1 : -1);
 }
 
 static void help_cb(lv_event_t *e)
@@ -246,8 +259,12 @@ static void valve_fast(void)
     bar_width(vp.fill, p * 128 / 10000);
     // A dialog over a hold (the switch question, a fault) takes the touch
     // away from the button without a release: stop the hold.
-    if (vp.jog && ui_overlay_open())
+    if (vp.jog && !stepper3_busy())
+        vp.jog = false;   // ended (its end, the switch, a ramped stop)
+    if (jog_moving() && ui_overlay_open()) {
         stepper3_stop_ramped();
+        valve_hold(false);
+    }
     // Where the valve is going (or last went); "--" during a hold, which
     // has no target, and before homing. In AUTO the position AUTO is
     // sending it to, greyed (Ryan, 22 Oct; was "AUTO").
@@ -460,12 +477,12 @@ static const fault_help_t fault_help[] = {
       "Stopped. The valve is not homed.",
       "The switch and its wire, and that the valve turns.",
       "Any time. Then home again." },
-    { "F-4", "The limit switch stayed pressed after the valve moved off it.",
+    { "F-4", "The limit switch stayed pressed after the valve moved off it, or pressed during an opening move.",
       "Stopped. The valve is not homed.",
-      "The switch is not stuck (ice) and its wire is not broken.",
+      "The switch is not stuck (ice), its wire is not broken. On an opening move: Direction and coil order.",
       "Any time. Then home again." },
     { "F-5", "A move took longer than its distance at the set rate, plus 2 s.",
-      "Stopped the valve and holds it. Homing kept.",
+      "Stopped the valve and holds it. Homing kept, unless it was homing.",
       "The valve turns freely and the motor 12 V supply.",
       "Any time." },
     { "F-6", "The valve moved in AUTO but the pressure did not respond, 5 windows of 30 s.",
@@ -547,10 +564,19 @@ static void d_close_cb(lv_event_t *e)
     fp.detail = -1;
 }
 
+// The detail closes in many ways (Close, Reset, Back, Home, or another
+// overlay such as the switch question replacing it): its labels go with it.
+static void detail_deleted(lv_event_t *e)
+{
+    (void)e;
+    fp.detail = -1;
+}
+
 static void detail_open(int i)
 {
     lv_obj_t *o = ui_overlay();
     fp.detail = i;
+    lv_obj_add_event_cb(o, detail_deleted, LV_EVENT_DELETE, NULL);
     lv_obj_t *c = ui_card(o, 10, 8, 460, 160);
     fp.d_title = ui_label(c, 10, 6, 260, &ui_font_16, UI_FAULT, LV_TEXT_ALIGN_LEFT, "");
     fp.d_when = ui_label(c, 270, 8, 180, &ui_font_12, UI_MUTED, LV_TEXT_ALIGN_RIGHT, "");
@@ -739,10 +765,8 @@ static void faults_refresh(void)
     faults_rows();
     faults_log();
     ui_btn_enable(fp.reset, valve_fault_count() > 0);
-    if (fp.detail >= 0 && ui_overlay_open())
+    if (fp.detail >= 0)   // the detail overlay is open (detail_deleted)
         detail_fill();
-    else
-        fp.detail = -1;
     char t[48];
     int n = valve_fault_count();
     lv_snprintf(t, sizeof t, n ? "%d latched. Tap one for detail." : "No faults latched", n);
@@ -810,7 +834,7 @@ static void diag_refresh(void)
     ui_set_text(dp.v[0], sig ? buf : "----");
     lv_snprintf(buf, sizeof buf, "%ld.%02ld", (long)(s->bus_mv / 1000), (long)(s->bus_mv % 1000 / 10));
     ui_set_text(dp.v[1], sig ? buf : "----");
-    ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * 1034214 / 10000000) : "----");
+    ui_set_text(dp.v[2], sig ? ui_fmt1(buf, sizeof buf, (int64_t)s->r_ppb * valve_range_mmbar() / 10000000) : "----");
     ui_set_text(dp.v[7], s->baro_ok ? ui_fmt1(buf, sizeof buf, s->baro_mmbar) : "----");   // Pressure 21
 
     int32_t from;
@@ -823,6 +847,8 @@ static void diag_refresh(void)
         case STEPPER3_STOP_LIMIT:   res = "At limit"; break;
         case STEPPER3_STOP_CMD:     res = "Stopped"; break;
         case STEPPER3_STOP_TIMEOUT: res = "Timed out"; break;
+        case STEPPER3_STOP_REVERSED: res = "Switch while opening"; break;
+        case STEPPER3_STOP_STALL:   res = "Loop stalled"; break;
         default: break;
     }
     ui_set_text(dp.v[6], res);
