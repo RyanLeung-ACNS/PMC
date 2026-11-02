@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="860" viewBox="0 0 1080 860" font-family="Arial, Helvetica, sans-serif">
+<rect width="1080" height="860" fill="white"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#333"/></marker></defs>
+<rect x="81.6" y="117.0" width="836.8" height="546.0" fill="#2f6b3a" stroke="#1d4426" stroke-width="2" rx="6"/>
+<circle cx="108.3" cy="636.3" r="14.2" fill="#d9c58a"/>
+<circle cx="108.3" cy="636.3" r="11.2" fill="white" stroke="#333"/>
+<circle cx="108.3" cy="143.7" r="14.2" fill="#d9c58a"/>
+<circle cx="108.3" cy="143.7" r="11.2" fill="white" stroke="#333"/>
+<circle cx="891.7" cy="636.3" r="14.2" fill="#d9c58a"/>
+<circle cx="891.7" cy="636.3" r="11.2" fill="white" stroke="#333"/>
+<circle cx="891.7" cy="143.7" r="14.2" fill="#d9c58a"/>
+<circle cx="891.7" cy="143.7" r="11.2" fill="white" stroke="#333"/>
+<rect x="126.2" y="155.2" width="747.6" height="469.7" fill="#1a1a1a" stroke="#000" stroke-width="1"/>
+<rect x="153.5" y="208.3" width="687.4" height="393.4" fill="#3d5f86"/>
+<rect x="164.6" y="216.5" width="665.3" height="377.0" fill="none" stroke="#9fc3ea" stroke-width="1" stroke-dasharray="6 4"/>
+<line x1="38.0" y1="390.0" x2="962.0" y2="390.0" stroke="#d00" stroke-width="1.6" stroke-dasharray="14 5 3 5"/>
+<line x1="500.0" y1="698.0" x2="500.0" y2="82.0" stroke="#d00" stroke-width="1.6" stroke-dasharray="14 5 3 5"/>
+<line x1="38.0" y1="405.1" x2="934.0" y2="405.1" stroke="#ffb000" stroke-width="1.6" stroke-dasharray="14 5 3 5"/>
+<line x1="497.2" y1="698.0" x2="497.2" y2="110.0" stroke="#ffb000" stroke-width="1.6" stroke-dasharray="14 5 3 5"/>
+<line x1="948.0" y1="390.0" x2="948.0" y2="405.1" stroke="#111" stroke-width="1.2" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="956.0" y="402.0" font-size="16" fill="#111" font-weight="bold">2.15 below</text>
+<text x="966.0" y="384.0" font-size="15" fill="#d00">hole centreline</text>
+<text x="938.0" y="425.1" font-size="15" fill="#b07800">screen centreline</text>
+<text x="500.0" y="105.0" font-size="15" text-anchor="middle" fill="#444">ON/OFF switch edge (top)</text>
+<line x1="108.3" y1="705.0" x2="891.7" y2="705.0" stroke="#333" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="500.0" y="699.0" font-size="15" text-anchor="middle" fill="#111">111.92 hole pitch</text>
+<line x1="108.3" y1="663.0" x2="108.3" y2="712.0" stroke="#999" stroke-width="1"/>
+<line x1="891.7" y1="663.0" x2="891.7" y2="712.0" stroke="#999" stroke-width="1"/>
+<line x1="52.0" y1="636.3" x2="52.0" y2="143.7" stroke="#333" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="44.0" y="325.0" font-size="15" text-anchor="end" fill="#111">70.38</text>
+<line x1="80.0" y1="143.7" x2="45.0" y2="143.7" stroke="#999" stroke-width="1"/>
+<line x1="80.0" y1="636.3" x2="45.0" y2="636.3" stroke="#999" stroke-width="1"/>
+<text x="497.2" y="397.1" font-size="16" text-anchor="middle" fill="#e6eef7">visible area 98.2 x 56.2</text>
+<text x="497.2" y="419.1" font-size="14" text-anchor="middle" fill="#e6eef7">centre 0.4 left, 2.15 below hole centre</text>
+<text x="497.2" y="576.5" font-size="12" text-anchor="middle" fill="#9fc3ea">dashed: active pixels 95.04 x 53.86 (assumed centred)</text>
+<text x="500.0" y="171.2" font-size="13" text-anchor="middle" fill="#bbb">glass 106.8 x 67.1, centred on the holes</text>
+<text x="30.0" y="752.0" font-size="15" fill="#111">MIKROMEDIA 4 FRONT VIEW (screen side), mm. Board 119.54 x 78.00, M3 holes 3.2 at 3.81 from each edge.</text>
+<text x="30.0" y="776.0" font-size="15" fill="#111">Board, holes and glass from the MikroE STEP: glass centred on the hole pattern to 0.1 mm.</text>
+<text x="30.0" y="800.0" font-size="15" fill="#111">Visible area from front photos of the board (STEP display block is simplified): +/-0.5 mm. Caliper check before cutting.</text>
+<text x="30.0" y="824.0" font-size="15" fill="#111" font-weight="bold">Result: screen centre is 2.15 below and 0.4 left of the hole centre. Glass centre = hole centre.</text>
+</svg>
