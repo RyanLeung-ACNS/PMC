@@ -1,40 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="940" height="700" viewBox="0 0 940 700" font-family="Arial, Helvetica, sans-serif">
-<rect width="940" height="700" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="760" viewBox="0 0 980 760" font-family="Arial, Helvetica, sans-serif">
+<rect width="980" height="760" fill="white"/>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#444"/></marker></defs>
-<line x1="360" y1="110" x2="360" y2="245" stroke="black" stroke-width="31.5"/>
-<line x1="198" y1="245" x2="522" y2="245" stroke="black" stroke-width="31.5"/>
-<line x1="252" y1="330.5" x2="468" y2="330.5" stroke="black" stroke-width="31.5"/>
-<line x1="306" y1="416" x2="414" y2="416" stroke="black" stroke-width="31.5"/>
-<line x1="360" y1="65" x2="360" y2="470" stroke="#c00" stroke-width="1" stroke-dasharray="12 4 3 4"/>
-<line x1="391.5" y1="110" x2="594" y2="110" stroke="#444" stroke-width="1"/>
-<line x1="535.5" y1="245" x2="594" y2="245" stroke="#444" stroke-width="1"/>
-<line x1="481.5" y1="330.5" x2="594" y2="330.5" stroke="#444" stroke-width="1"/>
-<line x1="427.5" y1="416" x2="594" y2="416" stroke="#444" stroke-width="1"/>
-<line x1="585" y1="110" x2="585" y2="245" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="595" y="183.5" font-size="17">1.50</text>
-<line x1="585" y1="245" x2="585" y2="330.5" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="595" y="293.75" font-size="17">0.95</text>
-<line x1="585" y1="330.5" x2="585" y2="416" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="595" y="379.25" font-size="17">0.95</text>
-<line x1="603" y1="110" x2="675" y2="110" stroke="#444" stroke-width="1"/>
-<line x1="427.5" y1="431.75" x2="675" y2="431.75" stroke="#444" stroke-width="1"/>
-<line x1="666" y1="110" x2="666" y2="431.75" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="676" y="276.9" font-size="17">3.58 overall</text>
-<text x="174" y="251" font-size="17" text-anchor="end">bar 1: 3.60 long</text>
-<text x="174" y="336.5" font-size="17" text-anchor="end">bar 2: 2.40 long</text>
-<text x="174" y="422" font-size="17" text-anchor="end">bar 3: 1.20 long</text>
-<line x1="198" y1="272" x2="198" y2="501.5" stroke="#444" stroke-width="1"/>
-<line x1="522" y1="272" x2="522" y2="501.5" stroke="#444" stroke-width="1"/>
-<line x1="198" y1="492.5" x2="522" y2="492.5" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="368" y="484.5" font-size="17">3.60 overall</text>
-<line x1="387" y1="164" x2="450" y2="164" stroke="#444" stroke-width="1" marker-start="url(#a)"/>
-<line x1="333" y1="164" x2="270" y2="164" stroke="#444" stroke-width="1" marker-start="url(#a)"/>
-<text x="454.5" y="170" font-size="17">0.35 line width</text>
-<text x="360" y="51.5" font-size="17" text-anchor="middle" fill="#c00">centreline</text>
-<text x="40" y="530" font-size="19" font-weight="bold">EARTH SYMBOL (IEC 60417-5017). All dimensions in mm.</text>
-<text x="40" y="557" font-size="17">Every stroke 0.35 wide with square ends. Bar lengths are end to end.</text>
-<text x="40" y="584" font-size="17">Bars are centred on the stem, lengths in the ratio 3 : 2 : 1.</text>
-<text x="40" y="611" font-size="17">Pitches (1.50, 0.95, 0.95) are to the centreline of each bar.</text>
-<text x="40" y="638" font-size="17">Overall 3.60 wide x 3.58 tall, matching the 3.57 label cap height.</text>
-<text x="40" y="665" font-size="17">Origin: top end of the stem.</text>
+<line x1="330" y1="110" x2="330" y2="326" stroke="black" stroke-width="36"/>
+<line x1="168" y1="326" x2="492" y2="326" stroke="black" stroke-width="36"/>
+<line x1="222" y1="398" x2="438" y2="398" stroke="black" stroke-width="36"/>
+<line x1="276" y1="470" x2="384" y2="470" stroke="black" stroke-width="36"/>
+<line x1="330" y1="65" x2="330" y2="533" stroke="#c00" stroke-width="1" stroke-dasharray="12 4 3 4"/>
+<line x1="357" y1="110" x2="564" y2="110" stroke="#444" stroke-width="1"/>
+<line x1="505.5" y1="326" x2="564" y2="326" stroke="#444" stroke-width="1"/>
+<line x1="451.5" y1="398" x2="564" y2="398" stroke="#444" stroke-width="1"/>
+<line x1="397.5" y1="470" x2="564" y2="470" stroke="#444" stroke-width="1"/>
+<line x1="555" y1="110" x2="555" y2="326" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="565" y="224" font-size="17">2.40</text>
+<line x1="555" y1="326" x2="555" y2="398" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="565" y="368" font-size="17">0.80</text>
+<line x1="555" y1="398" x2="555" y2="470" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="565" y="440" font-size="17">0.80</text>
+<line x1="573" y1="110" x2="645" y2="110" stroke="#444" stroke-width="1"/>
+<line x1="397.5" y1="488" x2="645" y2="488" stroke="#444" stroke-width="1"/>
+<line x1="636" y1="110" x2="636" y2="488" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="646" y="305" font-size="17">4.20 overall</text>
+<text x="144" y="332" font-size="17" text-anchor="end">bar 1: 3.60 long</text>
+<text x="144" y="404" font-size="17" text-anchor="end">bar 2: 2.40 long</text>
+<text x="144" y="476" font-size="17" text-anchor="end">bar 3: 1.20 long</text>
+<line x1="168" y1="353" x2="168" y2="564.5" stroke="#444" stroke-width="1"/>
+<line x1="492" y1="353" x2="492" y2="564.5" stroke="#444" stroke-width="1"/>
+<line x1="168" y1="555.5" x2="492" y2="555.5" stroke="#444" stroke-width="1" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="338" y="547.5" font-size="17">3.60 overall</text>
+<line x1="352.5" y1="200" x2="415.5" y2="200" stroke="#444" stroke-width="1" marker-start="url(#a)"/>
+<line x1="307.5" y1="200" x2="244.5" y2="200" stroke="#444" stroke-width="1" marker-start="url(#a)"/>
+<text x="420" y="206" font-size="17">0.40 line width</text>
+<text x="330" y="51.5" font-size="17" text-anchor="middle" fill="#c00">centreline</text>
+<text x="620" y="545" font-size="15" fill="#444">Actual proportions next to 3.57 mm text:</text>
+<text x="620" y="640" font-size="59.8">PoE IN</text>
+<line x1="875" y1="593.38" x2="875" y2="622.18" stroke="black" stroke-width="4.8"/>
+<line x1="853.4" y1="622.18" x2="896.6" y2="622.18" stroke="black" stroke-width="4.8"/>
+<line x1="860.6" y1="631.78" x2="889.4" y2="631.78" stroke="black" stroke-width="4.8"/>
+<line x1="867.8" y1="641.38" x2="882.2" y2="641.38" stroke="black" stroke-width="4.8"/>
+<text x="40" y="600" font-size="19" font-weight="bold">EARTH SYMBOL (IEC 60417-5017). All dimensions in mm.</text>
+<text x="40" y="627" font-size="17">Every stroke 0.40 wide with square ends. Bar lengths are end to end.</text>
+<text x="40" y="654" font-size="17">Bars are centred on the stem, lengths in the ratio 3 : 2 : 1.</text>
+<text x="40" y="681" font-size="17">Pitches (2.40, 0.80, 0.80) are to the centreline of each bar.</text>
+<text x="40" y="708" font-size="17">Overall 3.60 wide x 4.20 tall. Origin: top end of the stem.</text>
 </svg>
